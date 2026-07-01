@@ -1,0 +1,43 @@
+{
+  "_note": "Paid API-credit models removed from goose.config.json 2026-06-30 for token-free testing (local + Claude Max only). Paste any back into config.models when ready to use API credits again. The 32B umbruh entry was removed 2026-07-01 (Director call: the 24GB Mac can't run it) — kept here only as a record, do NOT restore unless the hardware changes.",
+  "models": [
+    {
+      "id": "umbruh",
+      "name": "Umbruh (32B — SCRATCHED 2026-07-01)",
+      "provider": "ollama",
+      "model": "umbruh",
+      "description": "REMOVED 2026-07-01. Director's Umbruh on qwen2.5:32b (~20GB). Scratched because the 24GB Mac can't run it — stalled as Director (100s+ no plan) and monopolizes RAM as a worker. Local Umbruh is now the 8B (umbruh-lite). Do not restore unless the Mac's RAM is upgraded.",
+      "defaultDocs": ["agents/umbruh/umbruh-context.md", "agents/umbruh/umbruh-session-log.md", "agents/umbruh/foundation/director-profile.md", "agents/umbruh/foundation/director-affective-context.md"]
+    },
+    {
+      "id": "claude-sonnet",
+      "name": "Claude Sonnet",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "description": "Primary reasoning and planning model. Best for drafting governance docs, agent prompts, source bundles."
+    },
+    {
+      "id": "claude-haiku",
+      "name": "Claude Haiku",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5-20251001",
+      "description": "Fast + cheap. Good for classification, field extraction, or quick summarization passes."
+    },
+    {
+      "id": "gpt-4o",
+      "name": "GPT-4o / Codex",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "description": "OpenAI's main model. Use for Codex-style execution tasks or cross-model verification."
+    },
+    {
+      "id": "umbruh-cloud",
+      "name": "Umbruh (Cloud)",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "systemPromptFile": "agents/umbruh/umbruh-persona.md",
+      "description": "Same Umbruh persona (Heart/Mind), running fast on Claude. Needs a valid Anthropic API key + credits. Use when you want responsiveness; the local Umbruh stays the fully-private option.",
+      "defaultDocs": ["agents/umbruh/umbruh-context.md", "agents/umbruh/umbruh-session-log.md", "agents/umbruh/foundation/director-profile.md", "agents/umbruh/foundation/director-affective-context.md"]
+    }
+  ]
+}

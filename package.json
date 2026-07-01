@@ -1,0 +1,66 @@
+{
+  "name": "goose-director",
+  "version": "0.1.0",
+  "description": "Director console for the Goose Agent System",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently \"node server.mjs\" \"vite\"",
+    "build": "vite build",
+    "preview": "vite preview",
+    "server": "node server.mjs",
+    "electron": "concurrently \"node server.mjs\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron-dev": "concurrently \"node server.mjs\" \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "package": "npm run build && electron-builder --mac --dir",
+    "package-dmg": "npm run build && electron-builder --mac dmg"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "gray-matter": "^4.0.3",
+    "js-yaml": "^4.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^8.2.2",
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3",
+    "vite": "^5.4.1",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.goose.director",
+    "productName": "Nexus",
+    "asar": false,
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "electron/icon.icns"
+    },
+    "directories": {
+      "output": "dist-app"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "server.mjs",
+      "goose.config.json",
+      "threads/**/*",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "goose.config.json",
+        "to": "goose.config.json"
+      }
+    ]
+  },
+  "allowScripts": {
+    "electron@31.7.7": true,
+    "esbuild@0.21.5": true
+  }
+}

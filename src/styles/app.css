@@ -1,0 +1,131 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  /* ── Ground ── deep, almost mineral */
+  --color-bg:           #090806;
+  --color-surface:      #100f0c;
+  --color-surface-2:    #181510;
+  --color-surface-3:    #201d16;
+
+  /* ── Borders — like fine etchings on dark stone */
+  --color-border:        rgba(255,248,230,0.06);
+  --color-border-mid:    rgba(255,248,230,0.10);
+  --color-border-strong: rgba(255,248,230,0.18);
+
+  /* ── Text — warm off-white, not clinical white */
+  --color-text:   #f2ede2;
+  --color-text-2: #8a8478;
+  --color-text-3: #4a4640;
+
+  /* ── Active: amber / firelight / presence ── */
+  --color-active:        #c8a44a;
+  --color-active-bg:     #1a1508;
+  --color-active-text:   #ddc070;
+  --color-active-border: #3a2e10;
+
+  /* ── Passive: cold blue / distant / watching ── */
+  --color-passive:        #4a7ca8;
+  --color-passive-bg:     #08121e;
+  --color-passive-text:   #6a9ec8;
+  --color-passive-border: #142030;
+
+  /* ── Recursive: deep violet / the unseen layer / myth ── */
+  --color-recursive:        #6a54b8;
+  --color-recursive-bg:     #0e0a20;
+  --color-recursive-text:   #9880d8;
+  --color-recursive-border: #1e1640;
+
+  /* ── Dual: teal / the bridge / both worlds ── */
+  --color-dual:        #348a72;
+  --color-dual-bg:     #061812;
+  --color-dual-text:   #50a888;
+  --color-dual-border: #0e3024;
+
+  /* ── Status ── */
+  --color-escalation-bg:     #180606;
+  --color-escalation-text:   #d85050;
+  --color-escalation-border: #4a1010;
+
+  --color-review-bg:     #181008;
+  --color-review-text:   #c88040;
+  --color-review-border: #4a2c10;
+
+  --color-logged-bg:     #081410;
+  --color-logged-text:   #489860;
+  --color-logged-border: #142a1c;
+
+  /* ── Availability indicators ── */
+  --color-available:     #489860;
+  --color-unavailable:   #d85050;
+
+  /* ── Layout ── */
+  --sidebar-width: 200px;
+  --radius:    4px;
+  --radius-lg: 6px;
+
+  /* ── Typography ── slightly heavy, deliberate */
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: 0.005em;
+}
+
+html, body, #root {
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+  letter-spacing: inherit;
+}
+
+/* ── Scrollbar ── thin, barely there */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 2px; }
+
+/* ── Selection ── violet tint */
+::selection { background: rgba(106,84,184,0.35); color: var(--color-text); }
+
+/* ── Inputs ── dark ground, etched border */
+input, select, textarea {
+  background: var(--color-surface-2);
+  border: 0.5px solid var(--color-border-mid);
+  color: var(--color-text);
+  border-radius: var(--radius);
+  padding: 7px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.12s;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-3);
+}
+input::placeholder, textarea::placeholder { color: var(--color-text-3); }
+select option { background: var(--color-surface-2); color: var(--color-text); }
+
+/* ── Glyph label — uppercase, tracked, small ── */
+.glyph-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-3);
+}
+
+/* ── Monospace values ── */
+.mono {
+  font-family: 'SF Mono', 'Fira Mono', 'Menlo', monospace;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}

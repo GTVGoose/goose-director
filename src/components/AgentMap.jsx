@@ -1,0 +1,85 @@
+import AgentPostureRow from './AgentPostureRow.jsx'
+
+const POSTURE_ORDER = ['Active', 'Passive', 'Recursive', 'Dual', 'Unknown']
+
+const POSTURE_META = {
+  Active:    { color: 'var(--color-active)',    desc: 'Invoked directly. Output is visible in your session.' },
+  Passive:   { color: 'var(--color-passive)',   desc: 'Runs in background. Feeds other agents or system state.' },
+  Recursive: { color: 'var(--color-recursive)', desc: 'Modifies system behavior or architecture. Errors are multiplicative.' },
+  Dual:      { color: 'var(--color-dual)',       desc: 'Both Archetype and Operational — posture depends on invocation context.' },
+  Unknown:   { color: 'var(--color-text-3)',    desc: 'Posture not yet classified.' },
+}
+
+export default function AgentMap({ agents, onInvoke }) {
+  const grouped = POSTURE_ORDER.reduce((acc, p) => {
+    const group = agents.filter(a => a.posture === p)
+    if (group.length) acc[p] = group
+    return acc
+  }, {})
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 800 }}>
+      {Object.keys(grouped).length === 0 && (
+        <div style={{
+          background: 'var(--color-surface)',
+          border: '0.5px solid var(--color-border)',
+          borderRadius: 'var(--radius-lg)',
+          padding: '20px',
+          textAlign: 'center',
+          fontSize: 13,
+          color: 'var(--color-text-3)',
+        }}>
+          No agents found. Check goose.config.json → repoPath.
+        </div>
+      )}
+
+      {Object.entries(grouped).map(([posture, group]) => {
+        const meta = POSTURE_META[posture] || POSTURE_META.Unknown
+        return (
+          <div key={posture} style={{
+            background: 'var(--color-surface)',
+            border: '0.5px solid var(--color-border)',
+            borderTop: `2px solid ${meta.color}`,
+            borderRadius: 'var(--radius-lg)',
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              padding: '10px 14px',
+              borderBottom: '0.5px solid var(--color-border)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+            }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: meta.color }}>{posture}</div>
+                <div style={{ fontSize: 11, color: 'var(--color-text-3)', marginTop: 2, lineHeight: 1.4 }}>
+                  {meta.desc}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                <span style={{ fontSize: 11, color: 'var(--color-text-3)' }}>
+                  {group.length} agent{group.length > 1 ? 's' : ''}
+                </span>
+                {onInvoke && (
+                  <button onClick={onInvoke} style={{
+                    background: 'none',
+                    border: '0.5px solid var(--color-border-mid)',
+                    borderRadius: 'var(--radius)',
+                    padding: '3px 9px',
+                    fontSize: 11,
+                    color: 'var(--color-text-2)',
+                    cursor: 'pointer',
+                    letterSpacing: '0.02em',
+                  }}>Invoke →</button>
+                )}
+              </div>
+            </div>
+            <div style={{ padding: '8px 10px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+              {group.map(a => <AgentPostureRow key={a.name} agent={a} />)}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
