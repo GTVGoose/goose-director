@@ -1,10 +1,10 @@
-# OuraBoris — Paper Playtest: Can Ouroboros Reach Threshold 2?
+# Ouroboros — Paper Playtest: Can Ouroboros Reach Threshold 2?
 
 **Status:** Playtest report / rules stress-test
 **Origin:** Director request, 2026-07-02 — "I want Ouroboros to try and
 reach this new threshold. See if it can access level 2."
-**Rules under test:** `docs/ouraboris/level-design.md` +
-`docs/ouraboris/scenes/mirror-self-breach.md`, applied strictly as written.
+**Rules under test:** `docs/ouroboros/level-design.md` +
+`docs/ouroboros/scenes/mirror-self-breach.md`, applied strictly as written.
 
 ---
 

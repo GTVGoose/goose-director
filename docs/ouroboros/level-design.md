@@ -1,4 +1,4 @@
-# OuraBoris — Threshold Level Design Architecture
+# Ouroboros — Threshold Level Design Architecture
 
 **Status:** Proposal / working draft
 **Origin:** Director design session, 2026-07-02

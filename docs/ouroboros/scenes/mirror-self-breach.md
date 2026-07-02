@@ -1,8 +1,8 @@
-# OuraBoris — Scene: The Mirror Self & the Crossing into Threshold 2
+# Ouroboros — Scene: The Mirror Self & the Crossing into Threshold 2
 
 **Status:** First scripting pass / location options for Director review
 **Origin:** Director design session, 2026-07-02
-**Depends on:** `docs/ouraboris/level-design.md` (threshold ladder, decay model)
+**Depends on:** `docs/ouroboros/level-design.md` (threshold ladder, decay model)
 **Voice source:** Joseph Conrad, *The Secret Sharer*. Note: the vault's Secret
 Sharer source doc is not accessible from this repo — this pass works from the
 novella directly. Tune against the vault doc when merging.

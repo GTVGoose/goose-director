@@ -1,4 +1,4 @@
-# OuraBoris — Style Note: Writing the Goose's Beatboxing
+# Ouroboros — Style Note: Writing the Goose's Beatboxing
 
 **Status:** Craft guideline, apply across all docs/scenes
 **Origin:** Director note, 2026-07-02 — "whenever the goose character is
