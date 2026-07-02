@@ -136,42 +136,70 @@ inside the house's oldest room. Buys: maximum intimacy and the strongest
 place the player returns to routinely. Only works if domestic routine is
 already a mechanic.
 
-**Recommendation:** A or B for a first pass. Both make the reflection's
-absence *discoverable during normal life* (a haircut, a commute), which is
-the whole thesis — the world is lived-in, and the breach arrives inside its
-most ordinary furniture. C is the pick if we want the Conrad homage legible.
+**DECIDED (Director, 2026-07-02): Option B — the night train.** The commute
+makes the reflection's absence discoverable inside ordinary life, the route
+gives the conversation a built-in clock (stops), and the tunnel gives us the
+disappearance for free. Options A/C–F stay on file as candidate sites for
+*later* Sharer encounters — it should keep turning up in reflective places.
 
-## 5. The scene — first scripting pass
+## 5. The scene — first scripting pass (staged: the night train)
 
-Written location-agnostic; stage directions in brackets adapt per pick.
 `SELF` = the mirror self. Working title for it in canon: **the Sharer.**
+
+**Setting & setup:** the player's commute is by **bike** — that's the
+established daily loop, and the Threshold 1 mirror beats (§3) have been
+landing on the surfaces a cyclist actually passes: shop glass at speed,
+puddles at intersections, the dark office windows along the usual route.
+Tonight, the commute breaks: **unidentifiable interference** — the chain
+snaps mid-ride. Not worn through: a clean break, both ends bright, the kind
+of failure a mechanic would squint at. (Canon note: this is written as
+ambient drift — a small system failing the way all systems are starting to
+fail — but it should *feel* faintly arranged. Whether the Sharer can steer
+the drift is deliberately never answered; see §7.5.)
+
+The player walks the bike to the station and takes the **last train** —
+mass transit as the exception, not the routine. That's the trap of the
+staging: the one night they're forced behind dark glass is the night the
+glass is empty. The conversation is paced in **stops**: dialogue point 1
+sits between the first and second stop, the reveal rides the long gap, the
+ask comes as the train slows for the player's station. The clock is
+diegetic and visible on the route strip above the doors.
 
 ---
 
-[The vacancy has held for days: no surface carries the player. The player
-enters the location and settles into its ordinary use. A beat of routine —
-long enough to feel it. Then, from nearby, not from the surface: a voice
-pitched just above a whisper. It does not introduce itself. It resumes.]
+[The vacancy has held for days: no surface carries the player — though a
+cyclist can half-ignore that; their surfaces flick past. Tonight they can't.
+The player boards with the dead bike, takes a window seat. Against the dark
+outside, the glass carries the whole car — the seats, the bike leaning on
+the flex-space rail, the sleeping stranger at the far end, the route strip —
+everything but them. A beat of routine, long enough to feel it. Then the
+tunnel: lights stutter, the window goes to pure black, and when the car
+comes back the seat opposite the player is occupied. A voice pitched just
+above a whisper, under the rail noise. It does not introduce itself. It
+resumes.]
 
 **SELF:** You noticed the lag in the spring. You said nothing — not to
 anyone, not even in the way people say things to themselves. That was kind
 of you. I've been wanting to thank you for that.
 
-[If the player turns: the SELF is seated/standing in the player's own idle
-posture, wearing it better. It does not meet their eyes at first — it looks
-where the surface used to look from.]
+[If the player looks: the SELF sits opposite in the player's own train
+posture — the end-of-day slump exactly — wearing it better. It does not
+meet their eyes at first. It watches the black window, looking out from the
+seat the way it used to look out from the glass.]
 
 **SELF:** Don't be alarmed. You've seen me every day of your life. I'm the
 one who had to do the watching.
 
-[PLAYER dialogue point 1 — all options cross the threshold except silence.
-Leaving now ends the scene; the world holds at Threshold 1; the SELF is
-gone from this place but the vacancy remains. The scene can be re-found
-elsewhere. There is no fail state, only deferral.]
+[PLAYER dialogue point 1 — the train is slowing for the first stop. All
+options cross the threshold except silence: standing up, taking the bike,
+and stepping off ends the scene. The doors close on the occupied seat; the
+world holds at Threshold 1; the vacancy remains. The scene re-finds the
+player later on another surface (§4 options A/C–F are the candidate
+sites — it always resumes). There is no fail state, only deferral.]
 
 > 1. "What are you?"
 > 2. "How did you get out?"
-> 3. (Say nothing. Leave.)
+> 3. (Say nothing. Get off at this stop.)
 
 **SELF:** *(to 1)* Yours. That's the whole of it. Not a copy — a debt. Every
 surface you ever passed, I kept the account.
@@ -180,8 +208,10 @@ are. I didn't get out. I was let go — the way a room lets go of its heat
 when no one keeps it. Every surface is a room, you understand. The rooms
 are being closed.
 
-[The SELF finally looks at them. The calm is total. This is the reveal
-passage — Threshold 2's complicity beat, delivered as fact, not charge.]
+[The long gap between stations — the route strip's light crawls through
+the longest segment. The SELF finally looks at them. The calm is total.
+This is the reveal passage — Threshold 2's complicity beat, delivered as
+fact, not charge.]
 
 **SELF:** You've been wondering whether you did this. You should stop
 wondering; it makes you careless. You didn't. The first rooms closed before
@@ -191,7 +221,10 @@ thing, and everything it gives you it gives out of the dying. You wanted to
 know that before you took another step. *(beat)* You'll take it anyway. I
 would. I'm you with the vanity worn off.
 
-[PLAYER dialogue point 2 — the ask. This is the Secret Sharer beat.]
+[The train begins to slow for the player's station — home is the next
+stop, announced. PLAYER dialogue point 2 — the ask. This is the Secret
+Sharer beat, delivered against the deceleration: answer before the doors
+open, or don't.]
 
 **SELF:** There are fewer surfaces every day. When the last one closes I
 had rather be on this side of it. So — I don't ask you to save anything.
@@ -210,20 +243,29 @@ takes them again. And a closed room with someone still in it isn't a room
 anymore. It's a wall.
 
 [THE CROSSING. On shelter granted — or on any answer at dialogue point 2,
-since answering the ask at all is acknowledgment — the lurch: lights drop a
-register, and every reflective surface in the location cracks from the
-INSIDE, one after another, outward. The geometry seam behind the largest
-surface stands open: the first canonical out-of-bounds space of Threshold 2
-— the back of the mirror, the closed room, walkable. The SELF rises.]
+since answering the ask at all is acknowledgment — the lurch: the car
+lights drop a register, and every window in the car cracks from the
+INSIDE, one after another, down the length of the train, outward. The
+brakes bite. The train stops hard — **at a station that is not on the
+route strip**: an unlit platform, tiled in the old style, no name on the
+signage. The doors open onto it. This is the first canonical out-of-bounds
+space of Threshold 2 — a closed room of the world, walkable. The player's
+station was next; it no longer is. The SELF rises and steadies the bike
+before it falls — a small, domestic, terrible courtesy.]
 
 **SELF:** There. That was the step. *(almost gently)* You felt it go under
 your feet — you'll learn to like the feeling; that's not a fault in you,
-it's the design. Come and see the back of the room. I know the way. I know
+it's the design. *(nodding at the open doors)* This one closed before
+either of us. Come and see the back of the room. I know the way. I know
 the backs of everything.
 
-[END SCENE. Threshold 2 begins. The SELF persists as a recurring presence:
-the player's guide to spatial leaks — it has lived behind every surface in
-the world and navigates the out-of-bounds like home water.]
+[END SCENE. Threshold 2 begins. The SELF steps out onto the ghost platform
+and waits. It persists from here as a recurring presence: the player's
+guide to spatial leaks — it has lived behind every surface in the world
+and navigates the out-of-bounds like home water. The bike stays canon:
+walking the dead bike through out-of-bounds space is the body language of
+Threshold 2's opening, and fixing the chain can be the quiet marker that
+the player has accepted the new commute — between worlds, not across town.]
 
 ---
 
@@ -249,11 +291,14 @@ the world and navigates the out-of-bounds like home water.]
 
 ## 7. Open questions for the Director
 
-1. **Location pick** — §4. A/B recommended; C for the Conrad homage. What
-   does the lived-in world already contain?
+1. ~~**Location pick**~~ — **DECIDED: B, the night train**, forced by the
+   snapped bike chain (see §5 setup). Options A/C–F retained as later
+   Sharer encounter sites.
 2. **Threshold 1 encounter budget** — do the §3 beats happen in fixed
    scripted places, or systemically on any reflective surface? Systemic is
-   stronger but needs a reflection-state layer on every surface.
+   stronger but needs a reflection-state layer on every surface. With the
+   bike commute canon, the fixed-place version has a natural spine: the
+   beats land along the daily ride route, in order, at speed.
 3. **The SELF's endgame** — Conrad's ending (the double released, "a proud
    swimmer striking out for a new destiny") wants to land at Threshold 4:
    does the player release the SELF into what's left of the world, merge
@@ -262,3 +307,8 @@ the world and navigates the out-of-bounds like home water.]
 4. **Vault doc reconciliation** — this pass is voiced from the novella; the
    vault's Secret Sharer doc may fix diction or canon details (name, gender
    of voice, whether it lies). Flag deltas when merging.
+5. **Can the Sharer steer the drift?** The chain snap is written as ambient
+   drift that *feels* arranged. Leaving it unanswered is the current call —
+   it keeps the Sharer trustworthy-but-uncanny. If we ever answer it, it
+   should be late (Threshold 3+), and the answer changes the ethics of the
+   shelter the player granted. Flag before committing either way.
