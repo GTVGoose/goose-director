@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OURABORIS</title>
+<style>
+  :root {
+    --bg: #0b0e0c;
+    --bone: #d8d3c4;
+    --bone-dim: #8a877c;
+    --scale-a: #3f5a44;
+    --scale-b: #2e4536;
+    --scale-glow: #6d9a76;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--bone);
+    font-family: "Courier New", ui-monospace, monospace;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    user-select: none;
+  }
+  /* faint vignette so the ring sits in a pool of dark */
+  body::after {
+    content: ""; position: fixed; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at center,
+      transparent 40%, rgba(0,0,0,.55) 100%);
+  }
+
+  .stage { position: relative; width: min(80vmin, 640px); height: min(80vmin, 640px); }
+
+  svg { width: 100%; height: 100%; display: block; }
+
+  #snake { transform-origin: 300px 300px; }
+  #snake.spin { animation: spin 26s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .seg { opacity: 0; transition: opacity .18s ease; }
+  .seg.on { opacity: 1; }
+
+  /* Threshold-0 foreshadowing: the whole ring, rarely, isn't quite right.
+     Deniable ("that's just a weird texture"). Driven by JS on a slow timer. */
+  #snake.seam { animation: seam .18s steps(2) 1; }
+  @keyframes seam {
+    0%   { transform: translate(0,0) rotate(var(--rot, 0deg)); filter: none; }
+    50%  { transform: translate(2px,-1px) rotate(var(--rot, 0deg)); filter: saturate(.2) brightness(1.5); }
+    100% { transform: translate(0,0) rotate(var(--rot, 0deg)); filter: none; }
+  }
+
+  .menu {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: .6rem; text-align: center;
+  }
+  h1 {
+    font-size: clamp(1.3rem, 3.8vmin, 2rem);
+    font-weight: 400;
+    letter-spacing: .45em;
+    text-indent: .45em; /* re-center the letterspaced text */
+    opacity: 0;
+    transition: opacity 1.6s ease;
+  }
+  h1.on { opacity: 1; }
+
+  .buttons {
+    display: flex; flex-direction: column; gap: .4rem; margin-top: 1.4rem;
+    opacity: 0; transition: opacity 1.2s ease .3s;
+  }
+  .buttons.on { opacity: 1; }
+  button {
+    background: none; border: none;
+    color: var(--bone);
+    font: inherit; font-size: clamp(.8rem, 2.2vmin, 1rem);
+    letter-spacing: .35em; text-indent: .35em;
+    padding: .5em 1.2em;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { color: var(--scale-glow); }
+  button:hover:not(:disabled)::before { content: "› "; margin-right: -.35em; }
+  button:disabled { color: #3a3d38; cursor: default; }
+
+  .footer {
+    position: fixed; bottom: 4vh; left: 0; right: 0;
+    text-align: center;
+    font-size: .65rem; letter-spacing: .25em; text-indent: .25em;
+    color: var(--bone-dim);
+    opacity: 0; transition: opacity 2s ease 1s;
+  }
+  .footer.on { opacity: .7; }
+
+  /* New Game transition: the fade into Loop 01 */
+  .shroud {
+    position: fixed; inset: 0; background: #000;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 1rem;
+    opacity: 0; pointer-events: none;
+    transition: opacity 1.8s ease;
+  }
+  .shroud.on { opacity: 1; pointer-events: all; }
+  .shroud .loop { letter-spacing: .5em; text-indent: .5em; font-size: 1rem; }
+  .shroud .line {
+    color: var(--bone-dim); font-size: .7rem;
+    letter-spacing: .2em; text-indent: .2em;
+    opacity: 0; transition: opacity 2.4s ease 1.6s;
+  }
+  .shroud.on .line { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <svg viewBox="0 0 600 600" aria-label="An ouroboros: a snake eating its own tail, circling.">
+    <g id="snake"></g>
+  </svg>
+
+  <div class="menu">
+    <h1 id="title">OURABORIS</h1>
+    <div class="buttons" id="buttons">
+      <button id="newgame">NEW GAME</button>
+      <button id="continue" disabled title="no loop found">CONTINUE</button>
+    </div>
+  </div>
+</div>
+
+<div class="footer" id="footer">the world presents as whole and self-consistent</div>
+
+<div class="shroud" id="shroud">
+  <div class="loop">LOOP 01</div>
+  <div class="line">the chain has never snapped. the glass has never lagged.</div>
+</div>
+
+<script>
+(() => {
+  const NS = 'http://www.w3.org/2000/svg';
+  const snake = document.getElementById('snake');
+  const CX = 300, CY = 300, R = 205;
+
+  // The snake occupies almost the full circle; the small gap is the bite —
+  // the tail tip sits just short of the head, going into the mouth.
+  const SEGS = 84;
+  const GAP_DEG = 14;
+  const SPAN = 360 - GAP_DEG;
+
+  const segs = [];
+
+  function polar(deg, r = R) {
+    const a = (deg - 90) * Math.PI / 180;
+    return [CX + r * Math.cos(a), CY + r * Math.sin(a)];
+  }
+
+  // Body: tapered circles from tail tip (i=0) to neck (i=SEGS-1).
+  // Taper lives in the last quarter toward the tail; the rest is full body.
+  for (let i = 0; i < SEGS; i++) {
+    const t = i / (SEGS - 1);              // 0 = tail tip, 1 = neck
+    const deg = GAP_DEG / 2 + t * SPAN;    // head sits near 360 - GAP/2
+    const taper = Math.min(1, t / 0.25);   // thin tail, quick ramp to body
+    const r = 2.5 + taper * 11;
+    const [x, y] = polar(deg);
+    const c = document.createElementNS(NS, 'circle');
+    c.setAttribute('cx', x); c.setAttribute('cy', y); c.setAttribute('r', r);
+    // Alternating scales, darkening slightly toward the tail being eaten.
+    const scale = i % 2 ? 'var(--scale-a)' : 'var(--scale-b)';
+    c.setAttribute('fill', scale);
+    c.setAttribute('class', 'seg');
+    snake.appendChild(c);
+    segs.push(c);
+  }
+
+  // Head: drawn last, over the neck, mouth toward the tail tip across the gap.
+  const headDeg = 360 - GAP_DEG / 2 + 2;
+  const [hx, hy] = polar(headDeg);
+  const head = document.createElementNS(NS, 'g');
+  head.setAttribute('class', 'seg');
+  const skull = document.createElementNS(NS, 'ellipse');
+  skull.setAttribute('cx', hx); skull.setAttribute('cy', hy);
+  skull.setAttribute('rx', 17); skull.setAttribute('ry', 14);
+  // Rotate the skull to lie along the ring's tangent at its position.
+  skull.setAttribute('transform', `rotate(${headDeg} ${hx} ${hy})`);
+  skull.setAttribute('fill', 'var(--scale-a)');
+  head.appendChild(skull);
+  // Eye: offset outward from the ring so it reads at any rotation.
+  const [ex, ey] = polar(headDeg - 1.5, R + 6);
+  const eye = document.createElementNS(NS, 'circle');
+  eye.setAttribute('cx', ex); eye.setAttribute('cy', ey); eye.setAttribute('r', 2.6);
+  eye.setAttribute('fill', '#0b0e0c');
+  head.appendChild(eye);
+  const glint = document.createElementNS(NS, 'circle');
+  glint.setAttribute('cx', ex + 1); glint.setAttribute('cy', ey - 1); glint.setAttribute('r', .8);
+  glint.setAttribute('fill', 'var(--bone)');
+  head.appendChild(glint);
+  snake.appendChild(head);
+  segs.push(head);
+
+  // ── Loading-bar duty ───────────────────────────────────────────────────
+  // The ring IS the load indicator: the snake draws in tail-first, and when
+  // the circle closes (head placed, bite complete) the menu is allowed in.
+  // A real game shell can drive this instead via OURABORIS_TITLE.setProgress.
+  let shown = 0;
+  function setProgress(p) {
+    const target = Math.max(0, Math.min(segs.length, Math.floor(p * segs.length)));
+    while (shown < target) segs[shown++].classList.add('on');
+    if (shown >= segs.length) complete();
+  }
+
+  let done = false;
+  function complete() {
+    if (done) return; done = true;
+    snake.classList.add('spin');
+    document.getElementById('title').classList.add('on');
+    document.getElementById('buttons').classList.add('on');
+    document.getElementById('footer').classList.add('on');
+    seamTimer();
+  }
+
+  // Self-driven load (~2.6s) when nothing external calls setProgress.
+  let auto = true;
+  const t0 = performance.now();
+  (function tick(now) {
+    if (!auto || done) return;
+    setProgress((now - t0) / 2600);
+    requestAnimationFrame(tick);
+  })(t0);
+
+  window.OURABORIS_TITLE = {
+    setProgress(p) { auto = false; setProgress(p); }
+  };
+
+  // ── The seam ───────────────────────────────────────────────────────────
+  // Every so often the ring stutters for a single frame-pair. Threshold 0's
+  // one deniable crack, living on the title screen where no one can be sure
+  // they saw it.
+  function seamTimer() {
+    setTimeout(() => {
+      snake.classList.remove('seam');
+      void snake.offsetWidth; // restart the animation
+      snake.classList.add('seam');
+      seamTimer();
+    }, 9000 + Math.random() * 8000);
+  }
+
+  // ── New Game ───────────────────────────────────────────────────────────
+  document.getElementById('newgame').addEventListener('click', () => {
+    document.getElementById('shroud').classList.add('on');
+    // Integration point: the game shell listens for this and starts Loop 01.
+    window.dispatchEvent(new CustomEvent('ouraboris:newgame'));
+  });
+})();
+</script>
+</body>
+</html>
