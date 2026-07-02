@@ -69,18 +69,38 @@ Leggatt, Conrad's double, gives us the register. The mirror self:
 ## 3. Pre-scene escalation (Threshold 1 mirror beats)
 
 The scene only pays off if the mirror has been quietly wrong for a while.
-Cosmetic-leakage beats, in order, spread across Threshold 1:
+Cosmetic-leakage beats, in order, spread across Threshold 1. The escalation
+starts only after the 0→1 crossing (touching the visible crack — patch P4).
+
+**Pacing rule (patch P1 — attention is an accelerant):** each beat arrives
+on the ambient-drift clock *or* sooner if provoked. The attention hook for
+this ladder is deliberate observation of reflective surfaces: stopping the
+bike to watch glass, revisiting the surface where the last beat fired,
+holding still in front of a reflection longer than routine needs. A naive
+player never notices the rule; an aware player can drag the whole
+escalation into days.
 
 1. **The lag.** Reflection is a few frames behind. Deniable.
+   *Attention hook: watching any large surface for a held beat.*
 2. **The hold.** Player turns away; in a second reflective surface (window,
    puddle) the reflection is still facing them.
+   *Attention hook: returning to the surface where the lag fired.*
 3. **The habit.** Reflection does something the player character does
    habitually — before the player does it.
+   *Attention hook: performing the habit deliberately in front of glass.*
 4. **The mouth.** Reflection speaks; no audio. If the player finds the same
    moment reflected elsewhere, lip-readable: *"soon."*
+   *Attention hook: seeking a second angle on the same reflection.*
 5. **The vacancy.** The mirror shows the room correctly — without the player
    in it. This is the last beat before the scene. From here on, no
    reflective surface in the world carries the player.
+   **Gate (patch P2 — leaks are load-bearing):** the vacancy cannot fire
+   until the player has read **K lore leaks** (tune K; 3 is the working
+   number). Canon logic: the Sharer can only step fully out once the player
+   holds enough of the world's account to carry its side. This is what
+   gives "I kept the account" mechanical teeth — and it means a player who
+   ignores the reward economy stalls at beat 4, with the mouth in the glass
+   saying *"soon"* until they go reading.
 
 ## 4. Location options (the menu — pick one to make it lived-in)
 
@@ -276,6 +296,27 @@ the player has accepted the new commute — between worlds, not across town.]
   *speaking to it* the transgression — you answer the thing, you own the
   step. The deferral re-encounter should be cheap: same script, new
   location, the SELF resumes as if no time passed (it always resumes).
+- **Speaking first works (patch P3).** From beat §3.3 onward, the player
+  can address a misbehaving reflection aloud. If the §3.5 gates are met
+  (vacancy conditions satisfied — including the K lore leaks), the scene
+  fires **early, wherever they are**, off-train, with a variant opening:
+  the SELF, addressed first, is *thrown*. Its entire register is built on
+  resuming — the one thing it cannot do is enter a conversation the other
+  side started. It recovers its calm within a line or two, but the crack
+  shows, and it never quite forgives the discourtesy:
+
+  > **SELF:** *(a silence too long for it — then, carefully)* …That isn't
+  > how this goes. You're supposed to— *(it stops; recomposes; when it
+  > speaks again the calm is back on, like a coat)* No. All right. You
+  > spoke first. Then you already know what I'm going to ask.
+
+  A first-loop player will almost never find this; an NG+ run almost
+  certainly will. This is NG+'s signature moment on this rung, and the
+  proof that the ladder is knowledge-gated: what you know changes what you
+  can do, down to who opens the scene. If spoken to before the gates are
+  met, the reflection only holds the player's gaze a beat too long —
+  acknowledgment without rules-breaking, and itself a cue that the attempt
+  was *heard*.
 - **The SELF as Threshold 2 content engine.** Post-scene, it anchors spatial
   leakage: it can lead the player to out-of-bounds entries, comment on
   decayed rooms from the inside ("this one closed badly"), and deliver lore

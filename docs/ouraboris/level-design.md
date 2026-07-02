@@ -65,8 +65,10 @@ four layers that must all advance together:
 - *Reveal:* none. The world presents as whole and self-consistent.
 - *Decay:* hidden. One or two seams exist but are deniable ("that's just a
   weird texture").
-- *Leakage:* none accessible. The player can *see* one crack they cannot
-  touch — this is the promise.
+- *Leakage:* none accessible. The player can *see* one crack — this is the
+  promise, and **touching it is the 0→1 crossing** (patch P4): a deliberate,
+  self-inflicted act, same shape as every other rung. Until it is touched,
+  the world stays intact and the Threshold 1 escalation never starts.
 - *Reach:* baseline verbs, fully rule-bound.
 
 **Threshold 1 — The First Seam**
@@ -135,6 +137,15 @@ four layers that must all advance together:
   not a missing inventory item. A leak the player hasn't learned to read is
   invisible; once read, it was "always there." This makes replays and NG+
   rich — the world was never actually hiding anything.
+- **Attention is an accelerant (patch P1).** Decay escalation is not purely
+  on the world's clock: *deliberate observation advances it.* Watching a
+  misbehaving surface, lingering at a seam, returning to a symptom — these
+  provoke the next beat sooner. A naive player never notices the rule and
+  gets the ambient pacing; an aware player who knows where to look and that
+  looking matters can drag a crossing forward by days. This is what makes
+  the knowledge gates real (and the NG+ speedrun claim true): meta-awareness
+  is the corrosive agent, and looking hard at the world is what cracks it.
+  Every threshold's escalation beats must specify their attention hooks.
 - **No going back, plenty of going down.** Crossing a threshold decays the
   world permanently for that run. Lower-threshold content isn't locked away —
   it's *transformed*, and revisiting it through new leakage classes is the

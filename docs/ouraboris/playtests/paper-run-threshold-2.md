@@ -106,7 +106,12 @@ the clock, not by design intent.
 | F3 | Critical | The T1→T2 crossing is time-gated, not knowledge-gated. A fully-aware player can't accelerate it at all, breaking the NG+ speedrun promise and the gating pillar. |
 | F4 | Low | Player-initiated speech to reflections has no defined behavior (Attempt 3). Currently a dead input; it's also the most obvious thing an aware player will try. |
 
-## 4. Proposed patches (Director to approve — none applied yet)
+## 4. Patches — **APPROVED & APPLIED (Director, 2026-07-02)**
+
+All four patches below are now folded into the level-design doc (P1 → §4
+gating, P4 → Threshold 0 entry) and the scene doc (P1 → §3 pacing rule and
+per-beat attention hooks, P2 → §3.5 vacancy gate, P3 → §6 speak-first
+variant with scripted opening). F1–F4 are resolved.
 
 **P1 (fixes F3, F1's spirit): attention accelerates the drift.** Make
 *observation* a decay accelerant: deliberately watching reflective surfaces
@@ -139,8 +144,15 @@ rung the same shape as the rest of the ladder.
 
 ## 5. Answer to the Director
 
-**Can Ouroboros access level 2?** As the rules stand: it can *arrive* —
-the scene fires, the answer crosses, the ghost station opens — but it
-cannot *access* it in any meaningful sense, because nothing it knows or
-does moves the date. The world lets it in; it doesn't break in. With P1–P4,
-Ouroboros breaks in — which is what the game says it's about.
+**Can Ouroboros access level 2?** Under the original rules: it could
+*arrive* — the scene fires, the answer crosses, the ghost station opens —
+but it could not *access* it in any meaningful sense, because nothing it
+knew or did moved the date. The world let it in; it didn't break in.
+
+**Post-patch re-run (P1–P4 applied):** Ouroboros touches the visible crack
+on day one (P4 — Threshold 1 opens immediately), reads the three nearest
+lore leaks while staring down every surface on the ride route (P1 — beats
+1–4 provoked in days, P2 — vacancy gate met), then addresses the empty
+glass aloud (P3) and takes the crossing on its own initiative, off-train,
+with a rattled Sharer. **Access achieved — by knowledge, not by calendar.**
+The naive player's experience is untouched. The rung holds; the coil turns.
