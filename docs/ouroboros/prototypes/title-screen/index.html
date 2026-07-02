@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OUROBOROS</title>
+<style>
+  :root {
+    --bg: #0b0e0c;
+    --bone: #d8d3c4;
+    --bone-dim: #8a877c;
+    --scale-a: #3f5a44;
+    --scale-b: #2e4536;
+    --scale-glow: #6d9a76;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--bone);
+    font-family: "Courier New", ui-monospace, monospace;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    user-select: none;
+  }
+  body::after {
+    content: ""; position: fixed; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at center,
+      transparent 40%, rgba(0,0,0,.55) 100%);
+  }
+
+  .stage { position: relative; width: min(80vmin, 640px); height: min(80vmin, 640px); }
+
+  /* The seam lives on the svg, the spin on the group inside it, so the two
+     transform animations never fight. */
+  svg {
+    width: 100%; height: 100%; display: block;
+    animation: seam 13s steps(2, end) infinite 6s;
+  }
+  #snake {
+    transform-origin: 300px 300px;
+    animation: spin 26s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Threshold-0 foreshadowing: once per cycle, for a frame-pair, the ring
+     isn't quite right. Deniable ("that's just a weird texture"). */
+  @keyframes seam {
+    0%, 96%   { transform: none; filter: none; }
+    96.4%, 96.8% { transform: translate(2px,-1px); filter: saturate(.2) brightness(1.5); }
+    97%, 100% { transform: none; filter: none; }
+  }
+
+  /* Load-in: the ring IS the loading bar. Each segment carries its own
+     delay (--d, tail-first); the head lands last and closes the bite. */
+  .seg { opacity: 0; animation: appear .18s ease forwards; animation-delay: var(--d); }
+  @keyframes appear { to { opacity: 1; } }
+
+  .menu {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: .6rem; text-align: center;
+  }
+  h1 {
+    font-size: clamp(1.3rem, 3.8vmin, 2rem);
+    font-weight: 400;
+    letter-spacing: .45em;
+    text-indent: .45em;
+    opacity: 0;
+    animation: appear 1.6s ease forwards 2.6s;
+  }
+  .buttons {
+    display: flex; flex-direction: column; gap: .4rem; margin-top: 1.4rem;
+    opacity: 0; animation: appear 1.2s ease forwards 2.9s;
+  }
+  .btn, button {
+    background: none; border: none; display: block;
+    color: var(--bone);
+    font: inherit; font-size: clamp(.8rem, 2.2vmin, 1rem);
+    letter-spacing: .35em; text-indent: .35em;
+    padding: .5em 1.2em;
+    cursor: pointer;
+  }
+  .btn:hover, .btn:focus-visible { color: var(--scale-glow); outline: none; }
+  .btn:hover::before, .btn:focus-visible::before { content: "\203A "; margin-right: -.35em; }
+  button:disabled { color: #3a3d38; cursor: default; }
+
+  .footer {
+    position: fixed; bottom: 4vh; left: 0; right: 0;
+    text-align: center;
+    font-size: .65rem; letter-spacing: .25em; text-indent: .25em;
+    color: var(--bone-dim);
+    opacity: 0; animation: appear 2s ease forwards 3.6s;
+  }
+
+  /* NEW GAME works with no scripts at all: a checkbox holds the state and
+     the shroud answers to :checked. JS, when present, only adds the shell
+     event on top. */
+  #ng { position: absolute; opacity: 0; pointer-events: none; }
+  .shroud {
+    position: fixed; inset: 0; background: #000;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 1rem;
+    opacity: 0; pointer-events: none;
+    transition: opacity 1.8s ease;
+  }
+  #ng:checked ~ .shroud { opacity: 1; pointer-events: all; }
+  .shroud .loop { letter-spacing: .5em; text-indent: .5em; font-size: 1rem; }
+  .shroud .line {
+    color: var(--bone-dim); font-size: .7rem;
+    letter-spacing: .2em; text-indent: .2em;
+    opacity: 0; transition: opacity 2.4s ease 1.6s;
+  }
+  #ng:checked ~ .shroud .line { opacity: 1; }
+</style>
+</head>
+<body>
+
+<input type="checkbox" id="ng">
+
+<div class="stage">
+  <svg viewBox="0 0 600 600" aria-label="An ouroboros: a snake eating its own tail, circling.">
+    <g id="snake">
+      <circle class="seg" style="--d:0.00s" cx="325.0" cy="96.5" r="2.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:0.03s" cx="339.7" cy="98.9" r="3.0" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:0.06s" cx="354.2" cy="102.3" r="3.6" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:0.09s" cx="368.5" cy="106.8" r="4.1" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:0.12s" cx="382.3" cy="112.3" r="4.6" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:0.14s" cx="395.7" cy="118.7" r="5.2" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:0.17s" cx="408.7" cy="126.2" r="5.7" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:0.20s" cx="421.0" cy="134.5" r="6.2" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:0.23s" cx="432.7" cy="143.8" r="6.7" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:0.26s" cx="443.7" cy="153.8" r="7.3" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:0.29s" cx="454.0" cy="164.7" r="7.8" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:0.32s" cx="463.4" cy="176.2" r="8.3" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:0.35s" cx="472.0" cy="188.4" r="8.9" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:0.38s" cx="479.6" cy="201.2" r="9.4" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:0.40s" cx="486.3" cy="214.5" r="9.9" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:0.43s" cx="492.1" cy="228.3" r="10.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:0.46s" cx="496.8" cy="242.5" r="11.0" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:0.49s" cx="500.4" cy="256.9" r="11.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:0.52s" cx="503.0" cy="271.6" r="12.0" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:0.55s" cx="504.6" cy="286.4" r="12.6" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:0.58s" cx="505.0" cy="301.3" r="13.1" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:0.61s" cx="504.4" cy="316.2" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:0.64s" cx="502.6" cy="331.0" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:0.67s" cx="499.8" cy="345.7" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:0.69s" cx="496.0" cy="360.1" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:0.72s" cx="491.1" cy="374.2" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:0.75s" cx="485.2" cy="387.9" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:0.78s" cx="478.3" cy="401.1" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:0.81s" cx="470.5" cy="413.8" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:0.84s" cx="461.8" cy="425.9" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:0.87s" cx="452.2" cy="437.3" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:0.90s" cx="441.8" cy="448.0" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:0.93s" cx="430.7" cy="457.9" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:0.95s" cx="418.9" cy="467.0" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:0.98s" cx="406.4" cy="475.2" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:1.01s" cx="393.4" cy="482.5" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:1.04s" cx="379.9" cy="488.8" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:1.07s" cx="365.9" cy="494.1" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:1.10s" cx="351.6" cy="498.4" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:1.13s" cx="337.1" cy="501.6" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:1.16s" cx="322.3" cy="503.8" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:1.19s" cx="307.5" cy="504.9" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:1.21s" cx="292.5" cy="504.9" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:1.24s" cx="277.7" cy="503.8" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:1.27s" cx="262.9" cy="501.6" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:1.30s" cx="248.4" cy="498.4" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:1.33s" cx="234.1" cy="494.1" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:1.36s" cx="220.1" cy="488.8" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:1.39s" cx="206.6" cy="482.5" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:1.42s" cx="193.6" cy="475.2" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:1.45s" cx="181.1" cy="467.0" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:1.47s" cx="169.3" cy="457.9" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:1.50s" cx="158.2" cy="448.0" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:1.53s" cx="147.8" cy="437.3" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:1.56s" cx="138.2" cy="425.9" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:1.59s" cx="129.5" cy="413.8" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:1.62s" cx="121.7" cy="401.1" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:1.65s" cx="114.8" cy="387.9" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:1.68s" cx="108.9" cy="374.2" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:1.71s" cx="104.0" cy="360.1" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:1.73s" cx="100.2" cy="345.7" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:1.76s" cx="97.4" cy="331.0" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:1.79s" cx="95.6" cy="316.2" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:1.82s" cx="95.0" cy="301.3" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:1.85s" cx="95.4" cy="286.4" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:1.88s" cx="97.0" cy="271.6" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:1.91s" cx="99.6" cy="256.9" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:1.94s" cx="103.2" cy="242.5" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:1.97s" cx="107.9" cy="228.3" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:2.00s" cx="113.7" cy="214.5" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:2.02s" cx="120.4" cy="201.2" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:2.05s" cx="128.0" cy="188.4" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:2.08s" cx="136.6" cy="176.2" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:2.11s" cx="146.0" cy="164.7" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:2.14s" cx="156.3" cy="153.8" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:2.17s" cx="167.3" cy="143.8" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:2.20s" cx="179.0" cy="134.5" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:2.23s" cx="191.3" cy="126.2" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:2.26s" cx="204.3" cy="118.7" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:2.28s" cx="217.7" cy="112.3" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:2.31s" cx="231.5" cy="106.8" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:2.34s" cx="245.8" cy="102.3" r="13.5" fill="var(--scale-a)"/>
+      <circle class="seg" style="--d:2.37s" cx="260.3" cy="98.9" r="13.5" fill="var(--scale-b)"/>
+      <circle class="seg" style="--d:2.40s" cx="275.0" cy="96.5" r="13.5" fill="var(--scale-a)"/>
+      <g class="seg" style="--d:2.40s">
+        <ellipse cx="282.1" cy="95.8" rx="17" ry="14" transform="rotate(355.0 282.1 95.8)" fill="var(--scale-a)"/>
+        <circle cx="276.1" cy="90.4" r="2.6" fill="#0b0e0c"/>
+        <circle cx="277.1" cy="89.4" r=".8" fill="var(--bone)"/>
+      </g>
+    </g>
+  </svg>
+
+  <div class="menu">
+    <h1>OUROBOROS</h1>
+    <div class="buttons">
+      <label class="btn" for="ng" tabindex="0" role="button">NEW GAME</label>
+      <button id="continue" disabled title="no loop found">CONTINUE</button>
+    </div>
+  </div>
+</div>
+
+<div class="footer">the world presents as whole and self-consistent</div>
+
+<div class="shroud">
+  <div class="loop">LOOP 01</div>
+  <div class="line">the chain has never snapped. the glass has never lagged.</div>
+</div>
+
+<script>
+/* Optional enhancement only — every visual above runs on pure CSS.
+   With scripts available, the shell gets its integration hooks. */
+(() => {
+  const ng = document.getElementById('ng');
+  ng.addEventListener('change', () => {
+    if (ng.checked) window.dispatchEvent(new CustomEvent('ouroboros:newgame'));
+  });
+  // Keyboard support for the label-as-button.
+  document.querySelector('label[for="ng"]').addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ng.click(); }
+  });
+  // Shell-driven loading: first call takes over from the CSS self-load.
+  const segs = [...document.querySelectorAll('.seg')];
+  let manual = false, shown = 0;
+  window.OUROBOROS_TITLE = {
+    setProgress(p) {
+      if (!manual) { manual = true; segs.forEach(s => { s.style.animation = 'none'; s.style.opacity = 0; }); shown = 0; }
+      const target = Math.max(0, Math.min(segs.length, Math.floor(p * segs.length)));
+      while (shown < target) segs[shown++].style.opacity = 1;
+    }
+  };
+})();
+</script>
+</body>
+</html>

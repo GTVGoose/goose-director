@@ -1,0 +1,73 @@
+# Ouroboros — UI Spec: Title Screen / Main Menu
+
+**Status:** Spec + working prototype
+**Prototype:** `docs/ouroboros/prototypes/title-screen/index.html`
+(self-contained — open in any browser, no build step, **works with
+JavaScript disabled**: the snake, load-in, menu, and New Game transition
+are pure HTML/CSS; scripts only add the shell hooks)
+**Origin:** Director, 2026-07-02 — the game currently opens straight into
+the first loop; it needs a landing page.
+
+---
+
+## 1. Concept
+
+The title card **is** the ouroboros **is** the loading bar. One image doing
+three jobs:
+
+- A snake eating its own tail, circling — conveys the game before the name
+  does.
+- The ring is the load indicator: the snake draws in tail-first, and when
+  the circle closes (the bite completes) the menu is allowed in. Loading is
+  never a separate screen; the game opens by *forming the loop*.
+- The name **OUROBOROS** sits inside the ring, with NEW GAME below it.
+
+## 2. Behavior
+
+1. **Load-in (~2.6s self-driven, or shell-driven).** Segments appear
+   tail-tip-first around the circle. The head lands last — the bite closes
+   the loop. A real shell drives it via
+   `window.OUROBOROS_TITLE.setProgress(0..1)`; with no driver, the
+   prototype self-animates.
+2. **Idle.** The completed snake rotates slowly (26s/rev), forever chasing
+   the tail it's already eating. Title, buttons, and footer fade in.
+3. **The seam.** Every 9–17 seconds the ring stutters for a single
+   frame-pair — a two-frame jitter and desaturation, then normal. This is
+   Threshold 0's one deniable crack, living on the title screen where no
+   one can be sure they saw it. Do not make it more legible than this.
+4. **NEW GAME.** Fades to black → `LOOP 01` → the line *"the chain has
+   never snapped. the glass has never lagged."* The prototype dispatches a
+   `ouroboros:newgame` CustomEvent on `window` as the shell integration
+   point.
+5. **CONTINUE.** Disabled when no save exists (tooltip: "no loop found").
+   On NG+ saves, later, this menu is a leakage surface of its own —
+   candidate beats: the snake rotating the *wrong* way, the seam firing
+   more often, the footer line no longer true. Out of scope for v1.
+
+## 3. Visual language
+
+- Palette: near-black green-cast background (`#0b0e0c`), bone text
+  (`#d8d3c4`), two alternating scale greens (`#3f5a44` / `#2e4536`).
+  Monospaced type, wide letterspacing, no decoration. The vignette pools
+  the dark around the ring.
+- The snake is built from ~84 tapered segments (thin tail ramping to full
+  body over the first quarter) with an elliptical head, dark eye, bone
+  glint. The tail's thin tip crosses the small gap into the head — the
+  bite reads at any rotation.
+- Menu actions are text-only; hover shows a `›` cursor and the scale-glow
+  green. No panels, no chrome. The screen is the ring, the name, two
+  verbs, and one line of small print.
+
+## 4. Integration notes
+
+- Single HTML file, zero dependencies. The snake is static SVG markup
+  (pre-generated, tapered segments each carrying its own load-in delay);
+  all animation is CSS; NEW GAME state is a checkbox so the transition
+  works even in script-blocked previews. Port by lifting the markup and
+  `<style>` block, or re-implement from this spec in the engine's UI
+  layer.
+- Hooks exposed: `OUROBOROS_TITLE.setProgress(p)` (drive the load),
+  `ouroboros:newgame` event (start Loop 01).
+- The footer line ("the world presents as whole and self-consistent") is
+  Threshold 0's reveal-state sentence from the level-design doc — keep it
+  synced with canon if that phrasing changes.
