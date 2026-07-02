@@ -21,11 +21,14 @@ reach — so progress is legible in the fiction, in the world, and in the hands.
 ## 2. Design pillars
 
 1. **Decay is progress.** The core reveal of the game is that the world state
-   is decaying — the simulation is breaking down. We invert the usual framing:
-   instead of the player restoring a broken world, *advancement causes and
-   exposes the breakdown*. Every threshold crossed makes the world less
-   stable and the player more capable. The ouroboros eats itself; the player
-   climbs the coils as they unravel.
+   is decaying — the simulation is breaking down. The decay **pre-exists the
+   player** (it is discovered), but **the player's advancement accelerates
+   it** (it is caused). We invert the usual framing: instead of the player
+   restoring a broken world, exploration exposes the breakdown and each
+   threshold crossing deepens it. Every threshold crossed makes the world
+   less stable and the player more capable. The ouroboros eats itself; the
+   player climbs the coils as they unravel — and their climbing is part of
+   why they unravel.
 
 2. **Leakage is the reward currency.** When the "matrix" cracks, it leaks.
    Leakage is where the impossible becomes possible: lore that shouldn't be
@@ -78,8 +81,11 @@ four layers that must all advance together:
   doesn't, once, in a marked place). The player learns cracks are *usable*.
 
 **Threshold 2 — The Breach**
-- *Reveal:* the decay is systemic and accelerating, and crossing thresholds
-  is what accelerates it. The player learns they are complicit.
+- *Reveal:* the decay is systemic, and it is *old* — lore leaks from
+  Threshold 1 date the first cracks to long before the player existed. But
+  it is now accelerating, and crossing thresholds is what accelerates it.
+  The player learns they didn't break the world — they are what its slow
+  death sped up for.
 - *Decay:* structural — whole rooms de-render and re-render wrong; NPCs
   occasionally address the player's *previous run*.
 - *Leakage:* **spatial leaks.** Out-of-bounds becomes canonical space. Places
@@ -180,21 +186,47 @@ the same tail twice.
   ("I own this space now") and loss ("it used to be whole"). If it only
   provokes power, decay is reading as cosmetic.
 
-## 8. Open questions
+## 8. Decided: the player both discovers and causes the decay
+
+**Director decision (2026-07-02):** the decay pre-exists the player *and* the
+player's advancement accelerates it. A hybrid only muddies the theme if the
+two halves blur together, so we keep them clean by separating them in **time**
+and in **kind**:
+
+- **Separated in time (two distinct beats).** Threshold 1 is the pure
+  discovery beat: the world was already cracking, the player is innocent, the
+  feeling is dread. Threshold 2 is the pure causation beat: crossings
+  accelerate the decay, the player is complicit, the feeling is weight. Never
+  deliver both in the same reveal — each gets its own threshold so each lands
+  at full strength.
+- **Separated in kind (two decay rates).** The world's own decay is a slow
+  ambient drift — background symptoms that worsen gradually and would
+  continue without the player. The player's contribution is **step-change**:
+  every threshold crossing (and every keystone leak exploited) visibly
+  ratchets the decay state. Ambient drift creates dread ("this ends with or
+  without me"); player-driven steps create agency and cost ("and I am
+  choosing to hurry it"). The player can always tell which decay they caused,
+  because theirs arrives as a lurch, not a slide.
+- **The thematic payoff.** By Threshold 4 the question "did I do this?" has a
+  precise answer: *no, and yes.* The world was always going to die; the
+  player chose to be present for it — chose to make their capability out of
+  its death. That is the ouroboros bargain, and it's what makes the final
+  loop-or-let-go choice mean something: looping again means feeding on the
+  world's decline again, knowingly.
+
+## 9. Open questions
 
 1. **Threshold count and pacing** — five is a reference shape; the right
    number depends on total playtime and how much content each decay state
    needs.
-2. **Is the player the cause of decay, or its discoverer?** Section 3 assumes
-   complicity (Threshold 2 reveal). The alternative — decay happens on a
-   clock regardless — trades agency for dread. Pick one; hybrid muddies both.
-3. **Character meta-awareness in NG+** — does the *character* remember loops,
+2. **Character meta-awareness in NG+** — does the *character* remember loops,
    or only the player? Character memory enables dialogue payoffs but costs us
    the ability to replay early sincerity.
-4. **Failure state under decay** — what does death/failure mean at Threshold
-   3–4 when the world barely enforces rules? (Candidate: failure feeds decay,
-   accelerating the run toward the crossing whether you're ready or not.)
-5. **Scope control** — spatial leaks (Threshold 2) mean building canonical
+3. **Failure state under decay** — what does death/failure mean at Threshold
+   3–4 when the world barely enforces rules? (Candidate: failure feeds the
+   ambient drift — a slide, not a lurch, so it reads as the world claiming
+   you rather than you spending it.)
+4. **Scope control** — spatial leaks (Threshold 2) mean building canonical
    out-of-bounds space for existing levels. That is close to doubling level
    art surface. Mitigation: decayed space can be *cheaper* than intact space
    by design (unlit, untextured, scaffold-styled) — the aesthetic of the
