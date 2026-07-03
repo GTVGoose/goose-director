@@ -5,10 +5,11 @@ import AgentMap from './components/AgentMap.jsx'
 import StatusLayer from './components/StatusLayer.jsx'
 import CanonState from './components/CanonState.jsx'
 import Invoke from './components/Invoke.jsx'
-import Sandbox from './components/Sandbox.jsx'
 import Knowledge from './components/Knowledge.jsx'
-import Membrane from './components/Membrane.jsx'
 import Settings from './components/Settings.jsx'
+import Setup from './components/Setup.jsx'
+import { applyAccent } from './theme.js'
+import { personalViews, personalViewMeta } from './personal-extensions.jsx'
 
 export default function App() {
   const [view, setView] = useState('dashboard')
@@ -16,22 +17,28 @@ export default function App() {
   const [statusData, setStatusData] = useState({ entries: [] })
   const [canonDocs, setCanonDocs] = useState([])
   const [health, setHealth] = useState(null)
+  const [ui, setUi] = useState({})
   const [loading, setLoading] = useState(true)
   const [lastRefresh, setLastRefresh] = useState(new Date())
 
   const refresh = async () => {
     setLoading(true)
     try {
-      const [agentsRes, statusRes, canonRes, healthRes] = await Promise.all([
+      const [agentsRes, statusRes, canonRes, healthRes, configRes] = await Promise.all([
         fetch('/api/agents'),
         fetch('/api/status'),
         fetch('/api/canon'),
         fetch('/api/health'),
+        fetch('/api/config'),
       ])
       setAgents(await agentsRes.json())
       setStatusData(await statusRes.json())
       setCanonDocs(await canonRes.json())
       setHealth(await healthRes.json())
+      const cfg = await configRes.json()
+      setUi(cfg.ui || {})
+      applyAccent(cfg.ui?.accent)
+      document.title = cfg.vaultName ? `Nexus — ${cfg.ui?.consoleName || cfg.vaultName}` : 'Nexus'
       setLastRefresh(new Date())
     } catch (e) {
       console.error('API error:', e)
@@ -44,16 +51,20 @@ export default function App() {
   const escalations = statusData.entries.filter(e => e.status === 'ESCALATION_REQUIRED').length
   const reviews = statusData.entries.filter(e => e.status === 'REVIEW_WHEN_READY').length
 
+  // First run / broken harness: repo missing → walk through vault connection
+  if (health && health.repoFound === false) {
+    return <Setup onDone={refresh} />
+  }
+
   const VIEW_META = {
     dashboard: { label: 'Overview',      sub: 'System state' },
-    agents:    { label: 'Agents',        sub: 'Posture map' },
+    agents:    { label: 'Agents',        sub: 'Roster — click an agent for detail' },
     knowledge: { label: 'Knowledge',     sub: 'Canon index' },
     status:    { label: 'Status Layer',  sub: 'Background activity' },
     canon:     { label: 'Canon State',   sub: 'Boundary map' },
     invoke:    { label: 'Invoke',        sub: 'Send work to agents and models' },
-    sandbox:   { label: 'Sandbox',       sub: 'Multi-model council' },
-    membrane:  { label: 'Membrane',      sub: 'SFS Vault shared-intelligence layer' },
     settings:  { label: 'Settings',     sub: 'API keys and configuration' },
+    ...personalViewMeta,   // personal-only views (empty in the product build)
   }
 
   const meta = VIEW_META[view] || VIEW_META.dashboard
@@ -65,6 +76,7 @@ export default function App() {
         onNav={setView}
         escalations={escalations}
         reviews={reviews}
+        vaultName={ui.consoleName || health?.vaultName}
       />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
@@ -156,11 +168,11 @@ export default function App() {
           {view === 'agents' && <AgentMap agents={agents} onInvoke={() => setView('invoke')} />}
           {view === 'status' && <StatusLayer entries={statusData.entries} />}
           {view === 'canon' && <CanonState docs={canonDocs} />}
-          {view === 'invoke' && <Invoke canonDocs={canonDocs} />}
-          {view === 'sandbox' && <Sandbox canonDocs={canonDocs} />}
+          {view === 'invoke' && <Invoke canonDocs={canonDocs} onNav={setView} />}
           {view === 'knowledge' && <Knowledge />}
-          {view === 'membrane' && <Membrane />}
           {view === 'settings' && <Settings />}
+          {/* personal-only views (empty in the product build) */}
+          {personalViews[view] && personalViews[view]({ canonDocs, onNav: setView })}
         </main>
       </div>
     </div>

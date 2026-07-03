@@ -20,7 +20,7 @@ export default function CanonState({ docs }) {
           { label: 'Canon',        count: byStatus('Canon'),       note: 'Fully approved' },
           { label: 'Development',  count: byStatus('Development'), note: 'Active, not final' },
           { label: 'Candidate',    count: byStatus('Candidate'),   note: 'Proposed for canon' },
-          { label: 'Archive / Other', count: other,                note: 'Legacy or unclassified' },
+          { label: 'No status / other', count: other,             note: 'Missing a Canon Status header' },
         ].map(s => (
           <div key={s.label} style={{
             background: 'var(--color-surface)',
@@ -88,7 +88,7 @@ export default function CanonState({ docs }) {
             {docs.length === 0 && (
               <tr>
                 <td colSpan={5} style={{ padding: '20px', textAlign: 'center', fontSize: 13, color: 'var(--color-text-3)' }}>
-                  No documents found. Check goose.config.json → repoPath.
+                  No canon documents in this vault yet. Add a "Canon Status" header to a doc and it will appear here.
                 </td>
               </tr>
             )}

@@ -61,6 +61,21 @@ try {
   }
 } catch {}
 
+// Resolve secrets from the macOS Keychain when a .env didn't provide them — keeps
+// API keys/tokens out of any plaintext file. Store one with:
+//   security add-generic-password -U -a "$USER" -s ANTHROPIC_API_KEY -w '<value>'
+try {
+  for (const key of ['ANTHROPIC_API_KEY', 'TELEGRAM_BOT_TOKEN', 'NOTIFY_SECRET']) {
+    if (process.env[key]) continue
+    try {
+      const v = execFileSync('/usr/bin/security',
+        ['find-generic-password', '-a', process.env.USER || os.userInfo().username, '-s', key, '-w'],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+      if (v) { process.env[key] = v; console.log('[ENV] Loaded', key, 'from Keychain') }
+    } catch { /* not in Keychain — leave unset */ }
+  }
+} catch {}
+
 
 const app = express()
 app.use(cors())

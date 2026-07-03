@@ -93,17 +93,24 @@ export default function ThreadTOC({ conversation, visible, onToggle, onScrollTo 
         )}
       </button>
 
-      {/* Panel */}
+      {/* Panel — floats over the conversation, capped and scrollable */}
       {visible && (
         <div style={{
+          position: 'absolute',
+          top: 36,
+          right: 0,
           width: 260,
-          background: 'var(--color-surface)',
-          border: '0.5px solid var(--color-border)',
+          maxHeight: '62vh',
+          background: 'var(--color-surface-2)',
+          border: '0.5px solid var(--color-border-mid)',
           borderRadius: 10,
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
           flexShrink: 0,
+          zIndex: 30,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5), 0 1px 2px rgba(0,0,0,0.4)',
+          animation: 'fade-in var(--dur-fast) var(--ease-out)',
         }}>
           {/* Header */}
           <div style={{

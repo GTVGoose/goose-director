@@ -105,7 +105,7 @@ export default function Knowledge() {
           {view === 'docs' && !loading && filtered.length === 0 && (
             <div style={{ fontSize: 13, color: 'var(--color-text-3)', padding: 8 }}>
               {docs.length === 0
-                ? 'No documents found. Check goose.config.json → repoPath.'
+                ? 'No documents indexed yet. Nexus indexes every .md file in the connected vault — check Settings → Vault connection if this looks wrong.'
                 : 'No results for this search.'}
             </div>
           )}

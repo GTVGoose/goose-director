@@ -116,3 +116,16 @@ You see everything. Boris sees only what's explicitly marked `all` or tagged as 
 - **Voice notes say "couldn't transcribe"** → re-run `install-telegram.command`; confirm `WHISPER_CPP_BIN`/`WHISPER_CPP_MODEL` in `.env` and that `ffmpeg` is on PATH.
 - **No voice reply, only text** → `ffmpeg` needs `libopus`; the text reply always works regardless.
 - **Bot silent** → check Nexus is running and `getMe` succeeded in the logs; only one process may long-poll a token at a time.
+
+---
+
+## Fix log — 2026-07-03: two-way channel restored + Claude escalation
+
+**Symptom:** voice notes (and texts) to the bot only echoed the transcript back; no answer ever came.
+**Root cause:** `runAgentLoop` (server.mjs) and three other call sites hardcoded `model: 'umbruh'` — a model name that ceased to exist when the 32B host was scratched (2026-07-01) and the local build became `umbruh-lite`. Every Ollama call 404'd; the poll loop swallowed the exception; the channel went silent after the 🎙 transcript echo.
+**Fixes (applied to dev tree AND /Applications/Nexus.app/Contents/Resources/app, Director-approved):**
+1. Model resolution: `UMBRUH_MODEL = env UMBRUH_MODEL || config.umbruhLocalModel || 'umbruh-lite'`, used at all four call sites (+ voice-context lookup accepts `umbruh-lite`).
+2. `goose.config.json` `repoPath` corrected from the legacy pre-migration System Development tree (now archived) to `/Users/goose/Documents/goose-agent-system` (both configs) — Umbruh's Modelfile/persona/memory reads were pointing at the pre-migration copy.
+3. **Two-brain routing (telegram.mjs):** light tasks → local umbruh-lite agent loop; messages prefixed `deep`/`claude`, any local-loop failure, empty reply, or step-limit → escalate to the Claude CLI headless (`-p … --output-format json --dangerously-skip-permissions`, cwd = goose-agent-system, 5-min timeout, async execFile so the poll loop never blocks). Claude-relayed replies are marked 🧠. If both paths fail the bot sends an honest error — the channel never goes silent by design.
+**Verified:** umbruh-lite answers on Ollama; Nexus relaunched with patches; getUpdates probe returns 409 (Nexus holds the long-poll); /api/notify secret-gate live. Live two-way test: Director replies to the 2026-07-03 morning brief.
+**Note:** rebuilding the app via install-nexus.command keeps the fixes (dev tree is patched identically).

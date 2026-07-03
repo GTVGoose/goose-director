@@ -12,14 +12,16 @@
   --color-surface-3:    #201d16;
 
   /* ── Borders — like fine etchings on dark stone */
-  --color-border:        rgba(255,248,230,0.06);
-  --color-border-mid:    rgba(255,248,230,0.10);
-  --color-border-strong: rgba(255,248,230,0.18);
+  --color-border:        rgba(255,248,230,0.09);
+  --color-border-mid:    rgba(255,248,230,0.13);
+  --color-border-strong: rgba(255,248,230,0.20);
 
-  /* ── Text — warm off-white, not clinical white */
-  --color-text:   #f2ede2;
-  --color-text-2: #8a8478;
-  --color-text-3: #4a4640;
+  /* ── Text — warm off-white, not clinical white.
+     text-3 must stay readable (≥4:1 on bg) — #4a4640 is disabled-only. */
+  --color-text:          #f2ede2;
+  --color-text-2:        #9a9384;
+  --color-text-3:        #7c7668;
+  --color-text-disabled: #4a4640;
 
   /* ── Active: amber / firelight / presence ── */
   --color-active:        #c8a44a;
@@ -45,6 +47,12 @@
   --color-dual-text:   #50a888;
   --color-dual-border: #0e3024;
 
+  /* ── Accent — personalizable in Settings; defaults to the violet layer ── */
+  --color-accent:        #6a54b8;
+  --color-accent-text:   #9880d8;
+  --color-accent-bg:     #0e0a20;
+  --color-accent-border: #1e1640;
+
   /* ── Status ── */
   --color-escalation-bg:     #180606;
   --color-escalation-text:   #d85050;
@@ -67,6 +75,15 @@
   --radius:    4px;
   --radius-lg: 6px;
 
+  /* ── Motion — one easing vocabulary, nothing interactive over 300ms ── */
+  --ease-out:  cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --dur-fast:  120ms;
+  --dur-base:  200ms;
+
+  /* ── Native control theming (checkboxes, selects) ── */
+  accent-color: var(--color-accent);
+
   /* ── Typography ── slightly heavy, deliberate */
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
   font-size: 14px;
@@ -87,10 +104,15 @@ button {
   letter-spacing: inherit;
 }
 
-/* ── Scrollbar ── thin, barely there */
-::-webkit-scrollbar { width: 4px; height: 4px; }
+/* ── Scrollbar ── thin, visible on hover-scroll surfaces */
+::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 2px; }
+::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,248,230,0.30); }
+
+/* Scroll areas never chain-scroll their parent */
+main, .scroll-y { overscroll-behavior: contain; }
+.scroll-y { overflow-y: auto; min-height: 0; }
 
 /* ── Selection ── violet tint */
 ::selection { background: rgba(106,84,184,0.35); color: var(--color-text); }
@@ -129,3 +151,53 @@ select option { background: var(--color-surface-2); color: var(--color-text); }
   font-size: 11px;
   letter-spacing: 0.02em;
 }
+
+/* ── Interactive rows ── */
+.clickable-row {
+  cursor: pointer;
+  transition: background 0.12s, box-shadow 0.12s;
+}
+.clickable-row:hover {
+  box-shadow: inset 0 0 0 100vmax rgba(255,248,230,0.035);
+}
+
+/* ── Ghost buttons ── */
+.btn-ghost { transition: border-color 0.12s, color 0.12s; }
+.btn-ghost:hover { border-color: var(--color-border-strong) !important; color: var(--color-text) !important; }
+
+/* ── Motion ── */
+@keyframes drawer-in {
+  from { transform: translateX(28px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spin { display: inline-block; animation: spin 0.9s linear infinite; }
+
+/* ── Accessibility ── */
+:focus { outline: none; }
+:focus-visible {
+  outline: 2px solid var(--color-accent-text);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Numerals — dates, counts, timestamps never shift layout ── */
+.mono, td, .glyph-label { font-variant-numeric: tabular-nums; }
+
+/* ── Sidebar nav hover (rest state feedback) ── */
+.nav-btn:hover { color: var(--color-text) !important; }
+.nav-btn:hover i { color: var(--color-text-2) !important; }

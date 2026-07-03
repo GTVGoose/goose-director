@@ -1,9 +1,12 @@
-export default function Sidebar({ view, onNav, escalations, reviews }) {
+import { personalNav } from '../personal-extensions.jsx'
+
+export default function Sidebar({ view, onNav, escalations, reviews, vaultName }) {
 
   const nav = (id, icon, label, sub, badge) => (
     <button
       key={id}
       onClick={() => onNav(id)}
+      className={view === id ? undefined : 'nav-btn'}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -11,11 +14,11 @@ export default function Sidebar({ view, onNav, escalations, reviews }) {
         padding: '7px 10px',
         width: '100%',
         background: view === id
-          ? 'linear-gradient(90deg, rgba(122,100,200,0.12), rgba(122,100,200,0.04))'
+          ? 'var(--color-accent-bg)'
           : 'none',
         border: 'none',
         borderLeft: view === id
-          ? '2px solid var(--color-recursive)'
+          ? '2px solid var(--color-accent)'
           : '2px solid transparent',
         borderRadius: '0 var(--radius) var(--radius) 0',
         fontSize: 13,
@@ -24,13 +27,13 @@ export default function Sidebar({ view, onNav, escalations, reviews }) {
         textAlign: 'left',
         cursor: 'pointer',
         marginBottom: 1,
-        transition: 'all 0.12s',
+        transition: 'background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast)',
       }}
     >
       <i className={`ti ti-${icon}`} style={{
         fontSize: 15,
         flexShrink: 0,
-        color: view === id ? 'var(--color-recursive-text)' : 'var(--color-text-3)',
+        color: view === id ? 'var(--color-accent-text)' : 'var(--color-text-3)',
       }}></i>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -57,7 +60,7 @@ export default function Sidebar({ view, onNav, escalations, reviews }) {
   )
 
   const section = (label) => (
-    <div style={{
+    <div key={`sec-${label}`} style={{
       fontSize: 9,
       fontWeight: 600,
       letterSpacing: '0.1em',
@@ -71,6 +74,19 @@ export default function Sidebar({ view, onNav, escalations, reviews }) {
     ? { color: 'red', count: escalations }
     : reviews > 0 ? { color: 'amber', count: reviews } : null
 
+  // Personal-only nav (from personal-extensions.jsx; empty in the product build).
+  // Items are appended after "Act"; a new section header is emitted whenever an
+  // item's section differs from the running one.
+  const renderPersonalNav = () => {
+    const out = []
+    let cur = 'Act'
+    for (const item of personalNav) {
+      if (item.section !== cur) { out.push(section(item.section)); cur = item.section }
+      out.push(nav(item.id, item.icon, item.label, item.sub))
+    }
+    return out
+  }
+
   return (
     <div style={{
       width: 'var(--sidebar-width)',
@@ -82,9 +98,10 @@ export default function Sidebar({ view, onNav, escalations, reviews }) {
       height: '100%',
       overflowY: 'auto',
     }}>
-      {/* Identity */}
+      {/* Identity — top padding clears the macOS traffic-light controls
+          (hiddenInset titlebar) so NEXUS / the console name isn't clipped. */}
       <div style={{
-        padding: '20px 12px 16px',
+        padding: '40px 12px 16px',
         borderBottom: '0.5px solid var(--color-border)',
         marginBottom: 6,
       }}>
@@ -101,7 +118,7 @@ export default function Sidebar({ view, onNav, escalations, reviews }) {
           marginTop: 4,
           letterSpacing: '0.06em',
           textTransform: 'uppercase',
-        }}>Goose Director Console</div>
+        }}>{vaultName ? `${vaultName} Console` : 'Director Console'}</div>
       </div>
 
       {section('Observe')}
@@ -115,10 +132,7 @@ export default function Sidebar({ view, onNav, escalations, reviews }) {
 
       {section('Act')}
       {nav('invoke', 'terminal-2', 'Invoke', 'Send work to any agent or model')}
-      {nav('sandbox', 'users-group', 'Sandbox', 'Many models, one council')}
-
-      {section('Studio')}
-      {nav('membrane', 'topology-star-3', 'Membrane', 'SFS Vault shared intelligence')}
+      {renderPersonalNav()}
 
       <div style={{ flex: 1 }} />
 
@@ -131,7 +145,7 @@ export default function Sidebar({ view, onNav, escalations, reviews }) {
         color: 'var(--color-text-3)',
         letterSpacing: '0.03em',
       }}>
-        Nexus v0.1 · Goose Agent System
+        Nexus v0.3 · {vaultName || 'no vault connected'}
       </div>
     </div>
   )

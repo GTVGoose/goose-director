@@ -20,7 +20,7 @@ export default function StatusLayer({ entries }) {
           fontSize: 13,
           color: 'var(--color-text-3)',
         }}>
-          System is quiet. No entries in the Status Layer.
+          No activity yet — entries appear here as agents run and log status updates in your vault.
         </div>
       )}
 

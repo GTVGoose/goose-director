@@ -95,7 +95,7 @@ export default function Dashboard({ agents, statusData, canonDocs, onNav }) {
           <CardHeader title="Status layer" action={{ label: 'All entries →', onClick: () => onNav('status') }} />
           <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
             {topEntries.length === 0
-              ? <Empty>System is quiet.</Empty>
+              ? <Empty>No activity yet — agent status updates appear here.</Empty>
               : topEntries.map((e, i) => <StatusEntry key={i} entry={e} compact />)}
           </div>
         </div>
@@ -137,7 +137,7 @@ export default function Dashboard({ agents, statusData, canonDocs, onNav }) {
             {canonEntries.length === 0 && (
               <tr>
                 <td colSpan={4} style={{ padding: '14px 12px', fontSize: 13, color: 'var(--color-text-3)', textAlign: 'center' }}>
-                  No canon documents found. Check goose.config.json → repoPath.
+                  No canon documents in this vault yet. Nexus lists anything with a Canon Status header here.
                 </td>
               </tr>
             )}

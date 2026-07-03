@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import ThreadTOC from './ThreadTOC.jsx'
 
-export default function Invoke({ canonDocs }) {
+export default function Invoke({ canonDocs, onNav }) {
   const [models, setModels] = useState([])
   const [agentRoles, setAgentRoles] = useState([])
   const [selectedModel, setSelectedModel] = useState('')
@@ -14,6 +14,7 @@ export default function Invoke({ canonDocs }) {
   const [showDocPicker, setShowDocPicker] = useState(false)
   const [docSearch, setDocSearch] = useState('')
   const [showTOC, setShowTOC] = useState(false)
+  const [saveNote, setSaveNote] = useState(null)
   const bottomRef = useRef(null)
   const msgRefs = useRef({})
 
@@ -128,6 +129,7 @@ export default function Invoke({ canonDocs }) {
     })
 
     // Auto-log to umbruh-session-log.md when Umbruh is the active model
+    let note = 'Saved to Knowledge → Saved threads'
     if (selectedModel === 'umbruh') {
       try {
         await fetch('/api/umbruh-log', {
@@ -135,23 +137,23 @@ export default function Invoke({ canonDocs }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversation }),
         })
-        alert('Thread saved. Session log updated.')
+        note = 'Saved — session log updated'
       } catch {
-        alert('Thread saved. Session log update failed — check Ollama is running.')
+        note = 'Saved — session log skipped (is Ollama running?)'
       }
-    } else {
-      alert('Thread saved to Knowledge Navigator')
     }
+    setSaveNote(note)
+    setTimeout(() => setSaveNote(null), 3500)
   }
 
   return (
     <div style={{ display: 'flex', height: '100%', gap: 16, maxWidth: 1100, position: 'relative' }}>
-      {/* Config panel */}
-      <div style={{ width: 240, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Config panel — scrolls as a rail when models/docs outgrow the viewport */}
+      <div className="scroll-y" style={{ width: 240, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 12, paddingRight: 2 }}>
 
         {/* Model */}
         <Panel title="Model">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div className="scroll-y" style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 264 }}>
             {models.map(m => (
               <ModelOption
                 key={m.id}
@@ -208,33 +210,37 @@ export default function Invoke({ canonDocs }) {
             <i className="ti ti-plus" style={{ fontSize: 13 }}></i>
             Add source document
           </button>
-          {selectedDocs.map((d, i) => (
-            <div key={i} style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '4px 6px', background: 'var(--color-border)', borderRadius: 4,
-              marginTop: 4,
-            }}>
-              <span style={{ fontSize: 11, color: 'var(--color-text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{d.title}</span>
-              <button onClick={() => setSelectedDocs(selectedDocs.filter((_, j) => j !== i))}
-                style={{ background: 'none', border: 'none', color: 'var(--color-text-3)', cursor: 'pointer', fontSize: 14, padding: 0, marginLeft: 4 }}>
-                <i className="ti ti-x" style={{ fontSize: 12 }}></i>
-              </button>
-            </div>
-          ))}
+          <div className="scroll-y" style={{ maxHeight: 156 }}>
+            {selectedDocs.map((d, i) => (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '4px 6px', background: 'var(--color-border)', borderRadius: 4,
+                marginTop: 4,
+              }}>
+                <span style={{ fontSize: 11, color: 'var(--color-text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{d.title}</span>
+                <button onClick={() => setSelectedDocs(selectedDocs.filter((_, j) => j !== i))}
+                  aria-label={`Remove ${d.title}`}
+                  style={{ background: 'none', border: 'none', color: 'var(--color-text-3)', cursor: 'pointer', fontSize: 14, padding: 0, marginLeft: 4 }}>
+                  <i className="ti ti-x" style={{ fontSize: 12 }}></i>
+                </button>
+              </div>
+            ))}
+          </div>
         </Panel>
 
         {conversation.length > 0 && (
           <button
             onClick={saveThread}
+            className="btn-ghost"
             style={{
               background: 'none', border: '0.5px solid var(--color-border-strong)',
               borderRadius: 6, padding: '7px 10px', fontSize: 12,
-              color: 'var(--color-text-2)', cursor: 'pointer',
+              color: saveNote ? 'var(--color-available)' : 'var(--color-text-2)', cursor: 'pointer',
               display: 'flex', alignItems: 'center', gap: 5,
             }}
           >
-            <i className="ti ti-bookmark" style={{ fontSize: 14 }}></i>
-            Save thread
+            <i className={`ti ${saveNote ? 'ti-check' : 'ti-bookmark'}`} style={{ fontSize: 14 }}></i>
+            {saveNote || 'Save thread'}
           </button>
         )}
       </div>
@@ -243,10 +249,12 @@ export default function Invoke({ canonDocs }) {
       {showDocPicker && (
         <div style={{
           position: 'absolute', left: 270, top: 60, width: 320, zIndex: 100,
-          background: 'var(--color-surface)',
+          background: 'var(--color-surface-2)',
           border: '0.5px solid var(--color-border-strong)',
-          borderRadius: 10, boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+          borderRadius: 10,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5), 0 1px 2px rgba(0,0,0,0.4)',
           overflow: 'hidden',
+          animation: 'fade-in var(--dur-fast) var(--ease-out)',
         }}>
           <div style={{ padding: 10, borderBottom: '0.5px solid var(--color-border)', display: 'flex', gap: 8, alignItems: 'center' }}>
             <input
@@ -313,9 +321,26 @@ export default function Invoke({ canonDocs }) {
               height: '100%', gap: 8, color: 'var(--color-text-3)',
             }}>
               <i className="ti ti-messages" style={{ fontSize: 32 }}></i>
-              <div style={{ fontSize: 13 }}>Select a model and agent role, then send a message.</div>
-              {selectedDocs.length === 0 && (
-                <div style={{ fontSize: 12 }}>Add source docs to ground the response in your canon.</div>
+              {models.length > 0 && !models.some(m => m.available) ? (
+                <>
+                  <div style={{ fontSize: 13 }}>No models are available yet.</div>
+                  <div style={{ fontSize: 12 }}>Cloud models need an API key; local models need Ollama running.</div>
+                  {onNav && (
+                    <button onClick={() => onNav('settings')} className="btn-ghost" style={{
+                      marginTop: 6, background: 'none',
+                      border: '0.5px solid var(--color-border-strong)',
+                      borderRadius: 6, padding: '6px 14px', fontSize: 12,
+                      color: 'var(--color-text-2)',
+                    }}>Open Settings</button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 13 }}>Select a model and agent role, then send a message.</div>
+                  {selectedDocs.length === 0 && (
+                    <div style={{ fontSize: 12 }}>Add source docs to ground the response in your canon.</div>
+                  )}
+                </>
               )}
             </div>
           ) : (
@@ -375,11 +400,14 @@ export default function Invoke({ canonDocs }) {
               background: streaming ? 'var(--color-surface-2)' : 'var(--color-active-bg)',
               color: streaming ? 'var(--color-text-3)' : 'var(--color-active-text)',
               border: streaming ? '0.5px solid var(--color-border)' : '0.5px solid var(--color-active-border)',
-              borderRadius: 8, fontSize: 13, cursor: 'pointer',
+              borderRadius: 8, fontSize: 13,
+              cursor: (!input.trim() || !selectedModel || streaming) ? 'default' : 'pointer',
+              opacity: (!input.trim() || !selectedModel) && !streaming ? 0.55 : 1,
               display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
+              transition: 'opacity 0.12s',
             }}
           >
-            <i className={`ti ${streaming ? 'ti-loader' : 'ti-send'}`} style={{ fontSize: 15 }}></i>
+            <i className={`ti ${streaming ? 'ti-loader-2 spin' : 'ti-send'}`} style={{ fontSize: 15 }}></i>
             {streaming ? 'Thinking…' : 'Send'}
           </button>
         </div>
@@ -467,7 +495,6 @@ function ModelOption({ model, selected, onClick }) {
   return (
     <div
       onClick={onClick}
-      title={!model.available && model.unavailableReason ? model.unavailableReason : undefined}
       style={{
         padding: '7px 9px',
         borderRadius: 6,
@@ -483,14 +510,6 @@ function ModelOption({ model, selected, onClick }) {
           background: model.available ? 'var(--color-available)' : 'var(--color-unavailable)',
         }} />
         <span style={{ fontSize: 12, fontWeight: 500 }}>{model.name}</span>
-        {model.autoDetected && (
-          <span style={{
-            fontSize: 9, fontWeight: 600, letterSpacing: '0.06em',
-            color: 'var(--color-text-3)',
-            border: '0.5px solid var(--color-border-mid)',
-            borderRadius: 3, padding: '1px 4px', marginLeft: 'auto',
-          }}>AUTO</span>
-        )}
       </div>
       <div style={{ fontSize: 11, color: 'var(--color-text-3)', marginTop: 2, paddingLeft: 13 }}>
         {model.description}

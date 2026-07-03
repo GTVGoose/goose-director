@@ -6,11 +6,15 @@ const POSTURE_COLORS = {
   Unknown:   { dot: 'var(--color-text-3)',    bg: 'transparent',               text: 'var(--color-text-2)',         border: 'transparent' },
 }
 
-export default function AgentPostureRow({ agent, compact }) {
+export default function AgentPostureRow({ agent, compact, onClick }) {
   const c = POSTURE_COLORS[agent.posture] || POSTURE_COLORS.Unknown
 
   return (
-    <div style={{
+    <div
+      onClick={onClick}
+      className={onClick ? 'clickable-row' : undefined}
+      title={onClick ? `${agent.name} — click for detail` : undefined}
+      style={{
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
