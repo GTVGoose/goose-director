@@ -12,7 +12,8 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        // NEXUS_PORT lets a dev pair run beside the packaged app (which holds 3001)
+        target: `http://localhost:${process.env.NEXUS_PORT || 3001}`,
         changeOrigin: true
       }
     }

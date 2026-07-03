@@ -17,7 +17,7 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { execSync, execFileSync } from 'child_process'
+import { execSync, execFileSync, execFile } from 'child_process'
 
 const TELEGRAM_MODE_OVERRIDE = `ACTIVE MODE: TELEGRAM REMOTE SESSION
 
@@ -29,7 +29,7 @@ You are receiving messages from the Director (or an authorized Smiley Face Studi
 4. You operate with the Director's delegated authority but you are NOT the Director. You do not declare canon or install sigils. The Director decides.`
 
 export function initTelegram(deps) {
-  const { app, config, REPO, readFileSafe, runAgentLoop, generateTTS, ollamaUrl } = deps
+  const { app, config, REPO, readFileSafe, runAgentLoop, generateTTS, ollamaUrl, signal } = deps
   const tg = config.telegram || {}
   const token = process.env.TELEGRAM_BOT_TOKEN
 
@@ -207,19 +207,88 @@ export function initTelegram(deps) {
     return [TELEGRAM_MODE_OVERRIDE, modelfileSystem, memoryBlock].filter(Boolean).join('\n\n---\n\n')
   }
 
-  // ── Run a user message through the agentic loop ──────────────────────────────
+  // ── Claude escalation (heavy tasks / local-loop failure) ────────────────────
+  // Fix + architecture 2026-07-03 (Director-approved): the channel must never go
+  // silent. Routing: light tasks → local umbruh-lite agent loop; heavy tasks
+  // (Director prefixes "deep …" or "claude …") or any local failure → escalate
+  // to the Claude CLI (Max plan, headless, cwd = goose-agent-system) and relay.
+  const CLAUDE_PATHS = [
+    path.join(os.homedir(), 'Library/pnpm/claude'),
+    '/opt/homebrew/bin/claude',
+    '/usr/local/bin/claude',
+  ]
+  const findClaude = () => CLAUDE_PATHS.find(p => fs.existsSync(p)) || 'claude'
+
+  function runClaudeHeavy(userText) {
+    return new Promise((resolve) => {
+      const prompt =
+        `${TELEGRAM_MODE_OVERRIDE}\n\n` +
+        `You are the heavy-reasoning half of Umbruh, reached by Telegram escalation from the Director's phone. ` +
+        `Work from the goose-agent-system repo you are launched in when the task needs files. ` +
+        `Reply in 1-6 short phone-readable sentences, plain text, no markdown.\n\n` +
+        `Director's message: ${userText}`
+      execFile(
+        findClaude(),
+        ['-p', prompt, '--output-format', 'json', '--dangerously-skip-permissions'],
+        {
+          cwd: fs.existsSync(REPO) ? REPO : os.homedir(),
+          timeout: 300000,
+          maxBuffer: 10 * 1024 * 1024,
+          encoding: 'utf8',
+          env: { ...process.env, PATH: `${process.env.PATH || ''}:${path.join(os.homedir(), 'Library/pnpm')}:/opt/homebrew/bin:/usr/local/bin` },
+        },
+        (err, stdout) => {
+          if (err && !stdout) {
+            console.error('[Telegram] claude escalation failed:', err.message)
+            return resolve(null)
+          }
+          try {
+            const j = JSON.parse(stdout)
+            resolve((j.result || '').trim() || null)
+          } catch {
+            resolve(String(stdout || '').trim().slice(0, 3500) || null)
+          }
+        },
+      )
+    })
+  }
+
+  // ── Run a user message through the two-brain routing ─────────────────────────
   async function runTask(chatId, userText) {
     const prior = history.get(chatId) || []
-    const messages = [
-      { role: 'system', content: buildSystem() },
-      ...prior,
-      { role: 'user', content: userText },
-    ]
-    const reply = await runAgentLoop(messages, ollamaUrl, 8, true)
+    const heavy = /^(deep|claude)\b[:,]?\s*/i.exec(userText)
+    let reply = null
+    let via = 'local'
+
+    if (heavy) {
+      via = 'claude'
+      reply = await runClaudeHeavy(userText.slice(heavy[0].length).trim() || userText)
+    } else {
+      try {
+        const messages = [
+          { role: 'system', content: buildSystem() },
+          ...prior,
+          { role: 'user', content: userText },
+        ]
+        reply = await runAgentLoop(messages, ollamaUrl, 8, true)
+      } catch (e) {
+        console.error('[Telegram] local loop failed, escalating to Claude:', e.message)
+        reply = null
+      }
+      if (!reply?.trim() || /step limit/i.test(reply)) {
+        via = 'claude-fallback'
+        const escalated = await runClaudeHeavy(userText)
+        if (escalated) reply = escalated
+      }
+    }
+
+    if (!reply?.trim()) {
+      reply = `⚠️ Both brains missed that one (local Umbruh loop and the Claude escalation). Nothing is lost — try rephrasing, or prefix with "deep" to force the heavy path. This channel is built to never go silent on you.`
+    }
     // Update short-term history (exclude system).
     const next = [...prior, { role: 'user', content: userText }, { role: 'assistant', content: reply }]
     history.set(chatId, next.slice(-HISTORY_MAX))
-    return reply
+    return via === 'local' ? reply : `🧠 ${reply}`
   }
 
   // ── Inbound update handling ──────────────────────────────────────────────────
@@ -249,8 +318,18 @@ export function initTelegram(deps) {
       await sendText(chatId,
         `Send a message or a voice note to give Umbruh a task on the Mac.\n\n` +
         `/status — latest loop / Director status\n` +
+        `/forks — open Signal fleet forks awaiting the Director\n` +
+        `/brief — build today's Signal Brief on demand\n` +
         `/whoami — show your chat ID\n` +
         `/reset — clear this chat's short-term memory`)
+      return
+    }
+
+    // Signal fleet commands (Director only — fork packets are Director-facing).
+    if (text === '/forks' || text === '/brief') {
+      if (!isDirector(chatId)) { await sendText(chatId, 'Director-only command.'); return }
+      if (!signal) { await sendText(chatId, 'Signal delivery module is not wired in this build.'); return }
+      await sendText(chatId, text === '/forks' ? signal.forksSummary() : signal.buildBrief())
       return
     }
 

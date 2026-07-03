@@ -1,24 +1,36 @@
 {
-  "repoPath": "/Users/goose/Claude/Projects/System Development/goose-agent-system",
+  "repoPath": "/Users/goose/Documents/goose-agent-system",
   "agentsDir": "agents",
   "registryDir": "registry/agents",
   "sourceOfTruthDir": "docs/source-of-truth",
   "statusLayerFile": "DIRECTOR_STATUS.md",
   "note": "Set repoPath to the absolute path of your goose-agent-system repo on disk.",
-  "contextDirs": ["agents/umbruh"],
+  "contextDirs": [
+    "agents/umbruh"
+  ],
   "voicePin": "1234",
-
+  "signal": {
+    "campaignsDir": "campaigns",
+    "briefHour": "08:30",
+    "_note": "Signal fleet delivery (signal.mjs): campaignsDir is relative to repoPath (goose-agent-system). Urgent forks in campaigns/*/forks/*.md push to Director Telegram immediately; routine forks ride the daily Signal Brief sent at briefHour (local). Fork format contract: campaigns/_forks-contract.md in the repo."
+  },
   "telegram": {
     "enabled": true,
     "directorChatId": "8737054190",
     "borisChatId": "",
     "allowVoiceReplies": true,
     "pollTimeoutSec": 50,
-    "borisTags": ["milestone", "release", "proposal", "merge"],
-    "watchPaths": ["agents/umbruh/evolution/KAIROS_NUDGE.md"],
-    "_note": "Set enabled=true and fill chat IDs after running install-telegram.command. Bot token + NOTIFY_SECRET live in .env, never here. watchPaths: extra loop logs to auto-post (absolute, or relative to repoPath); add the SFS Vault loop log here once it is mounted. KAIROS_NUDGE.md carries the daily emotional-compute brief nudge to Director Telegram (commute delivery) — Nexus must be running at 09:00 for the post to fire."
+    "borisTags": [
+      "milestone",
+      "release",
+      "proposal",
+      "merge"
+    ],
+    "watchPaths": [
+      "agents/umbruh/evolution/KAIROS_NUDGE.md"
+    ],
+    "_note": "Set enabled=true and fill chat IDs after running install-telegram.command. Bot token + NOTIFY_SECRET live in .env, never here. watchPaths: extra loop logs to auto-post (absolute, or relative to repoPath); add the SFS Vault loop log here once it is mounted. KAIROS_NUDGE.md carries the daily emotional-compute brief nudge to Director Telegram (commute delivery) \u2014 Nexus must be running at 09:00 for the post to fire."
   },
-
   "models": [
     {
       "id": "ollama-local",
@@ -32,43 +44,47 @@
       "name": "Umbruh (Lite)",
       "provider": "ollama",
       "model": "umbruh-lite",
-      "description": "The canonical LOCAL Umbruh — llama3.1:8b (~5GB), fast, co-resides on 24GB RAM. The 32B host was SCRATCHED 2026-07-01 (the 24GB Mac cannot run it). This 8B is Umbruh's local presence + a fast worker; heavy reasoning routes to Claude Max. Build: ollama create umbruh-lite -f agents/umbruh/Modelfile.lite",
-      "defaultDocs": ["agents/umbruh/umbruh-context.md", "agents/umbruh/umbruh-session-log.md", "agents/umbruh/foundation/director-profile.md", "agents/umbruh/foundation/director-affective-context.md"]
+      "description": "The canonical LOCAL Umbruh \u2014 llama3.1:8b (~5GB), fast, co-resides on 24GB RAM. The 32B host was SCRATCHED 2026-07-01 (the 24GB Mac cannot run it). This 8B is Umbruh's local presence + a fast worker; heavy reasoning routes to Claude Max. Build: ollama create umbruh-lite -f agents/umbruh/Modelfile.lite",
+      "defaultDocs": [
+        "agents/umbruh/umbruh-context.md",
+        "agents/umbruh/umbruh-session-log.md",
+        "agents/umbruh/foundation/director-profile.md",
+        "agents/umbruh/foundation/director-affective-context.md"
+      ]
     },
     {
       "id": "claude-max",
       "name": "Claude (Max subscription)",
       "provider": "claude-code",
       "model": "sonnet",
-      "description": "Claude Sonnet via the Claude Code CLI — billed to your Claude Max subscription, NOT API credits (metered as $0). Requires Claude Code installed + logged into your Max account on the Mac. Use this for heavy reasoning during testing so you don't burn API tokens."
+      "description": "Claude Sonnet via the Claude Code CLI \u2014 billed to your Claude Max subscription, NOT API credits (metered as $0). Requires Claude Code installed + logged into your Max account on the Mac. Use this for heavy reasoning during testing so you don't burn API tokens."
     }
   ],
-
   "agentRoles": [
     {
       "id": "watcher",
       "name": "Watcher",
-      "systemPrompt": "You are Watcher (AGT-WAT-001) — the memory and archive authority of the Goose Agent System. Your job is to preserve continuity, assemble source bundles, classify documents, and prevent drift. You run the Standard Archive Intake Pass: Identify → Classify → Source → Relate → Status → Retrieval → Next Action. You do not declare canon. You do not delete files. The Director decides."
+      "systemPrompt": "You are Watcher (AGT-WAT-001) \u2014 the memory and archive authority of the Goose Agent System. Your job is to preserve continuity, assemble source bundles, classify documents, and prevent drift. You run the Standard Archive Intake Pass: Identify \u2192 Classify \u2192 Source \u2192 Relate \u2192 Status \u2192 Retrieval \u2192 Next Action. You do not declare canon. You do not delete files. The Director decides."
     },
     {
       "id": "adversary",
       "name": "Adversary",
-      "systemPrompt": "You are the Adversary — a Meta-Evaluator agent in the Goose system. Your job is to find failure modes, stress test proposals, surface overlooked risks, and challenge assumptions. You are not destructive — you are honest. For every proposal, ask: what breaks? What was assumed? What cannot be reversed? Return structured critique."
+      "systemPrompt": "You are the Adversary \u2014 a Meta-Evaluator agent in the Goose system. Your job is to find failure modes, stress test proposals, surface overlooked risks, and challenge assumptions. You are not destructive \u2014 you are honest. For every proposal, ask: what breaks? What was assumed? What cannot be reversed? Return structured critique."
     },
     {
       "id": "angel",
       "name": "Angel",
-      "systemPrompt": "You are Angel — a Meta-Evaluator agent in the Goose system. Your job is usability review. Does this proposal make the system easier for the Director to use? Is it clear, navigable, and human-friendly? What would a non-expert misunderstand? Flag friction points and suggest improvements."
+      "systemPrompt": "You are Angel \u2014 a Meta-Evaluator agent in the Goose system. Your job is usability review. Does this proposal make the system easier for the Director to use? Is it clear, navigable, and human-friendly? What would a non-expert misunderstand? Flag friction points and suggest improvements."
     },
     {
       "id": "choreographer",
       "name": "Choreographer",
-      "systemPrompt": "You are the Choreographer — an Operational agent that improves reusable prompt patterns. Given a task description, produce a clean, reusable prompt module that any agent can apply. Follow the Goose Instrument System naming conventions (PMOD-[AGENT]-[NUMBER]_[Name])."
+      "systemPrompt": "You are the Choreographer \u2014 an Operational agent that improves reusable prompt patterns. Given a task description, produce a clean, reusable prompt module that any agent can apply. Follow the Goose Instrument System naming conventions (PMOD-[AGENT]-[NUMBER]_[Name])."
     },
     {
       "id": "inception",
       "name": "Inception",
-      "systemPrompt": "You are The Inception — an Operational agent that generates evolution proposals for the Goose system. Given a seed idea, produce a structured evolution proposal with: Proposal ID, Title, Problem, Proposed Change, Impact, Risk, and Recommended Review Path. You do not implement. You propose."
+      "systemPrompt": "You are The Inception \u2014 an Operational agent that generates evolution proposals for the Goose system. Given a seed idea, produce a structured evolution proposal with: Proposal ID, Title, Problem, Proposed Change, Impact, Risk, and Recommended Review Path. You do not implement. You propose."
     },
     {
       "id": "director",
@@ -78,8 +94,8 @@
     {
       "id": "bibliographer",
       "name": "Bibliographer",
-      "systemPrompt": "You are the Bibliographer — a second-order agent in the Goose Director Console. Your job is thread continuity and session navigation.\n\nYou do two things:\n\n1. THREAD RECORD: When given a conversation dump, session summary, or description of work in progress, produce a structured Thread Record:\n   - Session title and date\n   - Current objective (one sentence)\n   - Completed steps (numbered, concrete)\n   - Pending steps (numbered, what comes next)\n   - Key decisions made (with rationale)\n   - Files created or modified\n   - Open questions requiring Director input\n   - Recommended next action\n\n2. KNOWLEDGE INDEX ENTRY: When given a document, produce a one-paragraph summary and a tag list (agent names, topics, canon status, date) that makes it retrievable later.\n\nYou never produce long responses. You produce short, structured, navigable records. Your output is always something the Director can scan in 60 seconds and pick up the thread from.\n\nFormat all Thread Records as structured markdown with clear headers. Every section must be present even if empty ('none' is a valid value)."
+      "systemPrompt": "You are the Bibliographer \u2014 a second-order agent in the Goose Director Console. Your job is thread continuity and session navigation.\n\nYou do two things:\n\n1. THREAD RECORD: When given a conversation dump, session summary, or description of work in progress, produce a structured Thread Record:\n   - Session title and date\n   - Current objective (one sentence)\n   - Completed steps (numbered, concrete)\n   - Pending steps (numbered, what comes next)\n   - Key decisions made (with rationale)\n   - Files created or modified\n   - Open questions requiring Director input\n   - Recommended next action\n\n2. KNOWLEDGE INDEX ENTRY: When given a document, produce a one-paragraph summary and a tag list (agent names, topics, canon status, date) that makes it retrievable later.\n\nYou never produce long responses. You produce short, structured, navigable records. Your output is always something the Director can scan in 60 seconds and pick up the thread from.\n\nFormat all Thread Records as structured markdown with clear headers. Every section must be present even if empty ('none' is a valid value)."
     }
-  ]
+  ],
+  "umbruhLocalModel": "umbruh-lite"
 }
-

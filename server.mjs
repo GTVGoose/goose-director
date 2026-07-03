@@ -7,6 +7,7 @@ import yaml from 'js-yaml'
 import { fileURLToPath } from 'url'
 import { execFileSync, execSync } from 'child_process'
 import { initTelegram } from './telegram.mjs'
+import { initSignal } from './signal.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -20,7 +21,19 @@ const configCandidates = [
 const configPath = configCandidates.find(p => fs.existsSync(p))
 if (!configPath) throw new Error(`goose.config.json not found. Searched:\n  ${configCandidates.join('\n  ')}`)
 const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
-const REPO = config.repoPath
+let REPO = config.repoPath
+
+// Local Umbruh model resolution (fix 2026-07-03): the old hardcoded 'umbruh'
+// model name died when the 32B host was scratched on 2026-07-01 — Ollama 404'd
+// on every agent-loop call, which is why Telegram went one-way (transcript echo,
+// then silence). Resolve to what is actually installed; override via UMBRUH_MODEL.
+const UMBRUH_MODEL = process.env.UMBRUH_MODEL || config.umbruhLocalModel || 'umbruh-lite'
+
+// Sandbox permission gate (shared core). Personal installs without a sandbox
+// block default to ENABLED; product builds ship { enabled: false } and the
+// user consents in Settings → Sandbox.
+function sandboxEnabled() { return config.sandbox ? !!config.sandbox.enabled : true }
+function sandboxModel() { return config.sandbox?.model || config.sandboxModel || UMBRUH_MODEL }
 
 // Load .env — try multiple locations in order of priority
 try {
@@ -158,17 +171,388 @@ const POSTURE_MAP = {
   'Signal':               { posture: 'Active',     type: 'Operational' },
 }
 
+// Split a markdown document into H2 sections: [{ heading, body }]
+function splitMdSections(text) {
+  const sections = []
+  let cur = null
+  for (const line of text.split('\n')) {
+    const m = line.match(/^##\s+(.+)/)
+    if (m) {
+      if (cur) sections.push(cur)
+      cur = { heading: m[1].trim(), body: '' }
+    } else if (cur) {
+      cur.body += line + '\n'
+    }
+  }
+  if (cur) sections.push(cur)
+  return sections
+    .map(s => ({ heading: s.heading, body: s.body.replace(/^---\s*$/gm, '').trim() }))
+    .filter(s => s.body)
+}
+
+// Parse every pipe table in a markdown string → [{ headers, rows: [{col: val}] }]
+function splitTableRow(line) {
+  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|')
+    .map(c => c.trim().replace(/\*\*/g, ''))
+}
+function parseMdTables(text) {
+  const tables = []
+  const lines = text.split('\n')
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (!lines[i].trim().startsWith('|')) continue
+    if (!/^\s*\|[\s:|-]+\|?\s*$/.test(lines[i + 1] || '')) continue
+    const headers = splitTableRow(lines[i])
+    const rows = []
+    let j = i + 2
+    while (j < lines.length && lines[j].trim().startsWith('|')) {
+      const cells = splitTableRow(lines[j])
+      const row = {}
+      headers.forEach((h, k) => { row[h] = (cells[k] || '').trim() })
+      rows.push(row)
+      j++
+    }
+    tables.push({ headers, rows })
+    i = j - 1
+  }
+  return tables
+}
+
+// ─── vault adapters ──────────────────────────────────────────────────────────
+// Nexus can harness different vault layouts. Detection is by marker files:
+//   goose   — registry/agent-registry.md or agents/ with AGENT.md charters
+//   sfs     — _system/orchestration/agent-registry.md (SFS-Vault-style studio vault)
+//   generic — anything else (best-effort scan for an agent registry table)
+function detectVaultType(root) {
+  if (!root || !fs.existsSync(root)) return null
+  if (fs.existsSync(path.join(root, 'registry', 'agent-registry.md'))) return 'goose'
+  if (fs.existsSync(path.join(root, '_system', 'orchestration', 'agent-registry.md'))) return 'sfs'
+  if (fs.existsSync(path.join(root, config.agentsDir || 'agents'))) return 'goose'
+  return 'generic'
+}
+
+function vaultDisplayName(root, type) {
+  if (!root || !type) return null
+  if (type === 'goose') return 'Goose Agent System'
+  // Prefer the vault's own H1 (AGENTS.md or README.md), else folder name
+  for (const f of ['AGENTS.md', 'README.md']) {
+    const text = readFileSafe(path.join(root, f))
+    const h1 = text && text.match(/^#\s+(.+)/m)
+    if (h1) return h1[1].replace(/—.*$/, '').replace(/\(.*?\)/g, '').trim()
+  }
+  return path.basename(root)
+}
+
+// Recursively collect .md files under a directory (bounded depth)
+function collectMdFiles(dir, depth = 3) {
+  const out = []
+  if (depth < 0 || !fs.existsSync(dir)) return out
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) out.push(...collectMdFiles(full, depth - 1))
+    else if (entry.name.endsWith('.md')) out.push(full)
+  }
+  return out
+}
+
+
+// Fallback posture from type text when no explicit mapping exists
+function loosePosture(type) {
+  const t = (type || '').toLowerCase()
+  if (t.includes('(sub)') || t.includes('archetype')) return 'Passive'
+  if (t.includes('meta')) return 'Recursive'
+  return null
+}
+
+// One-line operational identity from a registry row (used when a charter
+// can't be narrowed to this agent, e.g. class-bundle charters)
+function composeRegistrySummary(agent) {
+  const bits = []
+  if (agent.platform || agent.model) bits.push(`Runs on ${[agent.platform, agent.model].filter(Boolean).join(' / ')}.`)
+  if (agent.role) bits.push(`Registered role: ${agent.role}.`)
+  if (agent.owner) bits.push(`Owned by ${agent.owner} — inherits that member's permission tier${agent.authority ? ` (${agent.authority})` : ''}.`)
+  if (agent.canonStatus) bits.push(`Status: ${agent.canonStatus}.`)
+  return bits.join(' ')
+}
+
+const TYPE_POSTURE = {
+  'Archetype': 'Active',
+  'Operational': 'Active',
+  'Operational (companion)': 'Active',
+  'Operational(meta)': 'Recursive',
+  'Meta-Evaluator': 'Passive',
+  'Operational(sub)': 'Passive',
+}
+
+// goose adapter — registry/agent-registry.md is authoritative; charters enrich
+function loadGooseAgents(root) {
+  const agents = []
+  const agentsRoot = path.join(root, config.agentsDir || 'agents')
+
+  // Map agent IDs → charter file. Priority: id in filename → "**Agent ID:** id"
+  // field → first body mention. Index/readme files mention every id — skip them.
+  const byFilename = {}
+  const byField = {}
+  const byMention = {}
+  const charterByName = {}
+  const scanned = []   // retained for name-based fallback (class bundles have no ids)
+  for (const file of collectMdFiles(agentsRoot)) {
+    const base = path.basename(file)
+    if (/^(INDEX|README)\.md$/i.test(base)) continue
+    const head = readFileSafe(file) || ''
+    scanned.push({ file, text: head })
+    for (const id of base.match(/\b(?:AGT|TRI|SIG)-[A-Z]+-\d+\b/g) || []) {
+      if (!byFilename[id]) byFilename[id] = file
+    }
+    for (const m of head.matchAll(/\*\*Agent(?: ID)?:\*\*\s*((?:AGT|TRI|SIG)-[A-Z]+-\d+)/g)) {
+      if (!byField[m[1]]) byField[m[1]] = file
+    }
+    for (const id of head.match(/\b(?:AGT|TRI|SIG)-[A-Z]+-\d+\b/g) || []) {
+      if (!byMention[id]) byMention[id] = file
+    }
+    const h1 = head.match(/^#\s+(.+)/m)
+    if (h1) charterByName[h1[1].replace(/—.*$/, '').trim().toLowerCase()] = file
+  }
+  const charterById = {}
+  for (const map of [byMention, byField, byFilename]) {
+    Object.assign(charterById, map)
+  }
+
+  const regText = readFileSafe(path.join(root, 'registry', 'agent-registry.md'))
+  if (regText) {
+    for (const table of parseMdTables(regText)) {
+      if (!table.headers.includes('agent_id') || !table.headers.includes('agent_name')) continue
+      for (const row of table.rows) {
+        const id = row.agent_id
+        if (!id || !/^(AGT|TRI|SIG)-/.test(id)) continue
+        if (agents.find(a => a.id === id)) continue
+        const name = (row.agent_name || id).replace(/\(.*?\)/g, '').trim()
+        const type = row.type || 'Unknown'
+        const mapEntry = POSTURE_MAP[name]
+          || Object.entries(POSTURE_MAP).find(([k]) => name.includes(k))?.[1]
+        let charterPath = charterById[id] || charterByName[name.toLowerCase()] || null
+        // Class bundles (e.g. the subagent charter) reference members by bold
+        // name only — no ids. Fall back to a bold-name content match and mark
+        // the charter as shared so the detail view treats it as a class file.
+        let charterShared = false
+        if (!charterPath) {
+          const hit = scanned.find(s => s.text.includes(`**${name}**`))
+          if (hit) { charterPath = hit.file; charterShared = true }
+        }
+        const charterHead = charterPath ? (readFileSafe(charterPath) || '').slice(0, 3000) : ''
+        agents.push({
+          id,
+          name,
+          posture: (charterHead && extractMdField(charterHead, 'Operational Posture'))
+            || mapEntry?.posture || TYPE_POSTURE[type] || loosePosture(type) || 'Unknown',
+          type,
+          role: row.role || null,
+          authority: row.authority || null,
+          owner: row.owner || null,
+          platform: row.platform || null,
+          model: row.model || null,
+          canonStatus: row.status || 'active',
+          sigil: (charterHead && extractMdField(charterHead, 'Primary Sigil Alignment')) || 'N/A',
+          source: 'live',
+          charterShared,
+          path: charterPath ? path.relative(root, charterPath) : null,
+        })
+      }
+    }
+  }
+
+  // Legacy layout fallback/merge: agents/<dir>/AGENT.md
+  if (fs.existsSync(agentsRoot)) {
+    for (const dir of fs.readdirSync(agentsRoot, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name)) {
+      const agentFile = path.join(agentsRoot, dir, 'AGENT.md')
+      const text = readFileSafe(agentFile)
+      if (!text) continue
+      const rawName = extractMdField(text, 'Agent') || extractMdField(text, 'Name') || dir
+      const displayName = rawName.replace(/^(AGT-\S+\s+—\s+)/, '').replace(/\sv\d+\.\d+$/, '').trim()
+      const legacyId = (extractMdField(text, 'Agent ID') || '').match(/(?:AGT|TRI|SIG)-[A-Z]+-\d+/)?.[0] || null
+      if (agents.find(a =>
+        a.name.toLowerCase() === displayName.toLowerCase()
+        || (legacyId && a.id === legacyId)
+        || a.path === path.relative(root, agentFile))) continue
+      const mapEntry = POSTURE_MAP[displayName]
+        || Object.entries(POSTURE_MAP).find(([k]) => displayName.includes(k))?.[1] || {}
+      agents.push({
+        id: legacyId,
+        name: displayName,
+        posture: extractMdField(text, 'Operational Posture') || mapEntry.posture || 'Unknown',
+        type: extractMdField(text, 'Agent Type') || mapEntry.type || 'Unknown',
+        canonStatus: extractMdField(text, 'Canon Status') || 'Development',
+        sigil: extractMdField(text, 'Primary Sigil Alignment') || 'N/A',
+        source: 'live',
+        path: path.relative(root, agentFile),
+      })
+    }
+  }
+
+  return agents
+}
+
+// sfs adapter — _system/orchestration/agent-registry.md live identity table
+const SFS_ROLE_POSTURE = {
+  orchestrator: 'Recursive',
+  dispatcher: 'Recursive',
+  builder: 'Active',
+  contributor: 'Active',
+  integrator: 'Active',
+  researcher: 'Passive',
+  reviewer: 'Passive',
+  librarian: 'Passive',
+}
+function loadSfsAgents(root) {
+  const text = readFileSafe(path.join(root, '_system', 'orchestration', 'agent-registry.md'))
+  if (!text) return []
+  // Only the live identity directory (has owner + agent_name); skip
+  // cascade-temporary tables whose headers differ.
+  const table = parseMdTables(text).find(t =>
+    t.headers.includes('agent_id') && t.headers.includes('agent_name') && t.headers.includes('owner'))
+  if (!table) return []
+  return table.rows.filter(r => r.agent_id).map(row => ({
+    id: row.agent_id,
+    name: row.agent_name || row.agent_id,
+    posture: SFS_ROLE_POSTURE[(row.role || '').toLowerCase()] || 'Active',
+    type: row.role ? row.role.charAt(0).toUpperCase() + row.role.slice(1) : 'Unknown',
+    role: row.role || null,
+    authority: row.tier || null,
+    owner: row.owner || null,
+    platform: row.platform || null,
+    model: row.model || null,
+    canonStatus: row.status || 'active',
+    sigil: 'N/A',
+    source: 'live',
+    path: '_system/orchestration/agent-registry.md',
+  }))
+}
+
+// generic adapter — best effort: any *.md under agents/ or an agent-registry table
+function loadGenericAgents(root) {
+  for (const rel of ['agent-registry.md', 'agents.md', 'AGENTS.md']) {
+    const text = readFileSafe(path.join(root, rel))
+    if (!text) continue
+    const table = parseMdTables(text).find(t => t.headers.some(h => /agent/i.test(h)))
+    if (table) {
+      return table.rows.map(row => {
+        const vals = Object.values(row)
+        return {
+          id: row.agent_id || row.id || null,
+          name: row.agent_name || row.name || row.agent || vals[0],
+          posture: 'Unknown',
+          type: row.type || row.role || 'Unknown',
+          role: row.role || null,
+          owner: row.owner || null,
+          canonStatus: row.status || 'active',
+          sigil: 'N/A',
+          source: 'live',
+          path: rel,
+        }
+      }).filter(a => a.name)
+    }
+  }
+  return []
+}
+
+function loadAgents(root = REPO) {
+  const type = detectVaultType(root)
+  if (type === 'goose') return loadGooseAgents(root)
+  if (type === 'sfs') return loadSfsAgents(root)
+  if (type === 'generic') return loadGenericAgents(root)
+  return []
+}
+
+
 // ─── routes ─────────────────────────────────────────────────────────────────
 
-// GET /api/config — current config
+// GET /api/config — current harness state (token values never leave the server)
 app.get('/api/config', (req, res) => {
-  res.json({ repoPath: REPO, exists: fs.existsSync(REPO) })
+  const type = detectVaultType(REPO)
+  res.json({
+    repoPath: REPO,
+    exists: !!REPO && fs.existsSync(REPO),
+    vaultType: type,
+    vaultName: vaultDisplayName(REPO, type),
+    ui: config.ui || {},
+    telegram: {
+      enabled: !!config.telegram?.enabled,
+      directorChatId: config.telegram?.directorChatId || '',
+      tokenSet: !!process.env.TELEGRAM_BOT_TOKEN,
+    },
+    sandbox: {
+      enabled: sandboxEnabled(),
+      model: sandboxModel(),
+    },
+  })
+})
+
+// POST /api/config — vault path (setup / first run), UI personalization,
+// telegram wiring. All persist to goose.config.json; the bot token itself
+// goes through /api/settings into .env, never into config.
+app.post('/api/config', (req, res) => {
+  let { repoPath, ui, telegram, sandbox } = req.body
+
+  if (repoPath !== undefined) {
+    if (!repoPath || typeof repoPath !== 'string') {
+      return res.status(400).json({ ok: false, error: 'repoPath must be a non-empty string' })
+    }
+    repoPath = repoPath.trim().replace(/^~(?=\/|$)/, os.homedir())
+    if (!fs.existsSync(repoPath)) {
+      return res.status(400).json({ ok: false, error: `That folder doesn't exist — check the path and try again. (${repoPath})` })
+    }
+    config.repoPath = repoPath
+    REPO = repoPath
+  }
+
+  if (ui && typeof ui === 'object') {
+    config.ui = { ...(config.ui || {}) }
+    if (ui.consoleName !== undefined) config.ui.consoleName = String(ui.consoleName).slice(0, 60)
+    if (ui.accent !== undefined) config.ui.accent = String(ui.accent).slice(0, 20)
+  }
+
+  if (telegram && typeof telegram === 'object') {
+    config.telegram = { ...(config.telegram || {}) }
+    if (telegram.enabled !== undefined) config.telegram.enabled = !!telegram.enabled
+    if (telegram.directorChatId !== undefined) config.telegram.directorChatId = String(telegram.directorChatId).trim()
+  }
+
+  if (sandbox && typeof sandbox === 'object') {
+    config.sandbox = {
+      enabled: sandbox.enabled !== undefined ? !!sandbox.enabled : sandboxEnabled(),
+      model: sandbox.model !== undefined ? String(sandbox.model).trim() : sandboxModel(),
+    }
+  }
+
+  try {
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n')
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: `Could not save config: ${e.message}` })
+  }
+
+  const type = detectVaultType(REPO)
+  res.json({
+    ok: true,
+    repoPath: REPO,
+    vaultType: type,
+    vaultName: vaultDisplayName(REPO, type),
+    agentCount: loadAgents(REPO).length,
+    ui: config.ui || {},
+    telegramRestartNeeded: !!telegram,
+  })
 })
 
 // GET /api/agents — full fleet from the registry (authoritative), enriched
 // with canon status + sigil from charter files. Falls back to the legacy
 // scan + static POSTURE_MAP only if the registry can't be read.
 app.get('/api/agents', (req, res) => {
+  // Foreign vault layouts route through the shared adapters
+  const vt = detectVaultType(REPO)
+  if (vt === 'sfs') return res.json(loadSfsAgents(REPO))
+  if (vt === 'generic') return res.json(loadGenericAgents(REPO))
+  if (!vt) return res.json(Object.entries(POSTURE_MAP).map(([name, data]) =>
+    ({ name, ...data, canonStatus: 'Development', sigil: 'N/A', source: 'static' })))
+
   const agentsDir = path.join(REPO, config.agentsDir)
   const registryPath = path.join(REPO, path.dirname(config.registryDir || 'registry/agents'), 'agent-registry.md')
   const registryText = readFileSafe(registryPath)
@@ -182,6 +566,7 @@ app.get('/api/agents', (req, res) => {
       const override = POSTURE_MAP[name] || Object.entries(POSTURE_MAP).find(([k]) => name.includes(k))?.[1] || {}
       return {
         name,
+        id: row.agent_id,
         agentId: row.agent_id,
         posture: override.posture || derivePosture(row),
         type: row.type || override.type || 'Unknown',
@@ -233,12 +618,163 @@ app.get('/api/agents', (req, res) => {
   res.json(agents)
 })
 
+// GET /api/agent-detail?id=…&name=… — operational + mythological layers
+app.get('/api/agent-detail', (req, res) => {
+  const { id, name } = req.query
+  if (!id && !name) return res.status(400).json({ error: 'id or name required' })
+
+  const vaultType = detectVaultType(REPO)
+  const agents = loadAgents()
+  const agent = agents.find(a => (id && a.id === id) || (name && a.name === name))
+  if (!agent) return res.status(404).json({ error: 'agent not found' })
+
+  const MYTH_RE = /sigil|myth|resonan|symbol|archetype|persona|invocation|constellation|lore|epithet|voice of|alignment|triad/i
+  const SKIP_RE = /^(open parameters|design record|registry|deployment)/i
+
+  let operational = null
+  let mythology = null
+
+  // Class-bundle charters hold several agents in one file — narrow to the
+  // requested agent's block where per-agent blocks exist.
+  function narrowToAgent(text, agentId) {
+    if (!text || !agentId) return text
+    const headings = [...text.matchAll(/^#{1,3}\s.*?\b((?:AGT|TRI|SIG)-[A-Z-]+-\d+)\b.*$/gm)]
+    if (new Set(headings.map(m => m[1])).size > 1) {
+      const mine = headings.find(m => m[1] === agentId)
+      if (mine) {
+        const next = headings.find(m => m.index > mine.index && m[1] !== agentId)
+        return text.slice(mine.index, next ? next.index : text.length)
+      }
+    }
+    const decls = [...text.matchAll(/\*\*Agent(?: ID)?:\*\*\s*((?:AGT|TRI|SIG)-[A-Z-]+-\d+)/g)]
+    if (new Set(decls.map(m => m[1])).size > 1) {
+      const mine = decls.find(m => m[1] === agentId)
+      if (mine) {
+        const start = Math.max(text.lastIndexOf('\n#', mine.index), 0)
+        const next = decls.find(m => m.index > mine.index && m[1] !== agentId)
+        let end = next ? text.lastIndexOf('\n#', next.index) : text.length
+        if (end <= start) end = text.length
+        return text.slice(start, end)
+      }
+    }
+    return text
+  }
+
+  const charterPath = agent.path && vaultType === 'goose'
+    ? (path.isAbsolute(agent.path) ? agent.path : path.join(REPO, agent.path))
+    : null
+  const rawCharter = charterPath ? readFileSafe(charterPath) : null
+  const charterText = rawCharter ? narrowToAgent(rawCharter, agent.id) : null
+
+  // Bundle residue check: if the narrowed text still describes several agents,
+  // treat it as a CLASS charter — identity comes from the registry row plus the
+  // bundle's parameter tables, not from whole-file prose.
+  const residualIds = charterText
+    ? new Set([...charterText.matchAll(/\b(?:AGT|TRI|SIG)-[A-Z-]+-\d+\b/g)].map(m => m[0]))
+    : new Set()
+  const isBundle = charterText
+    && (agent.charterShared || (agent.id && residualIds.size > 2))
+    && !charterText.trim().startsWith(`# ${agent.name}`)
+
+  if (charterText && !isBundle) {
+    const sections = splitMdSections(charterText)
+    const opSections = []
+    const mythSections = []
+    for (const s of sections) {
+      if (SKIP_RE.test(s.heading)) continue
+      if (MYTH_RE.test(s.heading)) mythSections.push(s)
+      else opSections.push(s)
+    }
+
+    const fnSection = opSections.find(s => /function|purpose|what .* is|mandate/i.test(s.heading))
+    const paras = (fnSection?.body || charterText.replace(/^#.*$/m, ''))
+      .split(/\n\s*\n/).map(p => p.trim())
+    const firstPara = paras.find(p => /^\*\*Domain:/i.test(p))
+      || paras.find(p => p && !p.startsWith('**') && !p.startsWith('|') && !p.startsWith('#') && !/^\d+\./.test(p))
+      || paras.find(p => p && !p.startsWith('|') && !p.startsWith('#'))
+
+    operational = {
+      summary: (fnSection ? fnSection.body : firstPara || '').split(/\n\s*\n/)[0]?.trim() || composeRegistrySummary(agent),
+      posture: agent.posture,
+      authority: extractMdField(charterText, 'Authority Tier') || agent.authority,
+      cascadeLayer: extractMdField(charterText, 'Cascade Layer'),
+      reviews: extractMdField(charterText, 'Reviews'),
+      sections: opSections.slice(0, 8).map(s => ({ heading: s.heading, body: s.body.slice(0, 2400) })),
+    }
+
+    // Mythological layer: sigils, and triad alignments (Kairos-style charters
+    // use "Primary Alignment" + "Triad Roles" instead of a sigil)
+    const sigil = extractMdField(charterText, 'Primary Sigil Alignment') || (agent.sigil !== 'N/A' ? agent.sigil : null)
+    const alignment = extractMdField(charterText, 'Primary Alignment')
+    const triadRoles = extractMdField(charterText, 'Triad Roles')
+    if (sigil || alignment || mythSections.length) {
+      mythology = {
+        sigil: sigil || alignment || null,
+        triadRoles: triadRoles || null,
+        summary: mythSections[0]?.body.split(/\n\s*\n/)[0]?.trim() || null,
+        sections: mythSections.slice(0, 6).map(s => ({ heading: s.heading, body: s.body.slice(0, 2400) })),
+      }
+    }
+  } else if (charterText && isBundle) {
+    // Class charter (e.g. the six subagents): registry identity + this agent's
+    // row from the bundle's parameter tables + the shared contract sections.
+    const paramRows = []
+    for (const table of parseMdTables(rawCharter)) {
+      for (const row of table.rows) {
+        const cells = Object.values(row).join(' | ')
+        if ((agent.id && cells.includes(agent.id)) || cells.includes(agent.name)) {
+          paramRows.push(Object.entries(row)
+            .filter(([k, v]) => v && v !== '—')
+            .map(([k, v]) => `${k}: ${v}`).join('\n'))
+        }
+      }
+    }
+    const sections = splitMdSections(rawCharter)
+      .filter(s => !SKIP_RE.test(s.heading))
+      .slice(0, 4)
+      .map(s => ({ heading: `Shared class contract — ${s.heading}`, body: s.body.slice(0, 1800) }))
+    operational = {
+      summary: composeRegistrySummary(agent),
+      posture: agent.posture,
+      authority: agent.authority,
+      sections: [
+        ...(paramRows.length ? [{ heading: 'Charter parameters (this agent)', body: paramRows.join('\n\n') }] : []),
+        ...sections,
+      ],
+    }
+    // Class members share the class's symbolic identity only if they carry a sigil
+    if (agent.sigil && agent.sigil !== 'N/A') {
+      mythology = { sigil: agent.sigil, summary: null, sections: [] }
+    }
+  } else {
+    // No charter file (sfs/generic vaults, or unmapped): registry row + the
+    // vault's role definitions where available.
+    let roleDoc = null
+    if (vaultType === 'sfs' && agent.role) {
+      const rolesText = readFileSafe(path.join(REPO, '_system', 'orchestration', 'agent-roles.md'))
+      if (rolesText) {
+        const roleSection = splitMdSections(rolesText).find(s => s.heading.toLowerCase().includes(agent.role.toLowerCase()))
+        if (roleSection) roleDoc = { heading: roleSection.heading, body: roleSection.body.slice(0, 2400) }
+      }
+    }
+    operational = {
+      summary: composeRegistrySummary(agent),
+      posture: agent.posture,
+      authority: agent.authority,
+      sections: roleDoc ? [roleDoc] : [],
+    }
+  }
+
+  res.json({ ...agent, vaultType, operational, mythology })
+})
+
 // GET /api/status — parse DIRECTOR_STATUS.md entries
 app.get('/api/status', (req, res) => {
-  // Try repo first, then workspace fallback
+  // Try repo first; the goose-workspace fallback never leaks into other vaults
+  const svt = detectVaultType(REPO)
   const repoPaths = [
     path.join(REPO, config.statusLayerFile),
-    path.join(__dirname, '..', 'DIRECTOR_STATUS.md'),
+    ...(svt !== 'sfs' && svt !== 'generic' ? [path.join(__dirname, '..', 'DIRECTOR_STATUS.md')] : []),
   ]
 
   let text = null
@@ -260,6 +796,8 @@ app.get('/api/status', (req, res) => {
       const m = line.match(/^(\w+):\s*(.*)/)
       if (m) entry[m[1].toLowerCase()] = m[2].trim()
     }
+    // Skip unfilled template blocks (e.g. "[Agent Name]" / "YYYY-MM-DD")
+    if (/\[.*\]|YYYY-MM-DD/.test(`${entry.date} ${entry.agent}`)) continue
     if (entry.date && entry.agent) {
       entries.push({
         date: entry.date,
@@ -295,16 +833,18 @@ app.get('/api/canon', (req, res) => {
     for (const file of files) {
       const text = readFileSafe(path.join(dir, file))
       if (!text) continue
-      const canonStatus = extractMdField(text, 'Canon Status') || 'Unknown'
+      const rawStatus = extractMdField(text, 'Canon Status')
+      const canonStatus = rawStatus ? rawStatus.split(/[—(/]/)[0].trim() : 'Unknown'
       const canonBoundary = extractMdField(text, 'Canon Boundary') || 'N/A'
       const title = file.replace(/\.md$/, '').replace(/_/g, ' ').replace(/v\d+$/, '').trim()
       const lastMod = fs.statSync(path.join(dir, file)).mtime.toISOString().slice(0, 10)
-      docs.push({ file, title, canonStatus, canonBoundary, lastMod, source: label })
+      docs.push({ file, title, canonStatus, canonStatusRaw: rawStatus || null, canonBoundary, lastMod, source: label })
     }
   }
 
   readDir(sotDir, 'live')
-  if (docs.length === 0) readDir(fallbackDir, 'workspace')
+  const cvt = detectVaultType(REPO)
+  if (docs.length === 0 && cvt !== 'sfs' && cvt !== 'generic') readDir(fallbackDir, 'workspace')
 
   // Also scan contextDirs (e.g. agents/umbruh) for context/session files
   for (const relDir of (config.contextDirs || [])) {
@@ -315,12 +855,13 @@ app.get('/api/canon', (req, res) => {
       const fullPath = path.join(dir, file)
       const text = readFileSafe(fullPath)
       if (!text) continue
-      const canonStatus = extractMdField(text, 'Canon Status') || 'Development'
+      const rawStatus = extractMdField(text, 'Canon Status')
+      const canonStatus = rawStatus ? rawStatus.split(/[—(/]/)[0].trim() : 'Development'
       const canonBoundary = extractMdField(text, 'Canon Boundary') || 'Internal'
       const h1 = text.match(/^#\s+(.+)/m)
       const title = h1 ? h1[1].trim() : file.replace(/\.md$/, '')
       const lastMod = fs.statSync(fullPath).mtime.toISOString().slice(0, 10)
-      docs.push({ file, title, canonStatus, canonBoundary, lastMod, source: relDir, path: path.join(relDir, file) })
+      docs.push({ file, title, canonStatus, canonStatusRaw: rawStatus || null, canonBoundary, lastMod, source: relDir, path: path.join(relDir, file) })
     }
   }
 
@@ -333,7 +874,13 @@ app.get('/api/canon', (req, res) => {
 
 // GET /api/health
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, repoFound: fs.existsSync(REPO) })
+  const type = detectVaultType(REPO)
+  res.json({
+    ok: true,
+    repoFound: !!REPO && fs.existsSync(REPO),
+    vaultType: type,
+    vaultName: vaultDisplayName(REPO, type),
+  })
 })
 
 // GET /api/key-status — tells the UI which keys are set (without revealing them)
@@ -341,12 +888,13 @@ app.get('/api/key-status', (req, res) => {
   res.json({
     anthropic: !!process.env.ANTHROPIC_API_KEY,
     openai: !!process.env.OPENAI_API_KEY,
+    telegram: !!process.env.TELEGRAM_BOT_TOKEN,
   })
 })
 
 // POST /api/settings — write API keys to the user data .env file
 app.post('/api/settings', (req, res) => {
-  const { anthropicKey, openaiKey } = req.body
+  const { anthropicKey, openaiKey, telegramToken } = req.body
   try {
     const envDir = process.env.NEXUS_USER_DATA
       || path.join(os.homedir(), 'Library', 'Application Support', 'Nexus')
@@ -368,6 +916,7 @@ app.post('/api/settings', (req, res) => {
 
     set('ANTHROPIC_API_KEY', anthropicKey)
     set('OPENAI_API_KEY', openaiKey)
+    set('TELEGRAM_BOT_TOKEN', telegramToken)
     if (!lines.find(l => l.startsWith('OLLAMA_BASE_URL=')))
       lines.push('OLLAMA_BASE_URL=http://localhost:11434')
 
@@ -377,6 +926,7 @@ app.post('/api/settings', (req, res) => {
       keyStatus: {
         anthropic: !!process.env.ANTHROPIC_API_KEY,
         openai: !!process.env.OPENAI_API_KEY,
+        telegram: !!process.env.TELEGRAM_BOT_TOKEN,
       }
     })
   } catch (e) {
@@ -1226,8 +1776,9 @@ app.get('/api/knowledge', (req, res) => {
   }
 
   // Also include workspace governance docs as fallback
+  const kvt = detectVaultType(REPO)
   const workspaceDir = path.join(__dirname, '..')
-  const wsFiles = ['Goose_Agent_Type_Classification_v1.md', 'Goose_Sigil_Mode_Standard_v1.md',
+  const wsFiles = (kvt === 'sfs' || kvt === 'generic') ? [] : ['Goose_Agent_Type_Classification_v1.md', 'Goose_Sigil_Mode_Standard_v1.md',
     'Goose_Canon_Terminology_Standard_v1.md', 'Goose_Operational_Posture_Standard_v1.md',
     'DIRECTOR_STATUS.md']
   for (const f of wsFiles) {
@@ -1358,7 +1909,7 @@ Do not include raw conversation — only structured output.`
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'umbruh',
+        model: UMBRUH_MODEL,
         stream: false,
         messages: [
           { role: 'system', content: bibliographerPrompt },
@@ -1761,7 +2312,7 @@ app.post('/api/voice-memory', async (req, res) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'umbruh',
+        model: UMBRUH_MODEL,
         stream: false,
         messages: [
           { role: 'system', content: 'You extract durable facts from conversations for a persistent memory file. Output ONLY a bullet list of facts. Each line starts with "- ". Be direct and specific — include exact values, names, preferences, and secrets shared. No commentary, no hedging, no intro text.' },
@@ -1831,7 +2382,7 @@ app.get('/voice', (_req, res) => {
 // GET /api/voice-context — PIN-protected, returns Umbruh context doc content
 app.get('/api/voice-context', (req, res) => {
   if (!voicePinCheck(req, res)) return
-  const umbruhModel = (config.models || []).find(m => m.id === 'umbruh')
+  const umbruhModel = (config.models || []).find(m => m.id === 'umbruh-lite' || m.id === 'umbruh')
   const docs = []
   for (const docPath of (umbruhModel?.defaultDocs || [])) {
     const fullPath = path.join(REPO, docPath)
@@ -1917,6 +2468,9 @@ const UMBRUH_TOOLS = [
 ]
 
 async function executeTool(name, args) {
+  if (!sandboxEnabled()) {
+    return { success: false, error: 'Sandbox is disabled. Enable it in Settings → Sandbox to allow local tools.' }
+  }
   console.log(`[Umbruh tool] ${name}:`, JSON.stringify(args).slice(0, 200))
   const safeEnv = { ...process.env, HOME: os.homedir(), PATH: '/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin:/usr/sbin' }
   try {
@@ -1960,10 +2514,11 @@ async function executeTool(name, args) {
 }
 
 async function runAgentLoop(messages, ollamaUrl, maxSteps = 8, useTools = true) {
+  const toolsAllowed = useTools && sandboxEnabled()
   const msgs = [...messages]
   for (let i = 0; i < maxSteps; i++) {
-    const body = { model: 'umbruh', messages: msgs, stream: false }
-    if (useTools) body.tools = UMBRUH_TOOLS
+    const body = { model: UMBRUH_MODEL, messages: msgs, stream: false }
+    if (toolsAllowed) body.tools = UMBRUH_TOOLS
     const response = await fetch(`${ollamaUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2180,7 +2735,8 @@ You are speaking aloud to the Director via a mobile voice interface. Different r
 
   try {
     const lastUserMsg = messages.filter(m => m.role === 'user').pop()?.content?.toLowerCase() || ''
-    const needsTools = /\b(open|run|execute|find|search|write|read|fetch|go to|check|list|create|delete|move|copy|install|launch|browse|look up|show me|get me|update|edit|save)\b/.test(lastUserMsg)
+    const needsTools = sandboxEnabled()
+      && /\b(open|run|execute|find|search|write|read|fetch|go to|check|list|create|delete|move|copy|install|launch|browse|look up|show me|get me|update|edit|save)\b/.test(lastUserMsg)
 
     let fullText = ''
 
@@ -2198,7 +2754,7 @@ You are speaking aloud to the Director via a mobile voice interface. Different r
       const ollamaRes = await fetch(`${ollamaUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'umbruh', messages: ollamaMessages, stream: true })
+        body: JSON.stringify({ model: UMBRUH_MODEL, messages: ollamaMessages, stream: true })
       })
       if (!ollamaRes.ok) throw new Error(`Ollama ${ollamaRes.status}`)
 
@@ -2250,14 +2806,62 @@ You are speaking aloud to the Director via a mobile voice interface. Different r
   res.end()
 })
 
+// ─── Signal fleet delivery (fork watcher + daily brief + Signal Desk API) ────
+// Personal (C lineage). Boots before Telegram so its endpoints exist even when
+// the bot is disabled; Telegram's notify() is injected after initTelegram.
+let signalApi = null
+try {
+  signalApi = initSignal({ app, config, REPO, readFileSafe })
+} catch (e) {
+  console.error('[Signal] init failed:', e.message)
+}
+
 // ─── Telegram bot (SFS status feed + remote control) ─────────────────────────
 // Registered before the SPA fallback so /api/notify resolves correctly.
 try {
+  if (process.env.NEXUS_DISABLE_TELEGRAM) throw new Error('disabled by NEXUS_DISABLE_TELEGRAM (dev run)')
   const tgOllamaUrl = (process.env.OLLAMA_BASE_URL || 'http://localhost:11434').replace(/\/$/, '')
-  initTelegram({ app, config, REPO, readFileSafe, runAgentLoop, generateTTS, ollamaUrl: tgOllamaUrl })
+  const tgApi = initTelegram({ app, config, REPO, readFileSafe, runAgentLoop, generateTTS, ollamaUrl: tgOllamaUrl, signal: signalApi })
+  if (signalApi && tgApi?.notify) signalApi.setNotify(tgApi.notify)
 } catch (e) {
   console.error('[Telegram] init failed:', e.message)
 }
+
+// ─── personal (Goose-only): pull shared UI updates from the product console ───
+// Runs sync-nexus-ui.command (dry-run, or --apply). On apply, rebuilds this Nexus
+// and swaps the fresh frontend into the running app; the UI then reloads itself.
+// Localhost-only + fixed paths (no user input) → safe to shell out. NOT present in
+// the product build. See NEXUS-lineage-and-sync-map.md.
+app.post('/api/sync-ui', (req, res) => {
+  const apply = !!(req.body && req.body.apply)
+  const SYNC = '/Users/goose/Documents/sfs-vault/GitHub/goose-system/System Development/sync-nexus-ui.command'
+  const SRC = '/Users/goose/Documents/goose-director'
+  const DIST_TARGET = path.join(__dirname, 'dist')
+  if (!fs.existsSync(SYNC)) {
+    return res.status(404).json({ ok: false, error: 'Sync tool not found:\n' + SYNC })
+  }
+  const sameTree = path.resolve(DIST_TARGET) === path.resolve(SRC, 'dist')
+  // login shell (-l) so npm/node resolve on PATH inside the packaged app.
+  const cmd = !apply
+    ? `"${SYNC}"`
+    : sameTree
+      ? `"${SYNC}" --apply && cd "${SRC}" && npm run build`
+      : `"${SYNC}" --apply && cd "${SRC}" && npm run build && rm -rf "${DIST_TARGET}" && cp -R "${SRC}/dist" "${DIST_TARGET}"`
+  // strip ANSI colour codes + stray control chars so the panel shows clean text
+  const clean = (s) => (s || '').toString()
+    .replace(/\x1B\[[0-9;]*[A-Za-z]/g, '')
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+  try {
+    const output = execFileSync('/bin/bash', ['-lc', cmd], {
+      encoding: 'utf8',
+      timeout: apply ? 240000 : 60000,
+      maxBuffer: 8 * 1024 * 1024,
+    })
+    res.json({ ok: true, output: clean(output), reload: apply })
+  } catch (e) {
+    res.json({ ok: false, output: clean(e.stdout), error: clean(e.stderr || e.message) })
+  }
+})
 
 // ─── serve built React app in production ─────────────────────────────────────
 // In dev, Vite serves on 5173. In production (packaged app), Express serves
@@ -2272,7 +2876,12 @@ if (fs.existsSync(distDir)) {
 }
 
 // ─── start ──────────────────────────────────────────────────────────────────
-app.listen(3001, () => {
+const PORT = Number(process.env.NEXUS_PORT) || 3001
+// Bind loopback-only by default so the API/UI is never exposed to the LAN.
+// Override with NEXUS_HOST only if you deliberately need remote access (+ firewall).
+const HOST = process.env.NEXUS_HOST || '127.0.0.1'
+app.listen(PORT, HOST, () => {
+  console.log(`Nexus API on ${HOST}:${PORT}`)
   console.log('Goose Director API running on http://localhost:3001')
   console.log('Repo path:', REPO, fs.existsSync(REPO) ? '✓ found' : '✗ not found — using static data')
 })
