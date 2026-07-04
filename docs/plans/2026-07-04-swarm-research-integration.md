@@ -24,14 +24,17 @@
 | **PILOT** | **RAG grounding** (Qdrant + Chonkie + Marker + Crawl4AI) | Real capability gain (grounding beats scaling for factual work) but real footprint + build cost. |
 | **PILOT** | **DSPy** (prompt optimization) | Genuine gains, but it's an *offline batch compile*, not a live call. |
 | **SKIP (now)** | **Ornith-1.0-35B** | ~21GB q4 vs macOS Metal's ~18GB working set — same failure class that killed the 32B. |
-| **DEFER** | **NVIDIA DGX Spark** | **No spec survived verification.** Needs its own hardware pass before any buy. |
+| **SKIP** (technique = optional PILOT) | **DSpark** (DeepSeek speculative decoding) | Speed, not memory — does **not** reopen the 32B. Checkpoints are DeepSeek-V4-only; local use needs training a custom draft head. The *technique* (speculative decoding via llama.cpp) is a legit latency PILOT. |
+| **DEFER** | **NVIDIA DGX Spark** (hardware — *separate from DSpark*) | The "buy more RAM to fit the 32B" question. No spec survived verification; needs its own hardware pass. |
 | **baseline** | **Ollama** | Already in the stack; everything else plugs into it. |
 
 **The through-line:** adopt cheap infrastructure that makes the *existing* 8B models more reliable and reclaims **routine** work from Claude (LiteLLM + structured output + Langfuse), then pilot the two capability upgrades (Ornith-9B, RAG). **Keep deep multi-step reasoning and highest-quality output on Claude Max** — even RAG doesn't fully close the local↔cloud gap.
 
 ---
 
-## Part A — Ornith-1.0 & dSpark (DGX Spark)
+## Part A — Ornith-1.0 & DSpark (+ the DGX Spark hardware question)
+
+> **Naming correction (2026-07-04):** "dSpark" is **DSpark**, DeepSeek + Peking University's open-source *speculative-decoding* framework (paper: *Confidence-Scheduled Speculative Decoding with Semi-Autoregressive Generation*) — **software**, confirmed by the Director. An earlier draft of this doc conflated it with **NVIDIA DGX Spark** (a hardware box); those are two unrelated things and are now split out below.
 
 ### Ornith-1.0-9B → **PILOT** (the real local-model opportunity)
 
@@ -46,11 +49,21 @@
 
 - ✅ q4_K_M is **~21.2GB on disk**; macOS Metal default working set is **~18GB of 24GB** → likely won't even load, and leaves ~nothing for context/OS. **Same failure class as the scratched 32B.** Only revisit if hardware changes (see DGX Spark).
 
-### NVIDIA DGX Spark → **DEFER — not answered**
+### DSpark (DeepSeek speculative decoding) → **SKIP the artifact; the technique is an optional PILOT**
 
-- **No DGX Spark claim survived the swarm's verification bar**, so nothing here is asserted as fact.
+*Source: the DSpark paper (DeepSeek-AI + Peking University), provided by the Director.*
+
+- ✅ **What it is:** a **speculative-decoding** framework. A small **draft model** proposes a block of tokens; the **full-size target model verifies them in one forward pass**. The acceptance rule preserves the target distribution **exactly → lossless** (identical output, just faster). Two innovations: a semi-autoregressive draft head that fixes **suffix decay** (the Director's "syntax decay" — acceptance collapsing toward the end of a block), and confidence-scheduled verification for high-concurrency serving. Reported **60–85% per-user speedup** in DeepSeek's own V4 serving vs. their MTP-1 baseline.
+- ❌ **Does NOT reopen the 32B.** Speculative decoding is a **latency/throughput** optimization, **not** a memory one. The full target model stays **fully resident in RAM**, *plus* a draft head on top → it uses **slightly more** memory, never less. The 32B was scratched for **RAM** reasons; DSpark doesn't touch that wall. Only more RAM (hardware) or heavier quantization / MoE can fit a 32B-class model in a tight envelope.
+- ❌ **Does NOT raise quality.** Because it's lossless, an 8B + DSpark returns **the same 8B answers, faster** — not smarter ones. It cannot substitute for the reasoning of a larger model or Claude.
+- ⚠️ **Not plug-and-play locally:** released DSpark checkpoints are trained **specifically for DeepSeek-V4-Flash/Pro**. Using it on `llama3.1:8b` / Ornith-9B requires **training a custom draft head** via their **DeepSpec** repo (real GPU training). The paper also targets **datacenter high-concurrency serving**, not a single-user Mac.
+- ✅ **The salvageable idea:** the *technique* — **speculative decoding via llama.cpp** with an off-the-shelf tiny draft model (e.g. `llama3.2:1b` drafting for an 8B) — needs no training and can speed up local Umbruh **today**. Treat as a **latency PILOT**, clear-eyed that it's a *speed* win, not a *capacity* one.
+
+### NVIDIA DGX Spark (hardware — *a separate question from DSpark*) → **DEFER — not answered**
+
+- This is the **"buy more RAM to fit the 32B"** path, unrelated to DSpark. **No DGX Spark claim survived the swarm's verification bar**, so nothing here is asserted as fact.
 - ⚠️ *Directional only (unverified search snippets):* **128GB unified LPDDR5X** but only **~273 GB/s** bandwidth (memory-bound decode — the bottleneck for a big-model box), price **$3,999 → $4,699** after a memory-shortage hike.
-- This is exactly the machine that would revive the 35B / scratched-32B path **and** absorb the RAG-stack footprint below — so it's the natural home for the "we outgrew 24GB" decision. **Needs a dedicated hardware research pass before any buy.**
+- Because DSpark does **not** solve the memory wall, *this* — more unified memory — is the only thing that genuinely revives the 35B / scratched-32B path and absorbs the RAG-stack footprint below. **Needs a dedicated hardware research pass before any buy.**
 
 ---
 
