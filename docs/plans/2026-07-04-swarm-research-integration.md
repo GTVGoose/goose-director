@@ -117,6 +117,14 @@ This is the crux, and it's **genuinely unresolved**:
 
 ---
 
+## Implementation status (2026-07-04)
+
+Director chose **Plan B**: skip LiteLLM for now (its real value needs a `claude` CLI-shim to preserve $0 metering — deferred to its own PR), do **Langfuse + structured output** first.
+
+- ✅ **Langfuse observability — WIRED** (this branch). New `observability.mjs` (fail-safe: dynamic import, no-op unless `LANGFUSE_PUBLIC_KEY`+`LANGFUSE_SECRET_KEY` set, never throws into the request path). Instruments three points in `server.mjs`: `callModel()` (sandbox dispatch), `runAgentLoop()` (**the Telegram round-trip, traced as one span**), and `/api/relay` (Invoke streaming). **To activate:** `npm install`, then add Langfuse keys to `.env`. *Untested in CI (no Ollama/keys in the cloud box) — verify on the Mac.*
+- ⏳ **Structured output — NEXT.** Target: harden the local agent-loop's tool-call JSON via Ollama's native `format` (schema-constrained decoding), with an Outlines sidecar only if that proves insufficient.
+- ✅ **Speculative-decoding pilot — APPROVED** (see DSpark section). Rationale: the Telegram pipeline waits on the local 8B first, so a lossless generation speedup shortens the whole round-trip. Langfuse (above) is the measurement tool for it. **Concrete pilot:** run the target 8B under `llama.cpp`'s `llama-server` with `--model-draft` pointing at a tiny draft (e.g. `llama3.2:1b`); if Ollama doesn't expose speculative-decoding flags, this means running llama.cpp directly for that model. Baseline the `telegram.agentLoop` latency in Langfuse, enable, compare. Clear-eyed: this is a *latency* win, **not** a path to the 32B (memory is untouched).
+
 ## Recommended rollout order (impact-per-effort)
 
 1. **LiteLLM proxy** — pure config/HTTP. Unifies local routing, adds free local→Claude fallback. Keep `claude-max` on the CLI route, outside LiteLLM, to preserve $0 metering.

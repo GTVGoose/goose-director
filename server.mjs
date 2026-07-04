@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url'
 import { execFileSync, execSync } from 'child_process'
 import { initTelegram } from './telegram.mjs'
 import { initSignal } from './signal.mjs'
+import { traceModelCall } from './observability.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -1187,12 +1188,18 @@ app.post('/api/relay', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
 
-  const sendChunk = (text) => res.write(`data: ${JSON.stringify({ text })}\n\n`)
+  // Langfuse tracing: accumulate the streamed text so the completed generation
+  // (input, output, latency) is recorded on done/error. Fire-and-forget; never throws.
+  const _t0 = new Date()
+  let _out = ''
+  const sendChunk = (text) => { _out += text; res.write(`data: ${JSON.stringify({ text })}\n\n`) }
   const sendDone = (meta) => {
+    traceModelCall({ name: 'nexus.relay', provider: meta?.provider, model: meta?.model, input: messages, output: _out, metadata: { modelId, systemChars: systemContent.length }, startTime: _t0, endTime: new Date() })
     res.write(`data: ${JSON.stringify({ done: true, ...meta })}\n\n`)
     res.end()
   }
   const sendError = (msg) => {
+    traceModelCall({ name: 'nexus.relay', provider: modelConfig?.provider, model: modelConfig?.model, input: messages, output: _out || undefined, error: msg, metadata: { modelId }, startTime: _t0, endTime: new Date() })
     res.write(`data: ${JSON.stringify({ error: msg })}\n\n`)
     res.end()
   }
@@ -1387,7 +1394,22 @@ function recordUsage(mc, inTok = 0, outTok = 0) {
 }
 const overBudget = () => budgetUSD > 0 && usage.costUSD >= budgetUSD
 
+// Traced wrapper (Langfuse): times every model call and records provider/model/
+// input/output/latency. traceModelCall is fire-and-forget and never throws, so the
+// dispatch logic in _callModelRaw below is entirely unchanged.
 async function callModel(modelConfig, systemContent, messages) {
+  const t0 = new Date()
+  try {
+    const out = await _callModelRaw(modelConfig, systemContent, messages)
+    traceModelCall({ name: 'nexus.callModel', provider: modelConfig?.provider, model: modelConfig?.model, input: messages, output: out, metadata: { systemChars: (systemContent || '').length }, startTime: t0, endTime: new Date() })
+    return out
+  } catch (e) {
+    traceModelCall({ name: 'nexus.callModel', provider: modelConfig?.provider, model: modelConfig?.model, input: messages, error: e.message, metadata: { systemChars: (systemContent || '').length }, startTime: t0, endTime: new Date() })
+    throw e
+  }
+}
+
+async function _callModelRaw(modelConfig, systemContent, messages) {
   const provider = modelConfig.provider
   // Prepend the model's persona (if any) so cloud Umbruh carries its identity.
   const persona = loadPersona(modelConfig)
@@ -2528,7 +2550,22 @@ async function executeTool(name, args) {
   }
 }
 
+// Traced wrapper (Langfuse): captures the WHOLE local agent loop as one span — this
+// is the Telegram round-trip latency (prompt in → final reply out). Baseline it here,
+// then measure the delta when piloting speculative decoding on the local 8B.
 async function runAgentLoop(messages, ollamaUrl, maxSteps = 8, useTools = true) {
+  const t0 = new Date()
+  try {
+    const out = await _runAgentLoopRaw(messages, ollamaUrl, maxSteps, useTools)
+    traceModelCall({ name: 'telegram.agentLoop', provider: 'ollama', model: UMBRUH_MODEL, input: messages, output: out, metadata: { maxSteps, useTools, path: 'agent-loop' }, startTime: t0, endTime: new Date() })
+    return out
+  } catch (e) {
+    traceModelCall({ name: 'telegram.agentLoop', provider: 'ollama', model: UMBRUH_MODEL, input: messages, error: e.message, metadata: { maxSteps, useTools, path: 'agent-loop' }, startTime: t0, endTime: new Date() })
+    throw e
+  }
+}
+
+async function _runAgentLoopRaw(messages, ollamaUrl, maxSteps = 8, useTools = true) {
   const toolsAllowed = useTools && sandboxEnabled()
   const msgs = [...messages]
   for (let i = 0; i < maxSteps; i++) {
