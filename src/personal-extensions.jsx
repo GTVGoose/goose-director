@@ -13,28 +13,38 @@ import Sandbox from './components/Sandbox.jsx'
 import Membrane from './components/Membrane.jsx'
 import Updates from './components/Updates.jsx'
 import SignalDesk from './components/SignalDesk.jsx'
+import Domains from './components/Domains.jsx'
 
 // Nav entries appended after the shared "Act" section. `section` starts a new
 // sidebar group when it differs from the running section (which begins at 'Act').
 export const personalNav = [
-  { section: 'Act',    id: 'sandbox',  icon: 'users-group',     label: 'Sandbox',  sub: 'Many models, one council' },
-  { section: 'Act',    id: 'signal',   icon: 'antenna',         label: 'Signal Desk', sub: 'Fleet forks + daily brief' },
-  { section: 'Studio', id: 'membrane', icon: 'topology-star-3', label: 'Membrane', sub: 'SFS Vault shared intelligence' },
-  { section: 'Studio', id: 'updates',  icon: 'cloud-download',  label: 'Updates',  sub: 'Pull shared UI from the product' },
+  { section: 'Act',      id: 'sandbox',        icon: 'users-group',     label: 'Sandbox',  sub: 'Many models, one council' },
+  { section: 'Act',      id: 'signal',         icon: 'antenna',         label: 'Signal Desk', sub: 'Fleet forks + daily brief' },
+  { section: 'Domains',  id: 'domain-health',  icon: 'heartbeat',       label: 'Health',   sub: 'Plans, goals, body data' },
+  { section: 'Domains',  id: 'domain-finance', icon: 'cash',            label: 'Finance',  sub: 'Tax catch-up + planning' },
+  { section: 'Domains',  id: 'domain-admin',   icon: 'id-badge-2',      label: 'Admin',    sub: 'Identity spine + paperwork' },
+  { section: 'Studio',   id: 'membrane',       icon: 'topology-star-3', label: 'Membrane', sub: 'SFS Vault shared intelligence' },
+  { section: 'Studio',   id: 'updates',        icon: 'cloud-download',  label: 'Updates',  sub: 'Pull shared UI from the product' },
 ]
 
 // Command-bar labels for personal views (merged over the shared VIEW_META).
 export const personalViewMeta = {
-  sandbox:  { label: 'Sandbox',  sub: 'Multi-model council' },
-  signal:   { label: 'Signal Desk', sub: 'Signal fleet forks + Signal Brief' },
-  membrane: { label: 'Membrane', sub: 'SFS Vault shared-intelligence layer' },
-  updates:  { label: 'Updates',  sub: 'Sync shared UI from the product console' },
+  sandbox:          { label: 'Sandbox',  sub: 'Multi-model council' },
+  signal:           { label: 'Signal Desk', sub: 'Signal fleet forks + Signal Brief' },
+  'domain-health':  { label: 'Health',   sub: 'Health domain — plans, goals, data streams' },
+  'domain-finance': { label: 'Finance',  sub: 'Finance domain — plans and research' },
+  'domain-admin':   { label: 'Admin',    sub: 'Admin domain — identity accounts, documents, missions' },
+  membrane:         { label: 'Membrane', sub: 'SFS Vault shared-intelligence layer' },
+  updates:          { label: 'Updates',  sub: 'Sync shared UI from the product console' },
 }
 
 // Render functions for personal views, keyed by view id. Receive shared props.
 export const personalViews = {
-  sandbox:  ({ canonDocs }) => <Sandbox canonDocs={canonDocs} />,
-  signal:   () => <SignalDesk />,
-  membrane: () => <Membrane />,
-  updates:  () => <Updates />,
+  sandbox:          ({ canonDocs }) => <Sandbox canonDocs={canonDocs} />,
+  signal:           () => <SignalDesk />,
+  'domain-health':  () => <Domains focus="health" />,
+  'domain-finance': () => <Domains focus="finance" />,
+  'domain-admin':   () => <Domains focus="admin" />,
+  membrane:         () => <Membrane />,
+  updates:          () => <Updates />,
 }
