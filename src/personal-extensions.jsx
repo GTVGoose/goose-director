@@ -20,6 +20,7 @@ import Domains from './components/Domains.jsx'
 export const personalNav = [
   { section: 'Act',      id: 'sandbox',        icon: 'users-group',     label: 'Sandbox',  sub: 'Many models, one council' },
   { section: 'Act',      id: 'signal',         icon: 'antenna',         label: 'Signal Desk', sub: 'Fleet forks + daily brief' },
+  { section: 'Domains',  id: 'domains',        icon: 'layout-grid',     label: 'All Domains', sub: 'The Goose organism — original 8' },
   { section: 'Domains',  id: 'domain-health',  icon: 'heartbeat',       label: 'Health',   sub: 'Plans, goals, body data' },
   { section: 'Domains',  id: 'domain-finance', icon: 'cash',            label: 'Finance',  sub: 'Tax catch-up + planning' },
   { section: 'Domains',  id: 'domain-admin',   icon: 'id-badge-2',      label: 'Admin',    sub: 'Identity spine + paperwork' },
@@ -31,6 +32,7 @@ export const personalNav = [
 export const personalViewMeta = {
   sandbox:          { label: 'Sandbox',  sub: 'Multi-model council' },
   signal:           { label: 'Signal Desk', sub: 'Signal fleet forks + Signal Brief' },
+  domains:          { label: 'All Domains', sub: 'Every life domain — the original-8 person model' },
   'domain-health':  { label: 'Health',   sub: 'Health domain — plans, goals, data streams' },
   'domain-finance': { label: 'Finance',  sub: 'Finance domain — plans and research' },
   'domain-admin':   { label: 'Admin',    sub: 'Admin domain — identity accounts, documents, missions' },
@@ -42,6 +44,7 @@ export const personalViewMeta = {
 export const personalViews = {
   sandbox:          ({ canonDocs }) => <Sandbox canonDocs={canonDocs} />,
   signal:           () => <SignalDesk />,
+  domains:          () => <Domains focus="life" />,
   'domain-health':  () => <Domains focus="health" />,
   'domain-finance': () => <Domains focus="finance" />,
   'domain-admin':   () => <Domains focus="admin" />,

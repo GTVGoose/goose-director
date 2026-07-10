@@ -8,7 +8,13 @@ import { useState, useEffect } from 'react'
 // `focus` is a domain id (e.g. 'health'); the view opens on it but lets you
 // switch between any discovered domain.
 
-const DOMAIN_ICONS = { health: 'ti-heartbeat', finance: 'ti-cash', admin: 'ti-id-badge-2' }
+const DOMAIN_ICONS = {
+  life: 'ti-home', health: 'ti-heartbeat', love: 'ti-heart', finance: 'ti-cash',
+  legacy: 'ti-hourglass-high', art: 'ti-palette', mission: 'ti-target-arrow',
+  mind: 'ti-brain', admin: 'ti-id-badge-2',
+}
+// Tab order mirrors the original-8 person model (admin = infrastructure, last).
+const DOMAIN_ORDER = ['life', 'health', 'love', 'finance', 'legacy', 'art', 'mission', 'mind', 'admin']
 const CATEGORY_ORDER = ['Overview', 'Goals', 'Records']
 
 export default function Domains({ focus }) {
@@ -30,6 +36,9 @@ export default function Domains({ focus }) {
 
   useEffect(() => {
     fetch('/api/domains').then(r => r.json()).then(d => {
+      d.sort((a, b) =>
+        (DOMAIN_ORDER.indexOf(a.id) + 1 || 99) - (DOMAIN_ORDER.indexOf(b.id) + 1 || 99)
+        || a.label.localeCompare(b.label))
       setDomains(d)
       setActiveKey(prev => (d.find(x => x.key === prev) ? prev : resolveKey(d, focus)))
       setLoading(false)
