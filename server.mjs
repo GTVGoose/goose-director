@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url'
 import { execFileSync, execSync } from 'child_process'
 import { initTelegram } from './telegram.mjs'
 import { initSignal } from './signal.mjs'
+import { initGate } from './gate.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -2900,3 +2901,20 @@ app.listen(PORT, HOST, () => {
   console.log('Goose Director API running on http://localhost:3001')
   console.log('Repo path:', REPO, fs.existsSync(REPO) ? '✓ found' : '✗ not found — using static data')
 })
+  if (signalApi && tgApi?.notifyDocument) signalApi.setNotifyDocument(tgApi.notifyDocument)
+
+  // ─── Umbruh ingress gate (vault → Goose system → Director's Telegram) ──────
+  // Inside the Telegram try block on purpose: without notify() the gate cannot
+  // deliver, so a disabled/dev run must not claim vault messages it can't send.
+  const gateApi = initGate({ config, ollamaUrl: tgOllamaUrl })
+  if (gateApi && tgApi?.notify) gateApi.setNotify(tgApi.notify)
+  // When running from the packaged app, __dirname is the bundle's app/ dir. The
+  // built UI (dist) gets copied here — but historically the SERVER files did NOT,
+  // so a "sync" shipped new UI against a stale server (e.g. new /api/domains UI
+  // calling a route the old server lacked → "No domains found"). Carry the server
+  // files (server/telegram/signal .mjs) too, so a sync actually deploys the whole
+  // app. These take effect on the NEXT LAUNCH (the running node process keeps the
+  // old code in memory), so we flag serverSynced and the UI prompts a relaunch.
+  const APP_DIR = path.dirname(DIST_TARGET)
+  const SERVER_FILES = ['server.mjs', 'telegram.mjs', 'signal.mjs', 'gate.mjs']
+  const syncServerCmd = SERVER_FILES.map(f => `cp "${SRC}/${f}" "${APP_DIR}/${f}"`).join(' && ')

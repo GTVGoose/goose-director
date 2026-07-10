@@ -9,6 +9,13 @@
     "agents/umbruh"
   ],
   "voicePin": "1234",
+  "gate": {
+    "enabled": true,
+    "bridgeDir": "/Users/goose/Documents/sfs-vault/_system/bridge",
+    "boundMember": "david",
+    "intervalSec": 60,
+    "_note": "Umbruh ingress gate (gate.mjs): everything the SFS vault queues for the Director's personal channel passes through the Goose system first — voiced by umbruhLocalModel, delivered via telegram.mjs notify(). Replaces the vault's raw drain side-door (retired 2026-07-09). Studio-bound traffic (to: all / other members) is never touched."
+  },
   "signal": {
     "campaignsDir": "campaigns",
     "briefHour": "08:30",

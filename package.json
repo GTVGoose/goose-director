@@ -50,6 +50,8 @@
       "electron/**/*",
       "server.mjs",
       "telegram.mjs",
+      "signal.mjs",
+      "gate.mjs",
       "goose.config.json",
       "threads/**/*",
       "node_modules/**/*"
