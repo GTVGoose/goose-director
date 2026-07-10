@@ -1,36 +1,41 @@
 import { useState, useEffect } from 'react'
 
 // Domains view (personal Nexus only — wired via personal-extensions.jsx).
-// Read-only window onto the life/work domains under <repo>/domains: plans,
-// goals, records, and a summary of the private data streams. All local; the
-// server is loopback-only and file reads are repo-scoped (see /api/file guard).
+// One sidebar entry → a LANDING PAGE: the current "Goose" organism model
+// (domains/NOW.md, agent-curated) + a card per life domain with live activity
+// data. Clicking a card opens the domain browser (plans, goals, records,
+// stream summaries). All local; the server is loopback-only and file reads
+// are repo-scoped (see /api/file guard).
 //
-// `focus` is a domain id (e.g. 'health'); the view opens on it but lets you
-// switch between any discovered domain.
+// `focus` (optional) is a domain id — deep-links straight into that domain.
 
-const DOMAIN_ICONS = {
-  life: 'ti-home', health: 'ti-heartbeat', love: 'ti-heart', finance: 'ti-cash',
-  legacy: 'ti-hourglass-high', art: 'ti-palette', mission: 'ti-target-arrow',
-  mind: 'ti-brain', admin: 'ti-id-badge-2',
+// The original-8 person model (+ admin = infrastructure). Order is canonical.
+const DOMAIN_META = {
+  life:    { icon: 'ti-home',           orig: 'Life',              tag: 'Daily rhythm & environment' },
+  health:  { icon: 'ti-heartbeat',      orig: 'Health',            tag: 'The body, measured' },
+  love:    { icon: 'ti-heart',          orig: 'Love',              tag: 'The inner circle' },
+  finance: { icon: 'ti-cash',           orig: 'Finances',          tag: 'Money, taxes, benefits' },
+  legacy:  { icon: 'ti-hourglass-high', orig: 'Legacy',            tag: 'Name, catalog, estate' },
+  art:     { icon: 'ti-palette',        orig: 'Art',               tag: 'Craft & practice' },
+  mission: { icon: 'ti-target-arrow',   orig: 'Work/Mission',      tag: 'Career bets & direction' },
+  mind:    { icon: 'ti-brain',          orig: 'Mind/Intelligence', tag: 'Learning & attention' },
+  admin:   { icon: 'ti-id-badge-2',     orig: 'infrastructure',    tag: 'Identity spine & paperwork' },
 }
-// Tab order mirrors the original-8 person model (admin = infrastructure, last).
-const DOMAIN_ORDER = ['life', 'health', 'love', 'finance', 'legacy', 'art', 'mission', 'mind', 'admin']
+const DOMAIN_ORDER = Object.keys(DOMAIN_META)
 const CATEGORY_ORDER = ['Overview', 'Goals', 'Records']
 
 export default function Domains({ focus }) {
   const [domains, setDomains] = useState([])
-  // activeKey is a per-repo domain key ("<repoId>:<domainId>") since the same
-  // domain name (e.g. "health") can exist in more than one connected repo.
+  // activeKey: null = landing page; else "<repoId>:<domainId>" opens the browser.
   const [activeKey, setActiveKey] = useState(null)
+  const [now, setNow] = useState(null)        // domains/NOW.md — the curated organism brief
   const [selected, setSelected] = useState(null)
   const [content, setContent] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // Resolve the sidebar `focus` (a domain id like "health") to a domain key,
-  // preferring the primary repo's copy, else the first match, else first domain.
   const resolveKey = (list, focusId) => {
     const byId = list.filter(d => d.id === focusId)
-    const pick = byId.find(d => d.repoId === 'primary') || byId[0] || list[0]
+    const pick = byId.find(d => d.repoId === 'primary') || byId[0]
     return pick?.key || null
   }
 
@@ -40,12 +45,14 @@ export default function Domains({ focus }) {
         (DOMAIN_ORDER.indexOf(a.id) + 1 || 99) - (DOMAIN_ORDER.indexOf(b.id) + 1 || 99)
         || a.label.localeCompare(b.label))
       setDomains(d)
-      setActiveKey(prev => (d.find(x => x.key === prev) ? prev : resolveKey(d, focus)))
+      if (focus) setActiveKey(resolveKey(d, focus))
       setLoading(false)
     }).catch(() => setLoading(false))
+    fetch('/api/file?p=' + encodeURIComponent('domains/NOW.md'))
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(d => setNow(d.content)).catch(() => setNow(null))
   }, [])
 
-  // Re-focus if the sidebar entry changes while mounted.
   useEffect(() => { if (focus && domains.length) setActiveKey(resolveKey(domains, focus)) }, [focus])
 
   const domain = domains.find(d => d.key === activeKey)
@@ -73,24 +80,51 @@ export default function Domains({ focus }) {
     )
   }
 
-  // Group docs by category in a stable order.
+  // ── Landing page ─────────────────────────────────────────────────────────
+  if (!domain) {
+    return (
+      <div style={{ maxWidth: 1100, display: 'flex', flexDirection: 'column', gap: 18, overflowY: 'auto', height: '100%', paddingRight: 4 }}>
+        {/* The organism brief — domains/NOW.md, curated by agents */}
+        <div style={{ background: 'var(--color-surface)', border: '0.5px solid var(--color-border)', borderRadius: 'var(--radius-lg)', padding: '16px 20px' }}>
+          {now
+            ? <Markdown text={now} />
+            : <div style={{ fontSize: 13, color: 'var(--color-text-3)', lineHeight: 1.6 }}>
+                No <code>domains/NOW.md</code> yet — the organism brief lives there
+                (agent-curated: current state + important updates).
+              </div>}
+        </div>
+
+        {/* One card per domain */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))', gap: 10 }}>
+          {domains.map(d => <DomainCard key={d.key} d={d} multiRepo={multiRepo} onOpen={() => setActiveKey(d.key)} />)}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Domain browser ───────────────────────────────────────────────────────
   const groups = {}
   for (const doc of domain?.docs || []) (groups[doc.category] ||= []).push(doc)
   const cats = Object.keys(groups).sort(
     (a, b) => (CATEGORY_ORDER.indexOf(a) + 1 || 99) - (CATEGORY_ORDER.indexOf(b) + 1 || 99))
+  const meta = DOMAIN_META[domain.id] || {}
 
   return (
     <div style={{ display: 'flex', gap: 16, height: '100%', maxWidth: 1100 }}>
-      {/* Left: domain switcher + doc list */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
 
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          {domains.map(d => (
-            <TabBtn key={d.key} active={d.key === activeKey} onClick={() => { setActiveKey(d.key); setSelected(null); setContent(null) }}>
-              <i className={`ti ${DOMAIN_ICONS[d.id] || 'ti-layout-grid'}`} style={{ fontSize: 14 }}></i> {d.label}
-              {multiRepo && <span style={{ fontSize: 10, color: 'var(--color-text-3)', marginLeft: 4 }}>· {d.repoName}</span>}
-            </TabBtn>
-          ))}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button onClick={() => { setActiveKey(null); setSelected(null); setContent(null) }} style={{
+            background: 'none', border: '0.5px solid var(--color-border)', borderRadius: 6,
+            padding: '5px 10px', fontSize: 12, color: 'var(--color-text-3)', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 5,
+          }}>
+            <i className="ti ti-arrow-left" style={{ fontSize: 13 }}></i> All domains
+          </button>
+          <i className={`ti ${meta.icon || 'ti-layout-grid'}`} style={{ fontSize: 17 }}></i>
+          <span style={{ fontSize: 15, fontWeight: 600 }}>{domain.label}</span>
+          <span style={{ fontSize: 11, color: 'var(--color-text-3)' }}>{meta.tag}</span>
+          {multiRepo && <span style={{ fontSize: 10, color: 'var(--color-text-3)' }}>· {domain.repoName}</span>}
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -105,7 +139,6 @@ export default function Domains({ focus }) {
             </div>
           ))}
 
-          {/* Data streams — private observation feeds, summarized not dumped */}
           {domain?.streams?.length > 0 && (
             <div>
               <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-3)', padding: '4px 2px' }}>Data streams</div>
@@ -127,7 +160,6 @@ export default function Domains({ focus }) {
         </div>
       </div>
 
-      {/* Right: document viewer */}
       {selected && (
         <div style={{ width: 420, flexShrink: 0, background: 'var(--color-surface)', border: '0.5px solid var(--color-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <div style={{ padding: '10px 14px', borderBottom: '0.5px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -148,6 +180,37 @@ export default function Domains({ focus }) {
   )
 }
 
+function DomainCard({ d, multiRepo, onOpen }) {
+  const meta = DOMAIN_META[d.id] || {}
+  const records = (d.streams || []).reduce((n, s) => n + (s.records || 0), 0)
+  const lastDates = [
+    ...(d.docs || []).map(x => x.lastMod),
+    ...(d.streams || []).map(x => x.lastDate),
+  ].filter(Boolean).sort()
+  const last = lastDates[lastDates.length - 1]
+  return (
+    <div onClick={onOpen} style={{
+      display: 'flex', flexDirection: 'column', gap: 6, padding: '13px 15px', borderRadius: 'var(--radius-lg)',
+      background: 'var(--color-surface)', border: '0.5px solid var(--color-border)', cursor: 'pointer',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        <i className={`ti ${meta.icon || 'ti-layout-grid'}`} style={{ fontSize: 18 }}></i>
+        <span style={{ fontSize: 14, fontWeight: 600 }}>{d.label}</span>
+        <span style={{ fontSize: 10, color: 'var(--color-text-3)', marginLeft: 'auto' }}>{meta.orig}</span>
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--color-text-2)' }}>{meta.tag || ''}</div>
+      <div style={{ fontSize: 11, color: 'var(--color-text-3)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <span>{d.docs.length} doc{d.docs.length === 1 ? '' : 's'}</span>
+        {d.streams.length > 0 && (
+          <span>{records > 0 ? `${records} record${records === 1 ? '' : 's'}` : `${d.streams.length} streams · no data yet`}</span>
+        )}
+        {last && <span>touched {last}</span>}
+        {multiRepo && <span>· {d.repoName}</span>}
+      </div>
+    </div>
+  )
+}
+
 function DocRow({ doc, selected, onClick }) {
   return (
     <div onClick={onClick} style={{
@@ -164,31 +227,19 @@ function DocRow({ doc, selected, onClick }) {
   )
 }
 
-function TabBtn({ active, onClick, children }) {
-  return (
-    <button onClick={onClick} style={{
-      background: active ? 'var(--color-surface)' : 'none',
-      border: active ? '0.5px solid var(--color-border-strong)' : '0.5px solid transparent',
-      borderRadius: 6, padding: '5px 10px', fontSize: 12,
-      color: active ? 'var(--color-text)' : 'var(--color-text-3)', fontWeight: active ? 500 : 400,
-      cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
-    }}>{children}</button>
-  )
-}
-
-// Minimal markdown renderer — headings, bold, inline code, and bullet/number
-// lists are enough for plans and goal docs. No external dependency (the app
-// ships none) and no raw HTML injection: everything is built from React nodes,
-// so file content can't inject markup.
+// Minimal markdown renderer — headings, bold, inline code, bullet/number lists,
+// and (added for NOW.md) simple tables. Built from React nodes only — no raw
+// HTML injection, so file content can't inject markup.
 function Markdown({ text }) {
   const inline = (s, keyBase) => {
     const nodes = []
-    const re = /(\*\*([^*]+)\*\*|`([^`]+)`)/g
+    const re = /(\*\*([^*]+)\*\*|`([^`]+)`|\*([^*]+)\*)/g
     let last = 0, m, i = 0
     while ((m = re.exec(s))) {
       if (m.index > last) nodes.push(s.slice(last, m.index))
       if (m[2] != null) nodes.push(<strong key={`${keyBase}-b${i}`}>{m[2]}</strong>)
-      else nodes.push(<code key={`${keyBase}-c${i}`} style={{ fontFamily: 'monospace', fontSize: '0.9em', background: 'var(--color-surface-2)', padding: '1px 4px', borderRadius: 3 }}>{m[3]}</code>)
+      else if (m[3] != null) nodes.push(<code key={`${keyBase}-c${i}`} style={{ fontFamily: 'monospace', fontSize: '0.9em', background: 'var(--color-surface-2)', padding: '1px 4px', borderRadius: 3 }}>{m[3]}</code>)
+      else nodes.push(<em key={`${keyBase}-i${i}`}>{m[4]}</em>)
       last = m.index + m[0].length; i++
     }
     if (last < s.length) nodes.push(s.slice(last))
@@ -197,8 +248,9 @@ function Markdown({ text }) {
 
   const lines = text.split('\n')
   const blocks = []
-  let list = null // { ordered, items: [] }
-  const flush = () => {
+  let list = null   // { ordered, items: [] }
+  let table = null  // { header: [], rows: [][] }
+  const flushList = () => {
     if (!list) return
     const Tag = list.ordered ? 'ol' : 'ul'
     blocks.push(<Tag key={`l${blocks.length}`} style={{ margin: '6px 0', paddingLeft: 20, fontSize: 13, color: 'var(--color-text-2)', lineHeight: 1.6 }}>
@@ -206,19 +258,40 @@ function Markdown({ text }) {
     </Tag>)
     list = null
   }
+  const flushTable = () => {
+    if (!table) return
+    const cellStyle = { padding: '4px 10px', fontSize: 12, borderBottom: '0.5px solid var(--color-border)', textAlign: 'left', verticalAlign: 'top' }
+    blocks.push(
+      <table key={`t${blocks.length}`} style={{ borderCollapse: 'collapse', margin: '8px 0' }}>
+        <thead><tr>{table.header.map((h, j) => <th key={j} style={{ ...cellStyle, color: 'var(--color-text-3)', fontWeight: 600 }}>{inline(h, `th${j}`)}</th>)}</tr></thead>
+        <tbody>{table.rows.map((row, ri) => (
+          <tr key={ri}>{row.map((c, j) => <td key={j} style={{ ...cellStyle, color: 'var(--color-text-2)' }}>{inline(c, `td${ri}-${j}`)}</td>)}</tr>
+        ))}</tbody>
+      </table>)
+    table = null
+  }
+  const flush = () => { flushList(); flushTable() }
 
   lines.forEach((raw, idx) => {
     const line = raw.replace(/\s+$/, '')
     const h = line.match(/^(#{1,4})\s+(.+)/)
     const bullet = line.match(/^\s*[-*]\s+(.+)/)
     const num = line.match(/^\s*\d+\.\s+(.+)/)
-    if (h) {
+    const tableRow = line.match(/^\s*\|(.+)\|\s*$/)
+    if (tableRow) {
+      flushList()
+      const cells = tableRow[1].split('|').map(c => c.trim())
+      if (cells.every(c => /^:?-{2,}:?$/.test(c))) return   // separator row
+      if (!table) table = { header: cells, rows: [] }
+      else table.rows.push(cells)
+    } else if (h) {
       flush()
       const lvl = h[1].length
       blocks.push(<div key={idx} style={{ fontSize: lvl <= 1 ? 16 : lvl === 2 ? 14 : 13, fontWeight: 600, color: 'var(--color-text)', margin: lvl <= 2 ? '14px 0 6px' : '10px 0 4px' }}>{inline(h[2], `h${idx}`)}</div>)
     } else if (bullet || num) {
+      flushTable()
       const ordered = !!num
-      if (!list || list.ordered !== ordered) { flush(); list = { ordered, items: [] } }
+      if (!list || list.ordered !== ordered) { flushList(); list = { ordered, items: [] } }
       list.items.push((bullet || num)[1])
     } else if (line.trim() === '') {
       flush()
