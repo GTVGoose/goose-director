@@ -5,7 +5,7 @@ import path from 'path'
 import os from 'os'
 import yaml from 'js-yaml'
 import { fileURLToPath } from 'url'
-import { execFileSync, execSync } from 'child_process'
+import { execFileSync, execSync, spawn } from 'child_process'
 import { initTelegram } from './telegram.mjs'
 import { initSignal } from './signal.mjs'
 import { initGate } from './gate.mjs'
@@ -1504,6 +1504,60 @@ app.post('/api/relay', async (req, res) => {
         }
       }
       sendDone({ model: modelConfig.model, provider: 'ollama' })
+
+    } else if (modelConfig.provider === 'claude-code') {
+      // Claude via the Claude Code CLI — billed to the Max subscription, NOT API
+      // credits (recordUsage meters it $0). One non-interactive turn with
+      // stream-json output so Invoke gets real token deltas. cliEnv() strips
+      // ANTHROPIC_API_KEY so the CLI uses the Max OAuth login; no --bare for the
+      // same reason (bare mode skips the keychain read).
+      const model = modelConfig.model || 'sonnet'
+      const prompt = [systemContent, ...messages.map(m => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))].filter(Boolean).join('\n\n')
+      const child = spawn('claude', ['-p', prompt, '--output-format', 'stream-json', '--include-partial-messages', '--verbose', '--model', model], {
+        cwd: os.homedir(), env: cliEnv(),
+      })
+      let buf = ''
+      let streamed = false
+      let finalResult = null
+      let stderr = ''
+      let finished = false
+      const finish = (fn) => { if (!finished) { finished = true; fn() } }
+      child.stdout.on('data', (d) => {
+        buf += d
+        let nl
+        while ((nl = buf.indexOf('\n')) !== -1) {
+          const line = buf.slice(0, nl).trim()
+          buf = buf.slice(nl + 1)
+          if (!line) continue
+          let evt
+          try { evt = JSON.parse(line) } catch { continue }
+          const delta = evt?.event?.delta
+          if (evt.type === 'stream_event' && delta?.type === 'text_delta' && delta.text) {
+            streamed = true
+            sendChunk(delta.text)
+          } else if (evt.type === 'result') {
+            finalResult = evt
+          }
+        }
+      })
+      child.stderr.on('data', (d) => { stderr += d })
+      const timer = setTimeout(() => child.kill('SIGKILL'), 300000)
+      child.on('error', (e) => {
+        clearTimeout(timer)
+        finish(() => sendError(`Claude Code CLI not found: ${e.message}`))
+      })
+      child.on('close', (code) => {
+        clearTimeout(timer)
+        finish(() => {
+          if (code !== 0 && !streamed && !finalResult) {
+            return sendError(`Claude Code CLI failed (exit ${code}): ${stderr.replace(/\s+/g, ' ').slice(0, 400) || 'is the claude CLI installed and logged in?'}`)
+          }
+          if (!streamed && finalResult?.result) sendChunk(String(finalResult.result))
+          recordUsage(modelConfig, finalResult?.usage?.input_tokens, finalResult?.usage?.output_tokens)
+          sendDone({ model, provider: 'claude-code' })
+        })
+      })
+      return // async streaming — the child's close handler ends the response
 
     } else {
       sendError(`Unknown provider: ${modelConfig.provider}`)
