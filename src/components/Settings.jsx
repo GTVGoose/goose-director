@@ -502,9 +502,21 @@ function AdditionalReposCard() {
   )
 }
 
+// Cloud providers with first-class key fields. `id` matches /api/key-status,
+// `field` matches the /api/settings body. Any other OpenAI-compatible host is
+// reachable via a model entry's baseUrl/apiKeyEnv in goose.config.json.
+const KEY_FIELDS = [
+  { id: 'anthropic', field: 'anthropicKey', label: 'Anthropic (Claude)',      placeholder: 'sk-ant-api03-...' },
+  { id: 'openai',    field: 'openaiKey',    label: 'OpenAI (GPT)',            placeholder: 'sk-...' },
+  { id: 'gemini',    field: 'geminiKey',    label: 'Google (Gemini)',         placeholder: 'AIza...' },
+  { id: 'deepseek',  field: 'deepseekKey',  label: 'DeepSeek',                placeholder: 'sk-...' },
+  { id: 'mistral',   field: 'mistralKey',   label: 'Mistral',                 placeholder: 'API key' },
+  { id: 'qwen',      field: 'qwenKey',      label: 'Qwen (Alibaba DashScope)', placeholder: 'sk-...' },
+]
+
 export default function Settings() {
-  const [anthropicKey, setAnthropicKey] = useState('')
-  const [openaiKey, setOpenaiKey] = useState('')
+  const [keys, setKeys] = useState({})
+  const anyKey = Object.values(keys).some(Boolean)
   const [status, setStatus] = useState(null)   // { ok, message }
   const [saving, setSaving] = useState(false)
   const [keyStatus, setKeyStatus] = useState({})
@@ -523,13 +535,12 @@ export default function Settings() {
       const res = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ anthropicKey, openaiKey }),
+        body: JSON.stringify(keys),
       })
       const data = await res.json()
       if (data.ok) {
         setStatus({ ok: true, message: 'Keys saved. Restart Nexus to apply.' })
-        setAnthropicKey('')
-        setOpenaiKey('')
+        setKeys({})
         setKeyStatus(data.keyStatus)
       } else {
         setStatus({ ok: false, message: data.error || 'Save failed.' })
@@ -607,27 +618,24 @@ export default function Settings() {
           Keys are saved to <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>~/Library/Application Support/Nexus/.env</span> and never leave your machine. Nexus must be restarted after saving.
         </div>
 
-        {field(
-          'Anthropic (Claude)',
-          anthropicKey,
-          setAnthropicKey,
-          'sk-ant-api03-...',
-          keyStatus.anthropic
-        )}
-        {field(
-          'OpenAI (GPT-4o)',
-          openaiKey,
-          setOpenaiKey,
-          'sk-...',
-          keyStatus.openai
-        )}
+        {KEY_FIELDS.map(k => (
+          <div key={k.id}>
+            {field(
+              k.label,
+              keys[k.field] || '',
+              v => setKeys(prev => ({ ...prev, [k.field]: v })),
+              k.placeholder,
+              keyStatus[k.id]
+            )}
+          </div>
+        ))}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button
             onClick={save}
-            disabled={saving || (!anthropicKey && !openaiKey)}
+            disabled={saving || !anyKey}
             style={{
-              background: (saving || (!anthropicKey && !openaiKey))
+              background: (saving || !anyKey)
                 ? 'var(--color-surface-3)'
                 : 'var(--color-surface-2)',
               border: '0.5px solid var(--color-border-strong)',
@@ -635,10 +643,10 @@ export default function Settings() {
               padding: '8px 18px',
               fontSize: 12,
               fontWeight: 500,
-              color: (saving || (!anthropicKey && !openaiKey))
+              color: (saving || !anyKey)
                 ? 'var(--color-text-3)'
                 : 'var(--color-text)',
-              cursor: (saving || (!anthropicKey && !openaiKey)) ? 'not-allowed' : 'pointer',
+              cursor: (saving || !anyKey) ? 'not-allowed' : 'pointer',
               letterSpacing: '0.02em',
             }}
           >

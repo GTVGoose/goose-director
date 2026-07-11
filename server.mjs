@@ -1008,18 +1008,27 @@ app.get('/api/health', (req, res) => {
   })
 })
 
+// Cloud key fields: [status/UI id, /api/settings body field, .env var]
+const CLOUD_KEYS = [
+  ['anthropic', 'anthropicKey', 'ANTHROPIC_API_KEY'],
+  ['openai',    'openaiKey',    'OPENAI_API_KEY'],
+  ['gemini',    'geminiKey',    'GEMINI_API_KEY'],
+  ['deepseek',  'deepseekKey',  'DEEPSEEK_API_KEY'],
+  ['mistral',   'mistralKey',   'MISTRAL_API_KEY'],
+  ['qwen',      'qwenKey',      'DASHSCOPE_API_KEY'],
+]
+
 // GET /api/key-status — tells the UI which keys are set (without revealing them)
 app.get('/api/key-status', (req, res) => {
   res.json({
-    anthropic: !!process.env.ANTHROPIC_API_KEY,
-    openai: !!process.env.OPENAI_API_KEY,
+    ...Object.fromEntries(CLOUD_KEYS.map(([id, , envVar]) => [id, !!process.env[envVar]])),
     telegram: !!process.env.TELEGRAM_BOT_TOKEN,
   })
 })
 
 // POST /api/settings — write API keys to the user data .env file
 app.post('/api/settings', (req, res) => {
-  const { anthropicKey, openaiKey, telegramToken } = req.body
+  const { telegramToken } = req.body
   try {
     const envDir = process.env.NEXUS_USER_DATA
       || path.join(os.homedir(), 'Library', 'Application Support', 'Nexus')
@@ -1039,8 +1048,7 @@ app.post('/api/settings', (req, res) => {
       process.env[key] = val  // apply immediately without restart
     }
 
-    set('ANTHROPIC_API_KEY', anthropicKey)
-    set('OPENAI_API_KEY', openaiKey)
+    for (const [, field, envVar] of CLOUD_KEYS) set(envVar, req.body[field])
     set('TELEGRAM_BOT_TOKEN', telegramToken)
     if (!lines.find(l => l.startsWith('OLLAMA_BASE_URL=')))
       lines.push('OLLAMA_BASE_URL=http://localhost:11434')
@@ -1049,8 +1057,7 @@ app.post('/api/settings', (req, res) => {
     res.json({
       ok: true,
       keyStatus: {
-        anthropic: !!process.env.ANTHROPIC_API_KEY,
-        openai: !!process.env.OPENAI_API_KEY,
+        ...Object.fromEntries(CLOUD_KEYS.map(([id, , envVar]) => [id, !!process.env[envVar]])),
         telegram: !!process.env.TELEGRAM_BOT_TOKEN,
       }
     })
@@ -1103,6 +1110,33 @@ function cliEnv() {
   return env
 }
 
+// ─── OpenAI-compatible cloud providers ──────────────────────────────────────
+// Most non-Anthropic clouds speak the OpenAI chat/completions protocol, so one
+// engine serves them all. Each entry: default endpoint + the .env key that
+// unlocks it. A model entry may also override `baseUrl` / `apiKeyEnv` directly
+// to reach any other compatible host (OpenRouter, Together, a corporate
+// proxy…) under its own provider name.
+const OPENAI_COMPAT = {
+  openai:   { label: 'OpenAI',         base: 'https://api.openai.com/v1',                               keyEnv: 'OPENAI_API_KEY' },
+  gemini:   { label: 'Google Gemini',  base: 'https://generativelanguage.googleapis.com/v1beta/openai', keyEnv: 'GEMINI_API_KEY' },
+  deepseek: { label: 'DeepSeek',       base: 'https://api.deepseek.com/v1',                             keyEnv: 'DEEPSEEK_API_KEY' },
+  mistral:  { label: 'Mistral',        base: 'https://api.mistral.ai/v1',                               keyEnv: 'MISTRAL_API_KEY' },
+  qwen:     { label: 'Qwen (Alibaba)', base: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',  keyEnv: 'DASHSCOPE_API_KEY' },
+}
+
+// Resolve a model's OpenAI-compatible wiring, or null if it isn't one.
+// Registry providers work out of the box; any other provider name works when
+// the model entry carries its own baseUrl (+ optionally apiKeyEnv).
+function compatFor(modelConfig) {
+  if (!modelConfig) return null
+  if (['anthropic', 'ollama', 'claude-code'].includes(modelConfig.provider)) return null
+  const preset = OPENAI_COMPAT[modelConfig.provider]
+  if (!preset && !modelConfig.baseUrl) return null
+  const base = String(modelConfig.baseUrl || preset.base).replace(/\/+$/, '')
+  const keyEnv = modelConfig.apiKeyEnv || preset?.keyEnv || 'OPENAI_API_KEY'
+  return { base, keyEnv, key: process.env[keyEnv], label: preset?.label || modelConfig.provider }
+}
+
 // ─── Honest cloud-key validation ────────────────────────────────────────────
 // A green availability dot should mean "this will actually respond", not just
 // "a key string exists". We do a tiny (max_tokens:1) real call per provider and
@@ -1130,15 +1164,20 @@ async function validateProvider(provider) {
         if (r.ok) result.ok = true
         else result.error = `${r.status}: ${(await r.text()).slice(0, 140)}`
       }
-    } else if (provider === 'openai') {
-      if (!process.env.OPENAI_API_KEY) { result.error = 'No API key set' }
+    } else if (OPENAI_COMPAT[provider] || (config.models || []).some(m => m.provider === provider && m.baseUrl)) {
+      // Any OpenAI-compatible cloud (OpenAI, Gemini, DeepSeek, Mistral, Qwen,
+      // or a custom-baseUrl host) — probe with a 1-token real call.
+      const probeModel = (config.models || []).find(m => m.provider === provider)
+      const compat = compatFor(probeModel || { provider })
+      if (!compat) { result.error = 'Unknown provider' }
+      else if (!compat.key) { result.error = `No API key set (${compat.keyEnv})` }
       else {
-        const model = (config.models || []).find(m => m.provider === 'openai')?.model || 'gpt-4o'
+        const model = probeModel?.model || 'gpt-4o'
         const ctrl = new AbortController()
         const t = setTimeout(() => ctrl.abort(), 8000)
-        const r = await fetch('https://api.openai.com/v1/chat/completions', {
+        const r = await fetch(`${compat.base}/chat/completions`, {
           method: 'POST', signal: ctrl.signal,
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${compat.key}` },
           body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
         })
         clearTimeout(t)
@@ -1153,6 +1192,8 @@ async function validateProvider(provider) {
       } catch {
         result.error = 'Claude Code CLI not found — install it and log in with your Claude Max account'
       }
+    } else {
+      result.error = 'Unknown provider'
     }
   } catch (e) {
     result.error = e.name === 'AbortError' ? 'timed out' : e.message
@@ -1164,39 +1205,32 @@ async function validateProvider(provider) {
 // GET /api/models — configured model list, with live Ollama availability +
 // auto-detected local models appended.
 app.get('/api/models', async (req, res) => {
-  const [installed, anth, oai, cc] = await Promise.all([
+  // Probe every distinct cloud provider present in config (anthropic,
+  // claude-code, and any OpenAI-compatible name), plus local Ollama.
+  const cloudProviders = [...new Set((config.models || []).map(m => m.provider).filter(p => p && p !== 'ollama'))]
+  const [installed, ...cloudResults] = await Promise.all([
     getOllamaTags(),                 // array, or null if down
-    validateProvider('anthropic'),
-    validateProvider('openai'),
-    validateProvider('claude-code'),
+    ...cloudProviders.map(p => validateProvider(p)),
   ])
+  const cloudCheck = Object.fromEntries(cloudProviders.map((p, i) => [p, cloudResults[i]]))
   const ollamaRunning = installed !== null
   const installedNorm = new Set((installed || []).map(normTag))
   const isOllamaInstalled = (modelStr) =>
     ollamaRunning && installedNorm.has(normTag(modelStr))
 
-  const models = (config.models || []).map(m => ({
-    ...m,
-    available: m.provider === 'ollama'
-      ? isOllamaInstalled(m.model)
-      : m.provider === 'anthropic'
-        ? anth.ok
-        : m.provider === 'openai'
-          ? oai.ok
-          : m.provider === 'claude-code'
-            ? cc.ok
-            : false,
-    // Why a model is unavailable (shown on hover) — honest, not just "no key".
-    unavailableReason: m.provider === 'ollama'
-      ? (isOllamaInstalled(m.model) ? null : (ollamaRunning ? 'Not installed in Ollama' : 'Ollama not running'))
-      : m.provider === 'anthropic'
-        ? (anth.ok ? null : anth.error)
-        : m.provider === 'openai'
-          ? (oai.ok ? null : oai.error)
-          : m.provider === 'claude-code'
-            ? (cc.ok ? null : cc.error)
-            : 'Unknown provider',
-  }))
+  const models = (config.models || []).map(m => {
+    if (m.provider === 'ollama') {
+      const ok = isOllamaInstalled(m.model)
+      return { ...m, available: ok, unavailableReason: ok ? null : (ollamaRunning ? 'Not installed in Ollama' : 'Ollama not running') }
+    }
+    const check = cloudCheck[m.provider]
+    return {
+      ...m,
+      available: !!check?.ok,
+      // Why a model is unavailable (shown on hover) — honest, not just "no key".
+      unavailableReason: check ? (check.ok ? null : check.error) : 'Unknown provider',
+    }
+  })
 
   // Append any installed Ollama models that aren't already represented in config
   if (ollamaRunning) {
@@ -1429,18 +1463,21 @@ app.post('/api/relay', async (req, res) => {
       }
       sendDone({ model: modelConfig.model, provider: 'anthropic' })
 
-    } else if (modelConfig.provider === 'openai') {
-      if (!process.env.OPENAI_API_KEY) return sendError('OPENAI_API_KEY not set in .env')
+    } else if (compatFor(modelConfig)) {
+      // Any OpenAI-compatible cloud: OpenAI, Gemini, DeepSeek, Mistral, Qwen,
+      // or a custom-baseUrl host. Same wire protocol, same streaming parse.
+      const compat = compatFor(modelConfig)
+      if (!compat.key) return sendError(`${compat.keyEnv} not set in .env`)
 
       const oaiMessages = []
       if (systemContent) oaiMessages.push({ role: 'system', content: systemContent })
       oaiMessages.push(...messages.map(m => ({ role: m.role, content: m.content })))
 
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const response = await fetch(`${compat.base}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Authorization': `Bearer ${compat.key}`,
         },
         body: JSON.stringify({
           model: modelConfig.model,
@@ -1451,7 +1488,7 @@ app.post('/api/relay', async (req, res) => {
 
       if (!response.ok) {
         const err = await response.text()
-        return sendError(`OpenAI API error: ${err}`)
+        return sendError(`${compat.label} API error: ${err}`)
       }
 
       const reader = response.body.getReader()
@@ -1470,7 +1507,7 @@ app.post('/api/relay', async (req, res) => {
           }
         }
       }
-      sendDone({ model: modelConfig.model, provider: 'openai' })
+      sendDone({ model: modelConfig.model, provider: modelConfig.provider })
 
     } else if (modelConfig.provider === 'ollama') {
       const base = process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
@@ -1655,17 +1692,19 @@ async function callModel(modelConfig, systemContent, messages) {
     recordUsage(modelConfig, data.usage?.input_tokens, data.usage?.output_tokens)
     return (data.content || []).map(c => c.text || '').join('').trim()
   }
-  if (provider === 'openai') {
-    if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY not set')
+  const compat = compatFor(modelConfig)
+  if (compat) {
+    // Any OpenAI-compatible cloud (OpenAI, Gemini, DeepSeek, Mistral, Qwen, custom baseUrl).
+    if (!compat.key) throw new Error(`${compat.keyEnv} not set`)
     const msgs = []
     if (systemContent) msgs.push({ role: 'system', content: systemContent })
     msgs.push(...messages.map(m => ({ role: m.role, content: m.content })))
-    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+    const r = await fetch(`${compat.base}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${compat.key}` },
       body: JSON.stringify({ model: modelConfig.model, messages: msgs }),
     })
-    if (!r.ok) throw new Error(`OpenAI ${r.status}: ${(await r.text()).slice(0, 200)}`)
+    if (!r.ok) throw new Error(`${compat.label} ${r.status}: ${(await r.text()).slice(0, 200)}`)
     const data = await r.json()
     recordUsage(modelConfig, data.usage?.prompt_tokens, data.usage?.completion_tokens)
     return (data.choices?.[0]?.message?.content || '').trim()
@@ -2874,17 +2913,19 @@ async function callModelAgentic(modelConfig, systemContent, task, onTool = () =>
     return '[reached tool-step limit]'
   }
 
-  if (provider === 'openai') {
-    if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY not set')
+  const agenticCompat = compatFor(modelConfig)
+  if (agenticCompat) {
+    // Any OpenAI-compatible cloud — the function-calling protocol is shared too.
+    if (!agenticCompat.key) throw new Error(`${agenticCompat.keyEnv} not set`)
     const msgs = []
     if (system) msgs.push({ role: 'system', content: system })
     msgs.push({ role: 'user', content: task })
     for (let i = 0; i < maxSteps; i++) {
-      const r = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
+      const r = await fetch(`${agenticCompat.base}/chat/completions`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agenticCompat.key}` },
         body: JSON.stringify({ model: modelConfig.model, messages: msgs, tools: UMBRUH_TOOLS }),
       })
-      if (!r.ok) throw new Error(`OpenAI ${r.status}: ${(await r.text()).slice(0, 200)}`)
+      if (!r.ok) throw new Error(`${agenticCompat.label} ${r.status}: ${(await r.text()).slice(0, 200)}`)
       const msg = (await r.json()).choices?.[0]?.message || {}
       msgs.push(msg)
       if (!msg.tool_calls?.length) return (msg.content || '').trim()
