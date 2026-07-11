@@ -1,0 +1,60 @@
+<meta charset="utf-8">
+<title>Appetizer Checklist</title>
+<style>
+  @page { size: letter landscape; margin: 0.4in; }
+  * { box-sizing: border-box; }
+  body { font-family: Georgia, 'Times New Roman', serif; color: #111; margin: 0; }
+  .blurb { text-align: center; font-size: 12px; font-style: italic; color: #333; margin-bottom: 4px; }
+  .head { text-align: center; border-bottom: 3px double #111; padding-bottom: 6px; margin-bottom: 8px; }
+  .brand { font-size: 10px; letter-spacing: 4px; text-transform: uppercase; color: #555; }
+  h1 { font-size: 20px; margin: 2px 0; letter-spacing: 1px; }
+  .sub { font-size: 11px; font-style: italic; color: #444; }
+  .meta { display: flex; justify-content: space-between; font-size: 11px; margin: 6px 0; }
+  .fill { display: inline-block; border-bottom: 1px solid #111; min-width: 130px; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th, td { border: 1px solid #333; font-size: 11px; }
+  th.server { background: #111; color: #fff; letter-spacing: 2px; text-transform: uppercase; padding: 5px 2px; font-size: 12px; }
+  th.corner { background: #eee; text-transform: uppercase; letter-spacing: 1px; width: 190px; }
+  .row-label { background: #eee; font-weight: bold; text-align: right; padding: 4px 8px; font-size: 10px;
+               text-transform: uppercase; letter-spacing: 1px; }
+  .row-label small { display: block; font-weight: normal; font-style: italic; text-transform: none; letter-spacing: 0; }
+  .info-cell { height: 26px; background: #fff; }
+  td.app { padding: 4px 8px; font-size: 13px; font-weight: bold; }
+  td.tally { height: 72px; }
+</style>
+<div class="blurb">Keep track of the number of appetizers that go out by using a tally to record it.</div>
+<div class="head">
+  <div class="brand">Noir Sushi</div>
+  <h1>Appetizer Checklist</h1>
+  <div class="sub">Bluefin Tuna Cutting Ceremony &mdash; Appetizer Expediter</div>
+</div>
+<div class="meta">
+  <span>Date: <span class="fill"></span></span>
+  <span>Expediter: <span class="fill"></span></span>
+</div>
+<table>
+  <tr>
+    <th class="corner">Appetizer</th>
+    <th class="server">Jo</th>
+    <th class="server">Olivia</th>
+    <th class="server">David</th>
+    <th class="server">Anthony</th>
+    <th class="server">Leon</th>
+    <th class="server">Ally</th>
+  </tr>
+  <tr>
+    <td class="row-label">Guest Count</td>
+    <td class="info-cell"></td><td class="info-cell"></td><td class="info-cell"></td>
+    <td class="info-cell"></td><td class="info-cell"></td><td class="info-cell"></td>
+  </tr>
+  <tr>
+    <td class="row-label">Section <small>(e.g. 101&ndash;105)</small></td>
+    <td class="info-cell"></td><td class="info-cell"></td><td class="info-cell"></td>
+    <td class="info-cell"></td><td class="info-cell"></td><td class="info-cell"></td>
+  </tr>
+  <tr><td class="app">Edamame</td><td class="tally"></td><td class="tally"></td><td class="tally"></td><td class="tally"></td><td class="tally"></td><td class="tally"></td></tr>
+  <tr><td class="app">Seaweed Salad</td><td class="tally"></td><td class="tally"></td><td class="tally"></td><td class="tally"></td><td class="tally"></td><td class="tally"></td></tr>
+  <tr><td class="app">Tuna Katsu</td><td class="tally"></td><td class="tally"></td><td class="tally"></td><td class="tally"></td><td class="tally"></td><td class="tally"></td></tr>
+  <tr><td class="app">Tuna Ceviche</td><td class="tally"></td><td class="tally"></td><td class="tally"></td><td class="tally"></td><td class="tally"></td><td class="tally"></td></tr>
+  <tr><td class="app">Spicy Tuna Crispy Rice</td><td class="tally"></td><td class="tally"></td><td class="tally"></td><td class="tally"></td><td class="tally"></td><td class="tally"></td></tr>
+</table>
