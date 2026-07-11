@@ -1,6 +1,9 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────────────
-# Nexus — Build & Install
+# GOOSE'S Nexus — Build & Install (personal C lineage)
+# This is the ONLY installer for David's personal Nexus (~/Documents/goose-director,
+# Umbruh + Membrane + personal config). The product installer lives in the vault's
+# B-lineage repo and is NOT for this machine's daily-driver install.
 # Double-click this file in Finder to build and install Nexus on your Mac.
 # Requires: Node.js (already installed), internet for first build only.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -18,7 +21,7 @@ warn() { echo -e "${AMBER}⚠ $1${RESET}"; }
 fail() { echo -e "${RED}✗ $1${RESET}"; exit 1; }
 
 echo ""
-echo -e "${BOLD}  NEXUS — Goose Director Console${RESET}"
+echo -e "${BOLD}  GOOSE'S NEXUS — personal console (C lineage)${RESET}"
 echo -e "  Build + Install Script"
 echo "  ─────────────────────────────────"
 echo ""
