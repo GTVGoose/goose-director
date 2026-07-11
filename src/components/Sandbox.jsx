@@ -80,6 +80,7 @@ export default function Sandbox({ canonDocs = [] }) {
   const [running, setRunning] = useState(false)
   const [error, setError] = useState(null)
   const [runMode, setRunMode] = useState('roundtable')
+  const [brainId, setBrainId] = useState(null)
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -87,6 +88,7 @@ export default function Sandbox({ canonDocs = [] }) {
       setModels(d.models || [])
       setAgentRoles(d.agentRoles || [])
       setOllamaRunning(d.ollamaRunning !== false)
+      setBrainId(d.brainId || null)
       const avail = (d.models || []).filter(m => m.available)
       // default: first two available as participants
       setParticipants(avail.slice(0, 2).map(m => m.id))
@@ -103,15 +105,16 @@ export default function Sandbox({ canonDocs = [] }) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [events, active, status])
 
-  // In Director mode, default the Director backend to Claude Max — the empirical
-  // conductor (fast, error-catching, $0 subscription; see UMBRUH_OPERATING_TIERS).
-  // Fall back to a local Umbruh only if Claude Max isn't available.
+  // Director mode: the BRAIN is fixed by doctrine, not per-run choice — the
+  // server resolves it (config.sandbox.brainModel → Claude Max → Anthropic API
+  // → any cloud → local) and reports it as brainId. The UI pins it.
   useEffect(() => {
     if (mode !== 'director') return
-    const u = models.find(m => m.available && m.id === 'claude-max')
+    const u = models.find(m => m.available && m.id === brainId)
+      || models.find(m => m.available && m.id === 'claude-max')
       || models.find(m => m.available && /umbruh/i.test(m.id))
     if (u) setAggregatorId(u.id)
-  }, [mode, models])
+  }, [mode, models, brainId])
 
   const meta = MODES[mode]
   const available = models.filter(m => m.available)
@@ -265,7 +268,27 @@ export default function Sandbox({ canonDocs = [] }) {
           </div>
         </Panel>
 
-        {/* Aggregator / Judge / Director */}
+        {/* Aggregator / Judge — or, in Director mode, the fixed Brain */}
+        {mode === 'director' ? (
+          <Panel title="Brain">
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '8px 10px', borderRadius: 6,
+              border: '1px solid var(--color-recursive-border)',
+              background: 'var(--color-recursive-bg)',
+            }}>
+              <i className="ti ti-brain" style={{ fontSize: 15, color: 'var(--color-recursive-text)' }} />
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text)' }}>
+                {models.find(m => m.id === aggregatorId)?.name || 'resolving…'}
+              </span>
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--color-text-3)', marginTop: 6, lineHeight: 1.4 }}>
+              Fixed by doctrine: the strongest available model plans the work, drives the
+              unit above, and synthesizes the result. Umbruh speaks through it. Override
+              via sandbox.brainModel in config if you must.
+            </div>
+          </Panel>
+        ) : (
         <Panel title={meta.aggLabel}>
           <select value={aggregatorId} onChange={e => setAggregatorId(e.target.value)} style={{ width: '100%', fontSize: 12 }}>
             {available.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
@@ -274,9 +297,9 @@ export default function Sandbox({ canonDocs = [] }) {
             {mode === 'roundtable' && 'Synthesizes all members into one answer.'}
             {mode === 'debate' && 'Judges the final round (weighs reasoning, not votes).'}
             {mode === 'orchestrator' && 'Plans the subtasks and composes the result.'}
-            {mode === 'director' && 'Umbruh runs here and conducts the ensemble — routing each part to the models above, then composing in its own voice.'}
           </div>
         </Panel>
+        )}
 
         {mode === 'director' && (
           <Panel title="Tools">

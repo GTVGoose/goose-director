@@ -1253,7 +1253,8 @@ app.get('/api/models', async (req, res) => {
     }
   }
 
-  res.json({ models, agentRoles: config.agentRoles || [], ollamaRunning })
+  const brain = await resolveBrain(null)
+  res.json({ models, agentRoles: config.agentRoles || [], ollamaRunning, brainId: brain?.id || null })
 })
 
 // GET /api/usage — live token/cost meter. Second-to-second awareness of spend so
@@ -1615,6 +1616,28 @@ async function resolveModelConfig(modelId) {
   return m
 }
 
+// The Director-mode BRAIN: one designated model plans, delegates, and
+// synthesizes; the rest of the ensemble is the worker unit. Doctrine, not a
+// per-run choice — config.sandbox.brainModel overrides; otherwise the
+// strongest available Anthropic path (Max CLI, then API), then any cloud,
+// then local. An explicit preferredId (legacy directorId) still wins.
+async function resolveBrain(preferredId) {
+  const models = config.models || []
+  if (preferredId) {
+    const m = await resolveModelConfig(preferredId)
+    if (m) return m
+  }
+  if (config.sandbox?.brainModel) {
+    const m = await resolveModelConfig(config.sandbox.brainModel)
+    if (m) return m
+  }
+  return models.find(m => m.provider === 'claude-code')
+    || models.find(m => m.provider === 'anthropic')
+    || models.find(m => m.provider !== 'ollama')
+    || models[0]
+    || null
+}
+
 // Load a model's persona system-prompt from its `systemPromptFile` (repo-relative).
 // If the file uses "=== BEGIN/END SYSTEM PROMPT ===" markers, extract between them.
 // Lets a cloud model (no Ollama Modelfile) carry the same persona as a local one.
@@ -1911,7 +1934,7 @@ app.post('/api/sandbox', async (req, res) => {
       // Umbruh as Director: the Umbruh identity (on a chosen backend) plans the
       // work, routes each subtask to the best-fit model in the ensemble, uses
       // tools where needed, and composes the result in its own voice.
-      const director = (await resolveModelConfig(directorId || aggregatorId)) || participants[0]
+      const director = (await resolveBrain(directorId || aggregatorId)) || participants[0]
       if (!director) { emit({ type: 'error', error: 'No Director backend selected' }); }
       else {
         const ensemble = participants.length ? participants : [director]
@@ -1951,8 +1974,15 @@ ${task}`
         }
         if (!plan.length) plan = [{ task, modelId: director.id, needsTools: tools }]
 
-        const results = []
-        for (const step of plan) {
+        // The worker unit. Cloud API workers fan out in PARALLEL — they're
+        // independent HTTP calls, and the unit should act as one. Two lanes
+        // stay SEQUENTIAL: local Ollama (RAM-bound — two large models won't
+        // co-reside on a 24GB Mac) and anything using tools or the Claude
+        // Code CLI (tool steps can race on files; the CLI call blocks).
+        const results = new Array(plan.length).fill(null)
+        const staged = []
+        for (let i = 0; i < plan.length; i++) {
+          const step = plan[i]
           let worker = (await resolveModelConfig(step.modelId)) || director
           // Budget breaker: at the paid-spend ceiling, downgrade paid workers to free/local.
           if (overBudget() && worker.provider !== 'ollama' && worker.provider !== 'claude-code') {
@@ -1960,7 +1990,9 @@ ${task}`
             emit({ type: 'status', message: `Budget ceiling — routing "${step.task.slice(0, 40)}…" to ${local.name} (free) instead of ${worker.name}` })
             worker = local
           }
-          const wantTools = tools && step.needsTools
+          staged.push({ step, idx: i, worker, wantTools: tools && step.needsTools })
+        }
+        const runStep = async ({ step, idx, worker, wantTools }) => {
           emit({ type: 'turn-start', model: worker.name, modelId: worker.id, phase: 'work', subtask: step.task })
           try {
             let text
@@ -1977,14 +2009,22 @@ ${task}`
             } else {
               text = await callModel(worker, roleSys(worker.id), [{ role: 'user', content: `Subtask:\n${step.task}\n\n(This is one part of a larger goal: ${task})` }])
             }
-            results.push({ subtask: step.task, worker: worker.name, text })
+            results[idx] = { subtask: step.task, worker: worker.name, text }
             emit({ type: 'turn', model: worker.name, modelId: worker.id, phase: 'work', subtask: step.task, text })
           } catch (e) {
             emit({ type: 'turn-error', model: worker.name, phase: 'work', subtask: step.task, error: e.message })
           }
         }
+        const parallelLane = staged.filter(s => !s.wantTools && s.worker.provider !== 'ollama' && s.worker.provider !== 'claude-code')
+        const sequentialLane = staged.filter(s => !parallelLane.includes(s))
+        if (parallelLane.length > 1) emit({ type: 'status', message: `Dispatching ${parallelLane.length} cloud subtasks in parallel` })
+        await Promise.all([
+          Promise.all(parallelLane.map(s => runStep(s))),
+          (async () => { for (const s of sequentialLane) await runStep(s) })(),
+        ])
+        const done = results.filter(Boolean)
         emit({ type: 'status', message: `${director.name} composing as Director` })
-        const compose = `You are Umbruh, the Director. Compose the ensemble's work below into one coherent, high-quality deliverable for the task. Keep the strongest reasoning, reconcile any conflicts, note anything still unresolved, and speak in your own voice.\n\nTASK:\n"""${task}"""\n\n${results.map(r => `### ${r.subtask}\n(by ${r.worker})\n${r.text}`).join('\n\n')}`
+        const compose = `You are Umbruh, the Director. Compose the ensemble's work below into one coherent, high-quality deliverable for the task. Keep the strongest reasoning, reconcile any conflicts, note anything still unresolved, and speak in your own voice.\n\nTASK:\n"""${task}"""\n\n${done.map(r => `### ${r.subtask}\n(by ${r.worker})\n${r.text}`).join('\n\n')}`
         try {
           const finalText = await callModel(director, docContext || undefined, [{ role: 'user', content: compose }])
           emit({ type: 'final', model: director.name, modelId: director.id, text: finalText })
