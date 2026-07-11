@@ -50,6 +50,17 @@ const UNIT_CSS = `
 // exactly what the council does). Brand voice, no lore. Rotates while the unit works.
 const PHRASES = ['the wind takes it…', 'the V forms…', 'trading the lead…', 'riding the draft…', 'coming in to land…']
 
+// T17: cost-meter formatters. Costs are ESTIMATES from the server's built-in pricing
+// table (see /api/usage + recordUsage); scale the precision so tiny spends stay legible.
+const fmtUSD = (n) => {
+  const v = Number(n) || 0
+  if (v === 0) return '$0.00'
+  if (v < 0.01) return '$' + v.toFixed(4)
+  if (v < 1) return '$' + v.toFixed(3)
+  return '$' + v.toFixed(2)
+}
+const fmtTok = (n) => (Number(n) || 0).toLocaleString('en-US')
+
 export default function ChatHome({ canonDocs = [], onNav }) {
   const [models, setModels] = useState([])
   const [brainId, setBrainId] = useState(null)
@@ -74,20 +85,51 @@ export default function ChatHome({ canonDocs = [], onNav }) {
   const [localPick, setLocalPick] = useState('')       // which local (ollama) model the local node represents
   const [showLocalPicker, setShowLocalPicker] = useState(false)
   const [phraseIdx, setPhraseIdx] = useState(0)
+  // T17 cost meter: live /api/usage snapshot, the last-turn spend delta, and the
+  // breakdown popover. Usage surfaces NOWHERE else in the UI today (audit: server has
+  // /api/usage, no view reads it), so this readout + popover IS the spend surface.
+  const [usage, setUsage] = useState(null)
+  const [usageDelta, setUsageDelta] = useState(null)
+  const [showUsage, setShowUsage] = useState(false)
   const bottomRef = useRef(null)
 
-  useEffect(() => {
+  // Fetch the roster. Availability is probed server-side (cached ~5 min) and can flip
+  // as keys/balances/rate-limits change, so this ALSO runs when a picker opens — a
+  // transient probe failure at boot must not hide a provider for the whole session.
+  // On refresh (initial=false) the current Brain/local/council picks are preserved.
+  const loadModels = (initial = false) => {
     fetch('/api/models').then(r => r.json()).then(d => {
       const ms = d.models || []
       setModels(ms)
       setBrainId(d.brainId || null)
-      const first = ms.find(m => m.available && m.id === d.brainId) || ms.find(m => m.available)
-      if (first) setSelectedModel(first.id)
-      const firstLocal = ms.find(m => m.provider === 'ollama' && m.available) || ms.find(m => m.provider === 'ollama')
-      if (firstLocal) setLocalPick(firstLocal.id)
+      if (initial) {
+        const first = ms.find(m => m.available && m.id === d.brainId) || ms.find(m => m.available)
+        if (first) setSelectedModel(first.id)
+      }
+      setLocalPick(lp => {
+        if (lp && ms.some(m => m.id === lp && m.provider === 'ollama')) return lp
+        const firstLocal = ms.find(m => m.provider === 'ollama' && m.available) || ms.find(m => m.provider === 'ollama')
+        return firstLocal ? firstLocal.id : lp
+      })
     }).catch(() => {})
+  }
+
+  useEffect(() => {
+    loadModels(true)
     loadThreads()
+    fetchUsage()
   }, [])
+
+  // T17: keep the meter moving while a turn is in flight (server accrues spend as
+  // members answer), then send() settles it with a per-turn delta. Cheap: one GET/3s,
+  // only while streaming.
+  useEffect(() => {
+    if (!streaming) return
+    const t = setInterval(fetchUsage, 3000)
+    return () => clearInterval(t)
+  }, [streaming])
+
+  const fetchUsage = () => fetch('/api/usage').then(r => r.json()).then(setUsage).catch(() => {})
 
   // Rotate the thinking phrase while anything in the unit is working (T16).
   useEffect(() => {
@@ -149,7 +191,7 @@ export default function ChatHome({ canonDocs = [], onNav }) {
 
   const newChat = () => {
     if (streaming) return
-    setConversation([]); setInput(''); setError(null); setCouncil([]); setSaveNote(null); setViewingThread(null); setCouncilRun(null)
+    setConversation([]); setInput(''); setError(null); setCouncil([]); setSaveNote(null); setViewingThread(null); setCouncilRun(null); setUsageDelta(null)
   }
 
   const send = async () => {
@@ -160,11 +202,22 @@ export default function ChatHome({ canonDocs = [], onNav }) {
     setInput('')
     setStreaming(true)
     setError(null)
+    // T17: baseline the meter before the turn so we can show a per-turn delta after.
+    const baseCost = usage?.costUSD || 0
+    const baseTok = (usage?.inTok || 0) + (usage?.outTok || 0)
     try {
       if (councilActive) await runCouncil(newConv, userMsg.content)
       else await runSolo(newConv)
     } finally {
       setStreaming(false)
+      // Settle the meter with a fresh read + this turn's delta (best-effort).
+      try {
+        const fresh = await fetch('/api/usage').then(r => r.json())
+        setUsage(fresh)
+        const dCost = (fresh.costUSD || 0) - baseCost
+        const dTok = ((fresh.inTok || 0) + (fresh.outTok || 0)) - baseTok
+        if (dCost > 0 || dTok > 0) setUsageDelta({ cost: dCost, tok: dTok })
+      } catch {}
     }
   }
 
@@ -386,6 +439,80 @@ export default function ChatHome({ canonDocs = [], onNav }) {
 
       {/* ── Center: conversation + composer ── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, maxWidth: 900 }}>
+
+        {/* ── T17 live cost meter — always visible above the conversation (default
+              placement; alt considered: under the brain node in the composer strip,
+              but that row is already dense with the unit picker). Session $ + tokens,
+              a per-turn delta, and the full per-model breakdown one click away. ── */}
+        <div style={{ position: 'relative', display: 'flex', justifyContent: 'flex-end', marginBottom: 6, flexShrink: 0 }}>
+          <button
+            onClick={() => { setShowUsage(s => !s); fetchUsage() }}
+            title="Session tokens + estimated spend (this app run). Click for the per-model breakdown."
+            style={{
+              display: 'flex', alignItems: 'center', gap: 7, padding: '4px 11px',
+              background: 'var(--color-surface)', borderRadius: 999, cursor: 'pointer', fontSize: 11,
+              border: `0.5px solid ${usage?.overBudget ? 'var(--color-escalation-text)' : 'var(--color-border-strong)'}`,
+              color: usage?.overBudget ? 'var(--color-escalation-text)' : 'var(--color-text-2)',
+            }}
+          >
+            <i className="ti ti-coin" style={{ fontSize: 13, opacity: 0.8 }} />
+            <span style={{ fontWeight: 600 }}>{fmtUSD(usage?.costUSD)}</span>
+            <span style={{ color: 'var(--color-text-3)' }}>· {fmtTok((usage?.inTok || 0) + (usage?.outTok || 0))} tok</span>
+            {usageDelta && (usageDelta.cost > 0 || usageDelta.tok > 0) && (
+              <span style={{ color: 'var(--color-text-3)', fontStyle: 'italic' }}>
+                (+{fmtUSD(usageDelta.cost)} · +{fmtTok(usageDelta.tok)})
+              </span>
+            )}
+            {usage?.budgetUSD > 0 && (
+              <span style={{ color: usage?.overBudget ? 'var(--color-escalation-text)' : 'var(--color-text-3)' }}>
+                · {fmtUSD(usage?.remainingUSD)} left
+              </span>
+            )}
+            <i className="ti ti-chevron-down" style={{ fontSize: 10, color: 'var(--color-text-3)' }} />
+          </button>
+
+          {showUsage && (
+            <div style={{ position: 'absolute', top: '112%', right: 0, width: 322, zIndex: 115, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+              <div style={{ padding: '10px 12px', borderBottom: '0.5px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ flex: 1, fontSize: 12, fontWeight: 600 }}>Session spend</span>
+                <button
+                  onClick={async () => { try { await fetch('/api/usage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reset: true }) }) } catch {} setUsageDelta(null); fetchUsage() }}
+                  className="btn-ghost"
+                  style={{ background: 'none', border: '0.5px solid var(--color-border-strong)', borderRadius: 6, padding: '3px 9px', fontSize: 10, color: 'var(--color-text-3)', cursor: 'pointer' }}
+                >Reset</button>
+                <button onClick={() => setShowUsage(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-3)', fontSize: 15 }}><i className="ti ti-x" /></button>
+              </div>
+              <div style={{ padding: '9px 12px', fontSize: 11, color: 'var(--color-text-3)', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <div>Total <b style={{ color: 'var(--color-text-2)' }}>{fmtUSD(usage?.costUSD)}</b> · {fmtTok(usage?.inTok)} in / {fmtTok(usage?.outTok)} out · {usage?.calls || 0} calls</div>
+                {usage?.since && <div>Since {new Date(usage.since).toLocaleString()}</div>}
+                {usage?.budgetUSD > 0
+                  ? <div>Budget {fmtUSD(usage.budgetUSD)}/day · {fmtUSD(usage.remainingUSD)} left{usage.overBudget ? ' · over budget' : ''}</div>
+                  : <div>No daily budget set</div>}
+              </div>
+              <div className="scroll-y" style={{ maxHeight: 220, overflowY: 'auto', borderTop: '0.5px solid var(--color-border)' }}>
+                {Object.keys(usage?.byModel || {}).length === 0 ? (
+                  <div style={{ padding: '10px 12px', fontSize: 11, color: 'var(--color-text-3)' }}>No spend recorded yet this session.</div>
+                ) : Object.entries(usage.byModel).sort((a, b) => (b[1].costUSD || 0) - (a[1].costUSD || 0)).map(([id, b]) => {
+                  const name = models.find(m => m.id === id)?.name || id
+                  return (
+                    <div key={id} style={{ padding: '7px 12px', borderBottom: '0.5px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <i className={`ti ${providerIcon(b.provider)}`} style={{ fontSize: 13, color: providerColor(b.provider), flexShrink: 0 }} />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+                        <div style={{ fontSize: 10, color: 'var(--color-text-3)' }}>{fmtTok((b.inTok || 0) + (b.outTok || 0))} tok · {b.calls || 0} calls</div>
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-2)' }}>{fmtUSD(b.costUSD)}</span>
+                    </div>
+                  )
+                })}
+              </div>
+              <div style={{ padding: '8px 12px', fontSize: 10, color: 'var(--color-text-3)', borderTop: '0.5px solid var(--color-border)' }}>
+                Estimates from the built-in pricing table. Local (Ollama) runs are $0.
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="scroll-y" style={{ flex: 1, overflowY: 'auto', padding: '0 4px', display: 'flex', flexDirection: 'column', gap: 16, minHeight: 200 }}>
           {conversation.length === 0 ? (
             <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-text-3)', maxWidth: 420, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
@@ -429,7 +556,7 @@ export default function ChatHome({ canonDocs = [], onNav }) {
             {/* Brain node */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, width: 104, flexShrink: 0 }}>
               <button
-                onClick={() => { setShowModelPicker(s => !s); setShowAdd(false); setShowLocalPicker(false) }}
+                onClick={() => { if (!showModelPicker) loadModels(); setShowModelPicker(s => !s); setShowAdd(false); setShowLocalPicker(false) }}
                 className={`nx-node${unit.brain ? ' nx-pulse' : ''}`}
                 title={`Brain — ${currentModel?.name || 'select a model'}. Conducts the unit and synthesizes. Click to change.`}
                 style={{ width: 44, height: 44, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-surface)', border: `1.5px solid ${unit.brain ? 'var(--color-active-border)' : 'var(--color-border-strong)'}`, cursor: 'pointer', flexShrink: 0 }}
@@ -450,7 +577,7 @@ export default function ChatHome({ canonDocs = [], onNav }) {
             {/* Local model node */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, width: 104, flexShrink: 0 }}>
               <button
-                onClick={() => { setShowLocalPicker(s => !s); setShowAdd(false); setShowModelPicker(false) }}
+                onClick={() => { if (!showLocalPicker) loadModels(); setShowLocalPicker(s => !s); setShowAdd(false); setShowModelPicker(false) }}
                 className={`nx-node${unit.local ? ' nx-pulse' : ''}`}
                 title={localModel ? `Local model — ${localModel.name}${localInUnit ? ' (in the unit)' : ' (standing by)'}. Click to change or bring it in.` : 'No local model detected — is Ollama running?'}
                 style={{ width: 42, height: 42, borderRadius: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', background: localInUnit ? `${providerColor('ollama')}1a` : 'var(--color-surface)', border: `1.5px ${localInUnit ? 'solid' : 'dashed'} ${unit.local ? 'var(--color-active-border)' : localInUnit ? providerColor('ollama') : 'var(--color-border-strong)'}`, cursor: 'pointer', opacity: localModel ? 1 : 0.45, flexShrink: 0 }}
@@ -471,7 +598,7 @@ export default function ChatHome({ canonDocs = [], onNav }) {
             {/* Cloud unit bubble */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0 }}>
               <button
-                onClick={() => { setShowAdd(s => !s); setShowModelPicker(false); setShowLocalPicker(false) }}
+                onClick={() => { if (!showAdd) loadModels(); setShowAdd(s => !s); setShowModelPicker(false); setShowLocalPicker(false) }}
                 className={`nx-node${unit.cloud ? ' nx-pulse' : ''}`}
                 title="The cloud unit. Click to add or remove council members."
                 style={{ display: 'flex', alignItems: 'center', gap: 10, height: 44, padding: '0 16px', borderRadius: 999, background: 'var(--color-surface)', border: `1.5px ${cloudMemberCount > 0 ? 'solid' : 'dashed'} ${unit.cloud ? 'var(--color-active-border)' : cloudMemberCount > 0 ? 'var(--color-active-border)' : 'var(--color-border-strong)'}`, cursor: 'pointer' }}
@@ -554,15 +681,23 @@ export default function ChatHome({ canonDocs = [], onNav }) {
               <div style={{ position: 'absolute', bottom: '110%', right: 0, width: 300, zIndex: 110, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
                 <div style={{ padding: '8px 12px', borderBottom: '0.5px solid var(--color-border)', fontSize: 11, color: 'var(--color-text-3)' }}>Convene the cloud unit — tap to add or remove</div>
                 <div className="scroll-y" style={{ maxHeight: 280, overflowY: 'auto' }}>
-                  {cloudRoster.filter(m => m.available).length === 0 && (
-                    <div style={{ padding: '8px 12px', fontSize: 11, color: 'var(--color-text-3)' }}>No cloud models available — add API keys in Settings.</div>
+                  {cloudRoster.length === 0 && (
+                    <div style={{ padding: '8px 12px', fontSize: 11, color: 'var(--color-text-3)' }}>No cloud models configured.</div>
                   )}
-                  {cloudRoster.filter(m => m.available).map(m => {
+                  {cloudRoster.map(m => {
                     const on = council.includes(m.id)
                     return (
-                      <div key={m.id} onClick={() => toggleCouncil(m.id)} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--color-active-bg)' : 'none', borderBottom: '0.5px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div
+                        key={m.id}
+                        onClick={() => { if (m.available) toggleCouncil(m.id) }}
+                        title={!m.available && m.unavailableReason ? String(m.unavailableReason) : undefined}
+                        style={{ padding: '8px 12px', cursor: m.available ? 'pointer' : 'not-allowed', opacity: m.available ? 1 : 0.45, background: on ? 'var(--color-active-bg)' : 'none', borderBottom: '0.5px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 8 }}
+                      >
                         <i className={`ti ${providerIcon(m.provider)}`} style={{ fontSize: 15, flexShrink: 0, color: on ? providerColor(m.provider) : 'var(--color-text-3)' }} />
-                        <span style={{ fontSize: 12, flex: 1 }}>{m.name}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12 }}>{m.name}</div>
+                          {!m.available && <div style={{ fontSize: 10, color: 'var(--color-text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{String(m.unavailableReason || 'unavailable').slice(0, 60)}</div>}
+                        </div>
                         <i className={`ti ${on ? 'ti-check' : 'ti-plus'}`} style={{ fontSize: 13, color: on ? 'var(--color-active-text)' : 'var(--color-text-3)' }} />
                       </div>
                     )
