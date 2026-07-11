@@ -96,14 +96,15 @@ export default function Sidebar({ view, onNav, escalations, reviews, vaultName }
       flexDirection: 'column',
       flexShrink: 0,
       height: '100%',
-      overflowY: 'auto',
+      overflow: 'hidden',
     }}>
       {/* Identity — top padding clears the macOS traffic-light controls
-          (hiddenInset titlebar) so NEXUS / the console name isn't clipped. */}
+          (hiddenInset titlebar) so NEXUS / the console name isn't clipped.
+          Pinned: only the nav below scrolls. */}
       <div style={{
         padding: '40px 12px 16px',
         borderBottom: '0.5px solid var(--color-border)',
-        marginBottom: 6,
+        flexShrink: 0,
       }}>
         <div style={{
           fontSize: 18,
@@ -121,22 +122,32 @@ export default function Sidebar({ view, onNav, escalations, reviews, vaultName }
         }}>{vaultName ? `${vaultName} Console` : 'Director Console'}</div>
       </div>
 
-      {section('Observe')}
-      {nav('dashboard', 'layout-dashboard', 'Overview', 'System state at a glance')}
-      {nav('agents', 'users', 'Agents', 'Who runs, how, and where')}
-      {nav('knowledge', 'books', 'Knowledge', 'Search all canon and docs')}
+      {/* Scrollable nav — the identity card above and version bar below stay pinned. */}
+      <div style={{
+        flex: 1,
+        minHeight: 0,
+        overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        paddingTop: 6,
+      }}>
+        {section('Observe')}
+        {nav('dashboard', 'layout-dashboard', 'Overview', 'System state at a glance')}
+        {nav('agents', 'users', 'Agents', 'Who runs, how, and where')}
+        {nav('knowledge', 'books', 'Knowledge', 'Search all canon and docs')}
 
-      {section('Monitor')}
-      {nav('status', 'bell', 'Status Layer', 'Background agent activity', statusBadge)}
-      {nav('canon', 'git-branch', 'Canon State', 'What\'s inside and outside')}
+        {section('Monitor')}
+        {nav('status', 'bell', 'Status Layer', 'Background agent activity', statusBadge)}
+        {nav('canon', 'git-branch', 'Canon State', 'What\'s inside and outside')}
 
-      {section('Act')}
-      {nav('invoke', 'terminal-2', 'Invoke', 'Send work to any agent or model')}
-      {renderPersonalNav()}
+        {section('Act')}
+        {nav('invoke', 'terminal-2', 'Invoke', 'Send work to any agent or model')}
+        {renderPersonalNav()}
 
-      <div style={{ flex: 1 }} />
+        <div style={{ flex: 1 }} />
 
-      {nav('settings', 'settings', 'Settings', 'API keys and configuration')}
+        {nav('settings', 'settings', 'Settings', 'API keys and configuration')}
+      </div>
 
       <div style={{
         padding: '10px 12px',

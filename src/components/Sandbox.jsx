@@ -491,7 +491,7 @@ function EventCard({ ev, finalLabel }) {
 
 function Panel({ title, children }) {
   return (
-    <div style={{ background: 'var(--color-surface)', border: '0.5px solid var(--color-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+    <div style={{ background: 'var(--color-surface)', border: '0.5px solid var(--color-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', flexShrink: 0 }}>
       <div style={{ padding: '7px 12px', borderBottom: '0.5px solid var(--color-border)' }}>
         <span className="glyph-label">{title}</span>
       </div>
