@@ -27,14 +27,28 @@ const PROVIDER_COLOR = {
   qwen: '#a855f7', ollama: '#4a9c59',
 }
 const providerColor = (p) => PROVIDER_COLOR[p] || '#8a8a94'
+// Each cloud family gets its own glyph, same line style as the brain: Claude sparkles,
+// OpenAI atom, Gemini diamonds, DeepSeek fish (the whale), Mistral wind, Qwen hex-Q.
+const PROVIDER_ICON = {
+  anthropic: 'ti-sparkles', 'claude-code': 'ti-sparkles', openai: 'ti-atom',
+  gemini: 'ti-diamonds', deepseek: 'ti-fish', mistral: 'ti-wind',
+  qwen: 'ti-hexagon-letter-q', ollama: 'ti-cpu',
+}
+const providerIcon = (p) => PROVIDER_ICON[p] || 'ti-cloud'
 const UNIT_CSS = `
 @keyframes nxPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(150,132,255,0); } 50% { box-shadow: 0 0 14px 3px rgba(150,132,255,0.45); } }
-@keyframes nxDotPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.3); } }
+@keyframes nxDotGlow { 0%,100% { box-shadow: 0 0 2px 0 var(--dotc); transform: scale(1); } 50% { box-shadow: 0 0 12px 3px var(--dotc); transform: scale(1.12); } }
 @keyframes nxNeuron { 0% { left: -3px; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { left: calc(100% - 4px); opacity: 0; } }
 .nx-pulse { animation: nxPulse 1.5s ease-in-out infinite; }
-.nx-active-dot { animation: nxDotPulse 1.1s ease-in-out infinite; }
+.nx-active-dot { animation: nxDotGlow 1.2s ease-in-out infinite; }
 .nx-neuron { position: absolute; top: -2.5px; width: 7px; height: 7px; border-radius: 50%; background: rgba(160,140,255,0.95); box-shadow: 0 0 6px 1px rgba(160,140,255,0.7); animation: nxNeuron 1.25s linear infinite; }
+.nx-node { transition: border-color .25s ease, box-shadow .25s ease, transform .18s ease, background .25s ease; }
+.nx-node:hover { transform: translateY(-1px); border-color: var(--color-active-border) !important; }
+.nx-path { transition: background .3s ease; }
 `
+// Working phrases — Goose-flavored (the flock as actor: geese trade the lead in the V,
+// exactly what the council does). Brand voice, no lore. Rotates while the unit works.
+const PHRASES = ['the wind takes it…', 'the V forms…', 'trading the lead…', 'riding the draft…', 'coming in to land…']
 
 export default function ChatHome({ canonDocs = [], onNav }) {
   const [models, setModels] = useState([])
@@ -112,7 +126,6 @@ export default function ChatHome({ canonDocs = [], onNav }) {
     .sort((a, b) => (council.includes(b.id) - council.includes(a.id)) || (b.available - a.available))
     .slice(0, 5)
   const cloudOverflow = cloudRoster.length - cloudDots.length
-  const PHRASES = ['thinking…', 'noodling…', 'weaving threads…', 'finishing up…']
   const phrase = PHRASES[phraseIdx % PHRASES.length]
   const unitWorking = unit.brain || unit.local || unit.cloud
   const unitStatusLine = unitWorking
@@ -411,66 +424,71 @@ export default function ChatHome({ canonDocs = [], onNav }) {
                 working (pulse on the node, neuron traveling down the live path,
                 rotating status phrase) without opening the inspector. ── */}
           <style>{UNIT_CSS}</style>
-          <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 2, position: 'relative', minHeight: 60 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 2, position: 'relative', minHeight: 66, width: '100%' }}>
 
             {/* Brain node */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, width: 74, flexShrink: 0 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, width: 104, flexShrink: 0 }}>
               <button
                 onClick={() => { setShowModelPicker(s => !s); setShowAdd(false); setShowLocalPicker(false) }}
-                className={unit.brain ? 'nx-pulse' : ''}
+                className={`nx-node${unit.brain ? ' nx-pulse' : ''}`}
                 title={`Brain — ${currentModel?.name || 'select a model'}. Conducts the unit and synthesizes. Click to change.`}
-                style={{ width: 42, height: 42, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-surface)', border: `1.5px solid ${unit.brain ? 'var(--color-active-border)' : 'var(--color-border-strong)'}`, cursor: 'pointer', flexShrink: 0 }}
+                style={{ width: 44, height: 44, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-surface)', border: `1.5px solid ${unit.brain ? 'var(--color-active-border)' : 'var(--color-border-strong)'}`, cursor: 'pointer', flexShrink: 0 }}
               >
-                <i className="ti ti-brain" style={{ fontSize: 21, color: 'var(--color-accent-text)' }} />
+                <i className="ti ti-brain" style={{ fontSize: 22, color: 'var(--color-accent-text)' }} />
               </button>
-              <div style={{ fontSize: 9, color: 'var(--color-text-3)', textAlign: 'center', lineHeight: 1.3, maxWidth: 74, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {currentModel?.name || 'Brain'}{brainId && selectedModel === brainId ? ' · BRAIN' : ''}
+              <div style={{ fontSize: 8, color: 'var(--color-text-3)', letterSpacing: '0.12em', fontWeight: 600 }}>BRAIN</div>
+              <div style={{ fontSize: 10, color: 'var(--color-text-2)', textAlign: 'center', lineHeight: 1.25, maxWidth: 104, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: -2 }}>
+                {currentModel?.name || 'Select a model'}
               </div>
             </div>
 
-            {/* Path: brain ↔ local */}
-            <div style={{ position: 'relative', width: 22, height: 2, marginTop: 20, flexShrink: 0, background: 'var(--color-border-strong)' }}>
+            {/* Path: brain ↔ local — flexes so the chain spans the chat box */}
+            <div className="nx-path" style={{ position: 'relative', flex: 1, minWidth: 24, height: 1.5, borderRadius: 2, marginTop: 21, background: unit.local ? 'rgba(160,140,255,0.4)' : 'var(--color-border-strong)' }}>
               {unit.local && <span className="nx-neuron" />}
             </div>
 
             {/* Local model node */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, width: 74, flexShrink: 0 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, width: 104, flexShrink: 0 }}>
               <button
                 onClick={() => { setShowLocalPicker(s => !s); setShowAdd(false); setShowModelPicker(false) }}
-                className={unit.local ? 'nx-pulse' : ''}
+                className={`nx-node${unit.local ? ' nx-pulse' : ''}`}
                 title={localModel ? `Local model — ${localModel.name}${localInUnit ? ' (in the unit)' : ' (standing by)'}. Click to change or bring it in.` : 'No local model detected — is Ollama running?'}
-                style={{ width: 40, height: 40, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-surface)', border: `1.5px ${localInUnit ? 'solid' : 'dashed'} ${unit.local ? 'var(--color-active-border)' : localInUnit ? providerColor('ollama') : 'var(--color-border-strong)'}`, cursor: 'pointer', opacity: localModel ? 1 : 0.45, flexShrink: 0 }}
+                style={{ width: 42, height: 42, borderRadius: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', background: localInUnit ? `${providerColor('ollama')}1a` : 'var(--color-surface)', border: `1.5px ${localInUnit ? 'solid' : 'dashed'} ${unit.local ? 'var(--color-active-border)' : localInUnit ? providerColor('ollama') : 'var(--color-border-strong)'}`, cursor: 'pointer', opacity: localModel ? 1 : 0.45, flexShrink: 0 }}
               >
-                <i className="ti ti-cpu" style={{ fontSize: 19, color: localInUnit ? providerColor('ollama') : 'var(--color-text-3)' }} />
+                <i className="ti ti-cpu" style={{ fontSize: 20, color: localInUnit ? providerColor('ollama') : 'var(--color-text-3)' }} />
               </button>
-              <div style={{ fontSize: 9, color: 'var(--color-text-3)', textAlign: 'center', lineHeight: 1.3, maxWidth: 74, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {localModel ? localModel.name : 'Local — none'}
+              <div style={{ fontSize: 8, color: 'var(--color-text-3)', letterSpacing: '0.12em', fontWeight: 600 }}>LOCAL</div>
+              <div style={{ fontSize: 10, color: 'var(--color-text-2)', textAlign: 'center', lineHeight: 1.25, maxWidth: 104, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: -2 }}>
+                {localModel ? localModel.name : 'none found'}
               </div>
             </div>
 
             {/* Path: local ↔ cloud unit */}
-            <div style={{ position: 'relative', width: 22, height: 2, marginTop: 20, flexShrink: 0, background: 'var(--color-border-strong)' }}>
+            <div className="nx-path" style={{ position: 'relative', flex: 1, minWidth: 24, height: 1.5, borderRadius: 2, marginTop: 21, background: unit.cloud ? 'rgba(160,140,255,0.4)' : 'var(--color-border-strong)' }}>
               {unit.cloud && <span className="nx-neuron" />}
             </div>
 
             {/* Cloud unit bubble */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0 }}>
               <button
                 onClick={() => { setShowAdd(s => !s); setShowModelPicker(false); setShowLocalPicker(false) }}
-                className={unit.cloud ? 'nx-pulse' : ''}
+                className={`nx-node${unit.cloud ? ' nx-pulse' : ''}`}
                 title="The cloud unit. Click to add or remove council members."
-                style={{ display: 'flex', alignItems: 'center', gap: 4, height: 42, padding: '0 10px', borderRadius: 999, background: 'var(--color-surface)', border: `1.5px ${cloudMemberCount > 0 ? 'solid' : 'dashed'} ${unit.cloud ? 'var(--color-active-border)' : cloudMemberCount > 0 ? 'var(--color-active-border)' : 'var(--color-border-strong)'}`, cursor: 'pointer' }}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, height: 44, padding: '0 16px', borderRadius: 999, background: 'var(--color-surface)', border: `1.5px ${cloudMemberCount > 0 ? 'solid' : 'dashed'} ${unit.cloud ? 'var(--color-active-border)' : cloudMemberCount > 0 ? 'var(--color-active-border)' : 'var(--color-border-strong)'}`, cursor: 'pointer' }}
               >
                 {cloudDots.map(m => {
                   const inUnit = council.includes(m.id)
                   const active = unit.activeName === m.name
+                  const c = providerColor(m.provider)
                   return (
                     <span
                       key={m.id}
                       title={`${m.name}${inUnit ? ' · in the unit' : m.available ? '' : ' · needs a key'}`}
                       className={active ? 'nx-active-dot' : ''}
-                      style={{ width: 16, height: 16, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 700, flexShrink: 0, background: inUnit ? providerColor(m.provider) : 'transparent', color: inUnit ? '#101014' : 'var(--color-text-3)', border: `1.5px solid ${inUnit ? providerColor(m.provider) : 'var(--color-border-strong)'}`, opacity: m.available ? 1 : 0.35, boxShadow: active ? `0 0 8px 1px ${providerColor(m.provider)}` : 'none' }}
-                    >{(m.name || '?')[0]}</span>
+                      style={{ '--dotc': c, width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, background: inUnit ? `${c}26` : 'transparent', border: `1.5px solid ${inUnit ? c : 'var(--color-border-strong)'}`, opacity: m.available ? 1 : 0.35 }}
+                    >
+                      <i className={`ti ${providerIcon(m.provider)}`} style={{ fontSize: 13, color: inUnit || active ? c : 'var(--color-text-3)' }} />
+                    </span>
                   )
                 })}
                 {cloudOverflow > 0 && (
@@ -478,8 +496,9 @@ export default function ChatHome({ canonDocs = [], onNav }) {
                 )}
                 <i className="ti ti-chevron-down" style={{ fontSize: 11, color: 'var(--color-text-3)' }} />
               </button>
-              <div style={{ fontSize: 9, color: 'var(--color-text-3)', textAlign: 'center' }}>
-                {cloudMemberCount > 0 ? `Cloud unit · ${cloudMemberCount} in` : 'Cloud unit — tap to convene'}
+              <div style={{ fontSize: 8, color: 'var(--color-text-3)', letterSpacing: '0.12em', fontWeight: 600 }}>CLOUD UNIT</div>
+              <div style={{ fontSize: 10, color: 'var(--color-text-2)', textAlign: 'center', lineHeight: 1.25, marginTop: -2 }}>
+                {cloudMemberCount > 0 ? `${cloudMemberCount} convened` : 'tap to convene'}
               </div>
             </div>
 
@@ -508,7 +527,7 @@ export default function ChatHome({ canonDocs = [], onNav }) {
 
             {/* Local-model picker popover (T15) */}
             {showLocalPicker && (
-              <div style={{ position: 'absolute', bottom: '110%', left: 104, width: 300, zIndex: 110, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', bottom: '110%', left: '50%', transform: 'translateX(-50%)', width: 300, zIndex: 110, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
                 <div style={{ padding: '8px 12px', borderBottom: '0.5px solid var(--color-border)', fontSize: 11, color: 'var(--color-text-3)' }}>Local model — pick one to bring it into the unit; pick it again to stand it down</div>
                 <div className="scroll-y" style={{ maxHeight: 280, overflowY: 'auto' }}>
                   {localModels.length === 0 && (
@@ -532,7 +551,7 @@ export default function ChatHome({ canonDocs = [], onNav }) {
             {/* Cloud-unit popover — add/remove council members (cloud models only;
                 the local model has its own node, the Brain its own circle) */}
             {showAdd && (
-              <div style={{ position: 'absolute', bottom: '110%', left: 200, width: 300, zIndex: 110, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', bottom: '110%', right: 0, width: 300, zIndex: 110, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
                 <div style={{ padding: '8px 12px', borderBottom: '0.5px solid var(--color-border)', fontSize: 11, color: 'var(--color-text-3)' }}>Convene the cloud unit — tap to add or remove</div>
                 <div className="scroll-y" style={{ maxHeight: 280, overflowY: 'auto' }}>
                   {cloudRoster.filter(m => m.available).length === 0 && (
@@ -542,7 +561,7 @@ export default function ChatHome({ canonDocs = [], onNav }) {
                     const on = council.includes(m.id)
                     return (
                       <div key={m.id} onClick={() => toggleCouncil(m.id)} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--color-active-bg)' : 'none', borderBottom: '0.5px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0, background: on ? providerColor(m.provider) : 'transparent', border: `1.5px solid ${providerColor(m.provider)}` }} />
+                        <i className={`ti ${providerIcon(m.provider)}`} style={{ fontSize: 15, flexShrink: 0, color: on ? providerColor(m.provider) : 'var(--color-text-3)' }} />
                         <span style={{ fontSize: 12, flex: 1 }}>{m.name}</span>
                         <i className={`ti ${on ? 'ti-check' : 'ti-plus'}`} style={{ fontSize: 13, color: on ? 'var(--color-active-text)' : 'var(--color-text-3)' }} />
                       </div>
