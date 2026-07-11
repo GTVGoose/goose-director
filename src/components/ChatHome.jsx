@@ -18,6 +18,24 @@ import CouncilInspector from './CouncilInspector'
 //     the Recent panel opens a read-only reader rather than faking a message replay.
 //   • Sandbox→"Council" rename — batches with the T11 inspector / G7 (see log).
 // ─────────────────────────────────────────────────────────────────────────────
+// T15/T16: provider identity colors for the cloud-unit dots (visual distinctness per
+// model family) + the unit-strip animations. Pure presentation; documented default
+// palette — swap freely at G7.
+const PROVIDER_COLOR = {
+  anthropic: '#d97757', 'claude-code': '#d97757', openai: '#10a37f',
+  gemini: '#4c8bf5', deepseek: '#5b6cff', mistral: '#fa8b2a',
+  qwen: '#a855f7', ollama: '#4a9c59',
+}
+const providerColor = (p) => PROVIDER_COLOR[p] || '#8a8a94'
+const UNIT_CSS = `
+@keyframes nxPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(150,132,255,0); } 50% { box-shadow: 0 0 14px 3px rgba(150,132,255,0.45); } }
+@keyframes nxDotPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.3); } }
+@keyframes nxNeuron { 0% { left: -3px; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { left: calc(100% - 4px); opacity: 0; } }
+.nx-pulse { animation: nxPulse 1.5s ease-in-out infinite; }
+.nx-active-dot { animation: nxDotPulse 1.1s ease-in-out infinite; }
+.nx-neuron { position: absolute; top: -2.5px; width: 7px; height: 7px; border-radius: 50%; background: rgba(160,140,255,0.95); box-shadow: 0 0 6px 1px rgba(160,140,255,0.7); animation: nxNeuron 1.25s linear infinite; }
+`
+
 export default function ChatHome({ canonDocs = [], onNav }) {
   const [models, setModels] = useState([])
   const [brainId, setBrainId] = useState(null)
@@ -35,6 +53,13 @@ export default function ChatHome({ canonDocs = [], onNav }) {
   const [saveNote, setSaveNote] = useState(null)
   const [councilRun, setCouncilRun] = useState(null)   // live/last /api/sandbox run → CouncilInspector (T11)
   const [inspectorOpen, setInspectorOpen] = useState(false)
+  // T15/T16 unit strip: which part of the unit is working right now (drives the
+  // pulse/neuron animations), the local-model "representation" node, and the
+  // rotating status phrase. All presentation — the run protocol is unchanged.
+  const [unit, setUnit] = useState({ brain: false, local: false, cloud: false, activeName: null })
+  const [localPick, setLocalPick] = useState('')       // which local (ollama) model the local node represents
+  const [showLocalPicker, setShowLocalPicker] = useState(false)
+  const [phraseIdx, setPhraseIdx] = useState(0)
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -44,9 +69,18 @@ export default function ChatHome({ canonDocs = [], onNav }) {
       setBrainId(d.brainId || null)
       const first = ms.find(m => m.available && m.id === d.brainId) || ms.find(m => m.available)
       if (first) setSelectedModel(first.id)
+      const firstLocal = ms.find(m => m.provider === 'ollama' && m.available) || ms.find(m => m.provider === 'ollama')
+      if (firstLocal) setLocalPick(firstLocal.id)
     }).catch(() => {})
     loadThreads()
   }, [])
+
+  // Rotate the thinking phrase while anything in the unit is working (T16).
+  useEffect(() => {
+    if (!streaming) { setPhraseIdx(0); return }
+    const t = setInterval(() => setPhraseIdx(i => i + 1), 2200)
+    return () => clearInterval(t)
+  }, [streaming])
 
   const loadThreads = () => {
     fetch('/api/threads').then(r => r.json())
@@ -65,8 +99,40 @@ export default function ChatHome({ canonDocs = [], onNav }) {
   const councilActive = council.length > 0
   const noneAvailable = models.length > 0 && !available.length
 
+  // T15 unit-strip derivations. The strip is pure presentation over the same
+  // selectedModel/council state — the run protocol is untouched.
+  const localModels = models.filter(m => m.provider === 'ollama')
+  const localModel = models.find(m => m.id === localPick && m.provider === 'ollama') || localModels[0] || null
+  const localInUnit = !!localModel && (localModel.id === selectedModel || council.includes(localModel.id))
+  const cloudRoster = models.filter(m => m.provider !== 'ollama' && m.id !== selectedModel)
+  const cloudMemberCount = council.filter(id => models.find(m => m.id === id)?.provider !== 'ollama').length
+  // Bubble shows at most 5 dots (members first, then available) + a "+N" overflow badge,
+  // so the strip stays one calm line even with many providers configured.
+  const cloudDots = [...cloudRoster]
+    .sort((a, b) => (council.includes(b.id) - council.includes(a.id)) || (b.available - a.available))
+    .slice(0, 5)
+  const cloudOverflow = cloudRoster.length - cloudDots.length
+  const PHRASES = ['thinking…', 'noodling…', 'weaving threads…', 'finishing up…']
+  const phrase = PHRASES[phraseIdx % PHRASES.length]
+  const unitWorking = unit.brain || unit.local || unit.cloud
+  const unitStatusLine = unitWorking
+    ? `${unit.activeName || (unit.brain ? (currentModel?.name || 'Brain') : unit.local ? (localModel?.name || 'Local model') : 'Cloud unit')} — ${phrase}`
+    : councilActive ? `Unit assembled · ${1 + council.length} minds · roundtable` : null
+
   const toggleCouncil = (id) =>
     setCouncil(c => c.includes(id) ? c.filter(x => x !== id) : [...c, id])
+
+  // Local node: picking a model makes it the node's representation AND swaps it
+  // into the unit in place of any other local member; picking it again stands it down.
+  const chooseLocal = (id) => {
+    setLocalPick(id)
+    setShowLocalPicker(false)
+    if (id === selectedModel) return // it IS the Brain — already in the unit
+    setCouncil(c => {
+      const nonLocal = c.filter(x => models.find(mm => mm.id === x)?.provider !== 'ollama')
+      return c.includes(id) ? nonLocal : [...nonLocal, id]
+    })
+  }
 
   const newChat = () => {
     if (streaming) return
@@ -93,6 +159,10 @@ export default function ChatHome({ canonDocs = [], onNav }) {
   const runSolo = async (newConv) => {
     let assistantText = ''
     setConversation([...newConv, { role: 'assistant', content: '', streaming: true }])
+    // T16: light up whichever node is actually answering — the Brain, unless the
+    // selected model is a local (ollama) one, in which case the local node works.
+    const soloIsLocal = models.find(m => m.id === selectedModel)?.provider === 'ollama'
+    setUnit({ brain: !soloIsLocal, local: soloIsLocal, cloud: false, activeName: null })
     try {
       const res = await fetch('/api/relay', {
         method: 'POST',
@@ -129,6 +199,7 @@ export default function ChatHome({ canonDocs = [], onNav }) {
       }
       return prev
     })
+    setUnit({ brain: false, local: false, cloud: false, activeName: null })
   }
 
   // Council turn — hand the task to /api/sandbox (roundtable: members answer, the
@@ -174,9 +245,20 @@ export default function ChatHome({ canonDocs = [], onNav }) {
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
           let msg; try { msg = JSON.parse(line.slice(6)) } catch { continue }
-          if (msg.type === 'status') { paint({ progress: msg.message }); syncInsp({ status: msg.message }) }
-          else if (msg.type === 'turn-start') { paint({ progress: `${msg.model} is responding…` }); syncInsp({ active: { model: msg.model, phase: msg.phase, round: msg.round, subtask: msg.subtask }, status: `${msg.model} is responding…` }) }
-          else if (msg.type === 'turn') { turns.push({ model: msg.model, text: msg.text, phase: msg.phase, round: msg.round, subtask: msg.subtask }); paint({ progress: `${msg.model} answered` }); syncInsp({ active: null, status: `${msg.model} answered` }) }
+          if (msg.type === 'status') {
+            paint({ progress: msg.message }); syncInsp({ status: msg.message })
+            // T16: an aggregator-phase status (synthesize/judge/compose) means the Brain
+            // is working — same detection the inspector uses for every mode.
+            if (/synthesi|judg|compos/i.test(msg.message || '')) setUnit({ brain: true, local: false, cloud: false, activeName: null })
+          }
+          else if (msg.type === 'turn-start') {
+            paint({ progress: `${msg.model} is responding…` }); syncInsp({ active: { model: msg.model, phase: msg.phase, round: msg.round, subtask: msg.subtask }, status: `${msg.model} is responding…` })
+            // T16: light the node that owns this member (SSE carries the display name).
+            const mm = models.find(x => x.name === msg.model)
+            const isLocal = mm?.provider === 'ollama'
+            setUnit({ brain: false, local: isLocal, cloud: !isLocal, activeName: msg.model })
+          }
+          else if (msg.type === 'turn') { turns.push({ model: msg.model, text: msg.text, phase: msg.phase, round: msg.round, subtask: msg.subtask }); paint({ progress: `${msg.model} answered` }); syncInsp({ active: null, status: `${msg.model} answered` }); setUnit(u => ({ ...u, activeName: null })) }
           else if (msg.type === 'turn-error') {
             // An aggregator-phase failure (synthesize/judge/compose) means there will be
             // NO `final` — surface it at the top level instead of burying it as one more
@@ -185,6 +267,7 @@ export default function ChatHome({ canonDocs = [], onNav }) {
             if (aggPhase) setError(`Synthesis failed: ${msg.error}`)
             turns.push({ model: msg.model, error: msg.error, phase: msg.phase }); paint({})
             syncInsp({ active: null, ...(aggPhase ? { error: `Synthesis failed: ${msg.error}` } : {}) })
+            setUnit(u => ({ ...u, activeName: null }))
           }
           else if (msg.type === 'final') { finalText = msg.text; paint({ content: msg.text, progress: `Synthesized by ${msg.model}`, finalModel: msg.model }); syncInsp({ final: { model: msg.model, text: msg.text }, active: null, status: `Synthesized by ${msg.model}` }) }
           else if (msg.type === 'done') { settled = true; setConversation([...newConv, { ...base, turns: [...turns], content: finalText, streaming: false, progress: null }]); syncInsp({ running: false, active: null }) }
@@ -197,6 +280,7 @@ export default function ChatHome({ canonDocs = [], onNav }) {
       setConversation([...newConv, { ...base, turns: [...turns], content: finalText, streaming: false, progress: null }])
     }
     syncInsp({ running: false, active: null })
+    setUnit({ brain: false, local: false, cloud: false, activeName: null })
   }
 
   const saveThread = async () => {
@@ -303,8 +387,8 @@ export default function ChatHome({ canonDocs = [], onNav }) {
                 </>
               ) : (
                 <>
-                  <div style={{ fontSize: 14, color: 'var(--color-text-2)' }}>Talk to the Brain</div>
-                  <div style={{ fontSize: 12, lineHeight: 1.5 }}>Ask anything. Add a second model with <i className="ti ti-plus" style={{ fontSize: 11 }} /> to convene the Council — the members answer and the Brain synthesizes.</div>
+                  <div style={{ fontSize: 14, color: 'var(--color-text-2)' }}>What are we working on?</div>
+                  <div style={{ fontSize: 12, lineHeight: 1.5 }}>You're speaking to the Brain — it conducts the whole unit. Tap the local node or the cloud bubble by the composer to bring more minds in; the Brain synthesizes what they return.</div>
                 </>
               )}
             </div>
@@ -322,43 +406,83 @@ export default function ChatHome({ canonDocs = [], onNav }) {
 
         {/* Composer */}
         <div style={{ borderTop: '0.5px solid var(--color-border)', marginTop: 8, paddingTop: 10 }}>
-          {/* Controls row: Brain picker + council chips + add */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap', position: 'relative' }}>
-            <button
-              onClick={() => setShowModelPicker(s => !s)}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--color-surface)', border: '0.5px solid var(--color-border-strong)', borderRadius: 999, padding: '4px 11px', fontSize: 12, color: 'var(--color-text)', cursor: 'pointer' }}
-            >
-              <i className="ti ti-brain" style={{ fontSize: 13, color: 'var(--color-accent-text)' }} />
-              {currentModel?.name || 'Select a model'}
-              {brainId && selectedModel === brainId && <span style={{ fontSize: 9, color: 'var(--color-text-3)', letterSpacing: '0.06em' }}>BRAIN</span>}
-              <i className="ti ti-chevron-down" style={{ fontSize: 12, color: 'var(--color-text-3)' }} />
-            </button>
+          {/* ── T15 unit strip: Brain ─ neuron path ─ local node ─ path ─ cloud bubble.
+                The whole unit is visible in one glance; T16 animations show who is
+                working (pulse on the node, neuron traveling down the live path,
+                rotating status phrase) without opening the inspector. ── */}
+          <style>{UNIT_CSS}</style>
+          <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 2, position: 'relative', minHeight: 60 }}>
 
-            {council.map(id => {
-              const m = models.find(x => x.id === id)
-              return (
-                <span key={id} style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'var(--color-recursive-bg)', border: '0.5px solid var(--color-recursive-border)', borderRadius: 999, padding: '3px 8px', fontSize: 11, color: 'var(--color-recursive-text)' }}>
-                  {m?.name || id}
-                  <button onClick={() => toggleCouncil(id)} aria-label={`Remove ${m?.name || id}`} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: 12, padding: 0, display: 'flex' }}>
-                    <i className="ti ti-x" style={{ fontSize: 11 }} />
-                  </button>
-                </span>
-              )
-            })}
+            {/* Brain node */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, width: 74, flexShrink: 0 }}>
+              <button
+                onClick={() => { setShowModelPicker(s => !s); setShowAdd(false); setShowLocalPicker(false) }}
+                className={unit.brain ? 'nx-pulse' : ''}
+                title={`Brain — ${currentModel?.name || 'select a model'}. Conducts the unit and synthesizes. Click to change.`}
+                style={{ width: 42, height: 42, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-surface)', border: `1.5px solid ${unit.brain ? 'var(--color-active-border)' : 'var(--color-border-strong)'}`, cursor: 'pointer', flexShrink: 0 }}
+              >
+                <i className="ti ti-brain" style={{ fontSize: 21, color: 'var(--color-accent-text)' }} />
+              </button>
+              <div style={{ fontSize: 9, color: 'var(--color-text-3)', textAlign: 'center', lineHeight: 1.3, maxWidth: 74, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {currentModel?.name || 'Brain'}{brainId && selectedModel === brainId ? ' · BRAIN' : ''}
+              </div>
+            </div>
 
-            <button
-              onClick={() => setShowAdd(s => !s)}
-              title="Add a model to convene the Council"
-              style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: '0.5px dashed var(--color-border-strong)', borderRadius: 999, padding: '4px 10px', fontSize: 12, color: 'var(--color-text-2)', cursor: 'pointer' }}
-            >
-              <i className="ti ti-plus" style={{ fontSize: 13 }} /> {councilActive ? 'Add' : 'Council'}
-            </button>
+            {/* Path: brain ↔ local */}
+            <div style={{ position: 'relative', width: 22, height: 2, marginTop: 20, flexShrink: 0, background: 'var(--color-border-strong)' }}>
+              {unit.local && <span className="nx-neuron" />}
+            </div>
 
-            {councilActive && (
-              <span style={{ fontSize: 10, color: 'var(--color-text-3)', letterSpacing: '0.03em' }}>
-                Council · {1 + council.length} models · roundtable
-              </span>
-            )}
+            {/* Local model node */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, width: 74, flexShrink: 0 }}>
+              <button
+                onClick={() => { setShowLocalPicker(s => !s); setShowAdd(false); setShowModelPicker(false) }}
+                className={unit.local ? 'nx-pulse' : ''}
+                title={localModel ? `Local model — ${localModel.name}${localInUnit ? ' (in the unit)' : ' (standing by)'}. Click to change or bring it in.` : 'No local model detected — is Ollama running?'}
+                style={{ width: 40, height: 40, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-surface)', border: `1.5px ${localInUnit ? 'solid' : 'dashed'} ${unit.local ? 'var(--color-active-border)' : localInUnit ? providerColor('ollama') : 'var(--color-border-strong)'}`, cursor: 'pointer', opacity: localModel ? 1 : 0.45, flexShrink: 0 }}
+              >
+                <i className="ti ti-cpu" style={{ fontSize: 19, color: localInUnit ? providerColor('ollama') : 'var(--color-text-3)' }} />
+              </button>
+              <div style={{ fontSize: 9, color: 'var(--color-text-3)', textAlign: 'center', lineHeight: 1.3, maxWidth: 74, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {localModel ? localModel.name : 'Local — none'}
+              </div>
+            </div>
+
+            {/* Path: local ↔ cloud unit */}
+            <div style={{ position: 'relative', width: 22, height: 2, marginTop: 20, flexShrink: 0, background: 'var(--color-border-strong)' }}>
+              {unit.cloud && <span className="nx-neuron" />}
+            </div>
+
+            {/* Cloud unit bubble */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+              <button
+                onClick={() => { setShowAdd(s => !s); setShowModelPicker(false); setShowLocalPicker(false) }}
+                className={unit.cloud ? 'nx-pulse' : ''}
+                title="The cloud unit. Click to add or remove council members."
+                style={{ display: 'flex', alignItems: 'center', gap: 4, height: 42, padding: '0 10px', borderRadius: 999, background: 'var(--color-surface)', border: `1.5px ${cloudMemberCount > 0 ? 'solid' : 'dashed'} ${unit.cloud ? 'var(--color-active-border)' : cloudMemberCount > 0 ? 'var(--color-active-border)' : 'var(--color-border-strong)'}`, cursor: 'pointer' }}
+              >
+                {cloudDots.map(m => {
+                  const inUnit = council.includes(m.id)
+                  const active = unit.activeName === m.name
+                  return (
+                    <span
+                      key={m.id}
+                      title={`${m.name}${inUnit ? ' · in the unit' : m.available ? '' : ' · needs a key'}`}
+                      className={active ? 'nx-active-dot' : ''}
+                      style={{ width: 16, height: 16, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 700, flexShrink: 0, background: inUnit ? providerColor(m.provider) : 'transparent', color: inUnit ? '#101014' : 'var(--color-text-3)', border: `1.5px solid ${inUnit ? providerColor(m.provider) : 'var(--color-border-strong)'}`, opacity: m.available ? 1 : 0.35, boxShadow: active ? `0 0 8px 1px ${providerColor(m.provider)}` : 'none' }}
+                    >{(m.name || '?')[0]}</span>
+                  )
+                })}
+                {cloudOverflow > 0 && (
+                  <span style={{ fontSize: 9, color: 'var(--color-text-3)', flexShrink: 0 }}>+{cloudOverflow}</span>
+                )}
+                <i className="ti ti-chevron-down" style={{ fontSize: 11, color: 'var(--color-text-3)' }} />
+              </button>
+              <div style={{ fontSize: 9, color: 'var(--color-text-3)', textAlign: 'center' }}>
+                {cloudMemberCount > 0 ? `Cloud unit · ${cloudMemberCount} in` : 'Cloud unit — tap to convene'}
+              </div>
+            </div>
+
 
             {/* Model picker popover (Brain) */}
             {showModelPicker && (
@@ -382,26 +506,56 @@ export default function ChatHome({ canonDocs = [], onNav }) {
               </div>
             )}
 
-            {/* Add-to-council popover */}
-            {showAdd && (
-              <div style={{ position: 'absolute', bottom: '110%', left: 0, width: 300, zIndex: 110, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
-                <div style={{ padding: '8px 12px', borderBottom: '0.5px solid var(--color-border)', fontSize: 11, color: 'var(--color-text-3)' }}>Add models to the Council</div>
+            {/* Local-model picker popover (T15) */}
+            {showLocalPicker && (
+              <div style={{ position: 'absolute', bottom: '110%', left: 104, width: 300, zIndex: 110, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+                <div style={{ padding: '8px 12px', borderBottom: '0.5px solid var(--color-border)', fontSize: 11, color: 'var(--color-text-3)' }}>Local model — pick one to bring it into the unit; pick it again to stand it down</div>
                 <div className="scroll-y" style={{ maxHeight: 280, overflowY: 'auto' }}>
-                  {available.filter(m => m.id !== selectedModel).length === 0 && (
-                    <div style={{ padding: '8px 12px', fontSize: 11, color: 'var(--color-text-3)' }}>No other models available.</div>
+                  {localModels.length === 0 && (
+                    <div style={{ padding: '8px 12px', fontSize: 11, color: 'var(--color-text-3)' }}>No local models found — is Ollama running?</div>
                   )}
-                  {available.filter(m => m.id !== selectedModel).map(m => {
-                    const on = council.includes(m.id)
+                  {localModels.map(m => {
+                    const isBrain = m.id === selectedModel
+                    const on = isBrain || council.includes(m.id)
                     return (
-                      <div key={m.id} onClick={() => toggleCouncil(m.id)} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--color-active-bg)' : 'none', borderBottom: '0.5px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div key={m.id} onClick={() => { if (!m.available) return; chooseLocal(m.id) }} title={!m.available && m.unavailableReason ? m.unavailableReason : undefined} style={{ padding: '8px 12px', cursor: m.available ? 'pointer' : 'not-allowed', opacity: m.available ? 1 : 0.45, background: on ? 'var(--color-active-bg)' : 'none', borderBottom: '0.5px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
                         <i className={`ti ${on ? 'ti-check' : 'ti-plus'}`} style={{ fontSize: 13, color: on ? 'var(--color-active-text)' : 'var(--color-text-3)' }} />
-                        <span style={{ fontSize: 12 }}>{m.name}</span>
+                        <span style={{ fontSize: 12, flex: 1 }}>{m.name}</span>
+                        {isBrain && <span style={{ fontSize: 9, color: 'var(--color-text-3)', letterSpacing: '0.06em' }}>BRAIN</span>}
                       </div>
                     )
                   })}
                 </div>
               </div>
             )}
+
+            {/* Cloud-unit popover — add/remove council members (cloud models only;
+                the local model has its own node, the Brain its own circle) */}
+            {showAdd && (
+              <div style={{ position: 'absolute', bottom: '110%', left: 200, width: 300, zIndex: 110, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+                <div style={{ padding: '8px 12px', borderBottom: '0.5px solid var(--color-border)', fontSize: 11, color: 'var(--color-text-3)' }}>Convene the cloud unit — tap to add or remove</div>
+                <div className="scroll-y" style={{ maxHeight: 280, overflowY: 'auto' }}>
+                  {cloudRoster.filter(m => m.available).length === 0 && (
+                    <div style={{ padding: '8px 12px', fontSize: 11, color: 'var(--color-text-3)' }}>No cloud models available — add API keys in Settings.</div>
+                  )}
+                  {cloudRoster.filter(m => m.available).map(m => {
+                    const on = council.includes(m.id)
+                    return (
+                      <div key={m.id} onClick={() => toggleCouncil(m.id)} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--color-active-bg)' : 'none', borderBottom: '0.5px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0, background: on ? providerColor(m.provider) : 'transparent', border: `1.5px solid ${providerColor(m.provider)}` }} />
+                        <span style={{ fontSize: 12, flex: 1 }}>{m.name}</span>
+                        <i className={`ti ${on ? 'ti-check' : 'ti-plus'}`} style={{ fontSize: 13, color: on ? 'var(--color-active-text)' : 'var(--color-text-3)' }} />
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Live status line (T16) — who's working, without opening the inspector */}
+          <div style={{ height: 16, marginBottom: 6, fontSize: 11, color: 'var(--color-text-3)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {unitStatusLine}
           </div>
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
