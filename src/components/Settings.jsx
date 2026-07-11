@@ -283,6 +283,160 @@ function SandboxCard() {
   )
 }
 
+// T13: which capability each provider is KNOWN to support — gates which toggles the panel
+// offers. A capability *possibility* map, NOT an enablement. `computerUse:true` here only means
+// "could be wired at G8", never "is on". Keep in sync with docs/capability-architecture.md §3.
+const PROVIDER_CAPABILITIES = {
+  anthropic:     { tools: true,  mcp: true,  computerUse: true  },
+  'claude-code': { tools: true,  mcp: true,  computerUse: true  },
+  openai:        { tools: true,  mcp: true,  computerUse: false },
+  gemini:        { tools: true,  mcp: false, computerUse: false },
+  mistral:       { tools: true,  mcp: false, computerUse: false },
+  deepseek:      { tools: true,  mcp: false, computerUse: false },
+  qwen:          { tools: true,  mcp: false, computerUse: false },
+  ollama:        { tools: true,  mcp: false, computerUse: false },
+}
+const CAP_COLS = [
+  { key: 'tools',       label: 'Tools' },
+  { key: 'mcp',         label: 'MCP' },
+  { key: 'computerUse', label: 'Computer-use' },
+]
+
+// A flagged, default-OFF scaffold. Renders ONLY when config.ui.capabilitiesPanel === true,
+// so it is invisible in the shipped product. It records per-model capability INTENT to
+// config.capabilities and enforces NOTHING — no model can execute tools or computer-use from
+// here (the Sandbox card is the only live tool gate). Enablement is gate G8. See T13.
+function CapabilitiesCard() {
+  const [visible, setVisible] = useState(null)   // null=loading, false=flag off (render nothing)
+  const [models, setModels] = useState([])
+  const [caps, setCaps] = useState({})           // { [modelId]: { tools, mcp, computerUse } }
+  const [msg, setMsg] = useState(null)
+
+  useEffect(() => {
+    fetch('/api/config').then(r => r.json()).then(cfg => {
+      if (!cfg.ui?.capabilitiesPanel) { setVisible(false); return }
+      setVisible(true)
+      setCaps(cfg.capabilities?.models || {})
+    }).catch(() => setVisible(false))
+    fetch('/api/models').then(r => r.json()).then(d => setModels(d.models || [])).catch(() => {})
+  }, [])
+
+  if (visible !== true) return null   // flag off or still loading → invisible
+
+  const get = (id, key) => !!(caps[id] && caps[id][key])
+  const toggle = (id, key) => setCaps(prev => ({ ...prev, [id]: { ...(prev[id] || {}), [key]: !(prev[id] && prev[id][key]) } }))
+
+  const save = async () => {
+    setMsg(null)
+    // The scaffold NEVER enables: `enforced` stays false and computer-use is forced off before
+    // sending, no matter the local state. Intent-recording only. (defense in depth vs the server
+    // normalizer, which also stores this as inert data.)
+    const outModels = {}
+    for (const [id, c] of Object.entries(caps)) {
+      outModels[id] = { tools: !!(c && c.tools), mcp: !!(c && c.mcp), computerUse: false }
+    }
+    try {
+      const res = await fetch('/api/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ capabilities: { enforced: false, models: outModels } }),
+      })
+      const data = await res.json()
+      if (data.ok) setMsg({ ok: true, text: 'Intents saved — recorded, not enforced (gate G8).' })
+      else setMsg({ ok: false, text: data.error || 'Failed' })
+    } catch (e) { setMsg({ ok: false, text: e.message }) }
+  }
+
+  // dedupe by id (defensive — /api/models can append auto-detected ollama entries)
+  const rows = []
+  const seen = new Set()
+  for (const m of models) {
+    if (!m || !m.id || seen.has(m.id)) continue
+    seen.add(m.id); rows.push(m)
+  }
+
+  const th = { textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--color-text-3)', padding: '6px 10px', letterSpacing: '0.03em' }
+  const td = { fontSize: 12, padding: '7px 10px', borderTop: '0.5px solid var(--color-border)' }
+
+  const cell = (m, key) => {
+    const supported = !!(PROVIDER_CAPABILITIES[m.provider] && PROVIDER_CAPABILITIES[m.provider][key])
+    const locked = key === 'computerUse'   // computer-use is a gate (G8), never a scaffold toggle
+    if (!supported) {
+      return <span title={`${m.provider} does not support ${key}`} style={{ color: 'var(--color-text-3)' }}>—</span>
+    }
+    if (locked) {
+      return (
+        <span title="Computer-use enablement is gate G8" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--color-text-3)' }}>
+          <i className="ti ti-lock" style={{ fontSize: 13 }}></i>
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.04em' }}>G8</span>
+        </span>
+      )
+    }
+    return (
+      <input type="checkbox" checked={get(m.id, key)} onChange={() => toggle(m.id, key)}
+        style={{ width: 'auto', cursor: 'pointer' }} />
+    )
+  }
+
+  return (
+    <div style={cardStyle}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>Capabilities — per model (developer)</div>
+        <span style={{
+          fontSize: 10, padding: '1px 6px', borderRadius: 999, fontWeight: 600, letterSpacing: '0.04em',
+          background: 'rgba(138,132,120,0.12)', color: 'var(--color-text-3)', border: '0.5px solid var(--color-border-mid)',
+        }}>◇ SCAFFOLD</span>
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--color-text-3)', marginBottom: 14, lineHeight: 1.6 }}>
+        Record which model should eventually be allowed tools or MCP. <strong style={{ color: 'var(--color-text-2)' }}>Nothing
+        here is enforced.</strong> No model can execute tools or computer-use from this panel — the
+        Sandbox card above is the only live tool gate. Turning any capability on, and computer-use
+        specifically, is gate <span className="mono">G8</span>. Toggles appear only where the provider
+        is known to support the capability.
+      </div>
+
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <th style={th}>Model</th>
+              {CAP_COLS.map(c => <th key={c.key} style={{ ...th, textAlign: 'center' }}>{c.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 && (
+              <tr><td style={{ ...td, color: 'var(--color-text-3)' }} colSpan={CAP_COLS.length + 1}>No models configured.</td></tr>
+            )}
+            {rows.map(m => (
+              <tr key={m.id}>
+                <td style={td}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: m.available ? 'var(--color-available)' : 'var(--color-text-3)', flexShrink: 0 }} />
+                    <span style={{ fontWeight: 500 }}>{m.name || m.id}</span>
+                    <span className="mono" style={{ color: 'var(--color-text-3)', fontSize: 11 }}>{m.provider}</span>
+                  </div>
+                </td>
+                {CAP_COLS.map(c => <td key={c.key} style={{ ...td, textAlign: 'center' }}>{cell(m, c.key)}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
+        <button onClick={save} style={{
+          background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)',
+          borderRadius: 6, padding: '7px 16px', fontSize: 12, fontWeight: 500, color: 'var(--color-text)',
+        }}>Save intents</button>
+        {msg && (
+          <span style={{ fontSize: 12, color: msg.ok ? 'var(--color-available)' : 'var(--color-unavailable)' }}>
+            {msg.text}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 const VAULT_LABELS = {
   goose: 'Goose Agent System layout',
   sfs: 'SFS-style studio vault',
@@ -666,6 +820,7 @@ export default function Settings() {
 
       <TelegramCard />
       <SandboxCard />
+      <CapabilitiesCard />
 
       <div style={{
         background: 'var(--color-surface)',

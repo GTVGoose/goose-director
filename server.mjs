@@ -580,6 +580,9 @@ app.post('/api/config', (req, res) => {
     config.ui = { ...(config.ui || {}) }
     if (ui.consoleName !== undefined) config.ui.consoleName = String(ui.consoleName).slice(0, 60)
     if (ui.accent !== undefined) config.ui.accent = String(ui.accent).slice(0, 20)
+    if (ui.chatHome !== undefined) config.ui.chatHome = !!ui.chatHome
+    if (ui.councilLabel !== undefined) config.ui.councilLabel = !!ui.councilLabel
+    if (ui.overviewCompact !== undefined) config.ui.overviewCompact = !!ui.overviewCompact
   }
 
   if (telegram && typeof telegram === 'object') {
