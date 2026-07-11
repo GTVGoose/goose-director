@@ -67,6 +67,13 @@
       "description": "Claude Sonnet via the Claude Code CLI — billed to your Claude Max subscription, NOT API credits (metered as $0). Requires Claude Code installed + logged into your Max account on the Mac. Use this for heavy reasoning during testing so you don't burn API tokens."
     },
     {
+      "id": "gpt-4o",
+      "name": "GPT-4o / Codex",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "description": "OpenAI's main model. Use for Codex-style execution tasks or cross-model verification."
+    },
+    {
       "id": "gemini-flash",
       "name": "Gemini Flash (latest)",
       "provider": "gemini",
