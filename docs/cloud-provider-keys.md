@@ -12,7 +12,7 @@ restart Nexus, and the model's dot goes green in Invoke/Sandbox.
 | **Qwen (Alibaba)** | modelstudio (DashScope **International**: dashscope-intl console) → API-KEY | `sk-…` | Free quota per model on signup; use the INTL endpoint (already wired in Nexus) |
 
 Notes:
-- Nexus is already configured for all four (`gemini-flash`, `deepseek-chat`,
+- Nexus is already configured for all four (`gemini-flash` (model: gemini-flash-latest), `deepseek-chat`,
   `mistral-large`, `qwen-plus`); the Settings panel has a labeled field per key.
 - The availability dot does a real 1-token probe, so green = actually working.
 - Qwen: make sure you're on the **international** DashScope console, not the

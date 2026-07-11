@@ -1050,6 +1050,9 @@ app.post('/api/settings', (req, res) => {
 
     for (const [, field, envVar] of CLOUD_KEYS) set(envVar, req.body[field])
     set('TELEGRAM_BOT_TOKEN', telegramToken)
+    // New keys apply to the live process — drop cached availability-probe
+    // results so the model pickers go green immediately, not after 5 min.
+    for (const k of Object.keys(_keyCache)) delete _keyCache[k]
     if (!lines.find(l => l.startsWith('OLLAMA_BASE_URL=')))
       lines.push('OLLAMA_BASE_URL=http://localhost:11434')
 

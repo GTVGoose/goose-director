@@ -68,10 +68,10 @@
     },
     {
       "id": "gemini-flash",
-      "name": "Gemini 2.5 Flash",
+      "name": "Gemini Flash (latest)",
       "provider": "gemini",
-      "model": "gemini-2.5-flash",
-      "description": "Google's fast multimodal model via the Gemini API (OpenAI-compatible endpoint). Needs a Google AI Studio key."
+      "model": "gemini-flash-latest",
+      "description": "Google's fast multimodal model via the Gemini API (OpenAI-compatible endpoint). The 'latest' alias always tracks Google's newest flash model. Needs a Google AI Studio key."
     },
     {
       "id": "deepseek-chat",
