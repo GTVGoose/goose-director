@@ -81,6 +81,9 @@ try {
 
 
 const app = express()
+// Reject case-variant paths (/API/sandbox) outright instead of letting them
+// match a lowercase route — hardens the remote-access gateway below.
+app.set('case sensitive routing', true)
 
 // CORS lock (2026-07-03): the console is only ever reached same-origin (packaged
 // app serves the UI from this same port) or via vite's server-side dev proxy —
@@ -119,10 +122,16 @@ const MOBILE_API_ALLOW = [
 app.use((req, res, next) => {
   const proxied = !!(req.headers['x-forwarded-for'] || req.headers['tailscale-user-login'])
   if (!proxied) return next()                          // local traffic: unchanged
-  if (!req.path.startsWith('/api')) return next()      // static shell/assets are fine
-  const allowed = MOBILE_API_ALLOW.some(re => re.test(req.path))
+  // Express matches routes case-INsensitively by default, so we MUST compare
+  // against a lowercased path — otherwise `/API/sandbox` slips past a
+  // case-sensitive `/api` prefix test and still hits the real lowercase route
+  // with no allowlist and no PIN. (case-sensitive routing is also enabled
+  // below as belt-and-suspenders.)
+  const p = req.path.toLowerCase()
+  if (!p.startsWith('/api')) return next()             // static shell/assets are fine
+  const allowed = MOBILE_API_ALLOW.some(re => re.test(p))
   if (!allowed) return res.status(403).json({ error: 'loopback-only endpoint' })
-  if (req.path === '/api/health') return next()        // probe stays PIN-free (returns no data)
+  if (p === '/api/health') return next()               // probe stays PIN-free (returns no data)
   if (!mobileAuthCheck(req, res)) return
   next()
 })
@@ -2332,7 +2341,13 @@ function mobileAuthCheck(req, res) {
     res.status(403).json({ error: 'Mobile access disabled: set a non-default voicePin in goose.config.json ("1234" is the factory default and is refused).' })
     return false
   }
-  const ip = req.ip || req.socket?.remoteAddress || '?'
+  // Behind `tailscale serve` every request connects from loopback, so req.ip
+  // is a single shared bucket. Prefer the tailnet identity, then the first
+  // X-Forwarded-For hop, so throttling is per-caller (and one attacker can't
+  // lock out the legit phone by exhausting a global counter).
+  const ip = String(req.headers['tailscale-user-login']
+    || String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+    || req.ip || req.socket?.remoteAddress || '?')
   const now = Date.now()
   const rec = PIN_FAILS.get(ip) || { count: 0, resetAt: now + 60_000 }
   if (now > rec.resetAt) { rec.count = 0; rec.resetAt = now + 60_000 }

@@ -55,7 +55,7 @@ export async function probe() {
 // Calls onDelta for each event; resolves when the stream ends. The caller
 // re-invokes on visibilitychange — the server replays all deltas on reconnect.
 export async function streamJob(jobId, onDelta, signal) {
-  const r = await fetch(`/api/chat/stream/${jobId}?pin=${encodeURIComponent(getPin())}`, { signal, cache: 'no-store' })
+  const r = await fetch(`/api/chat/stream/${encodeURIComponent(jobId)}?pin=${encodeURIComponent(getPin())}`, { signal, cache: 'no-store' })
   if (!r.ok || !r.body) throw new Error(`stream ${r.status}`)
   const reader = r.body.getReader()
   const decoder = new TextDecoder()

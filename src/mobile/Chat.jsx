@@ -19,6 +19,8 @@ export default function Chat() {
   const bodyRef = useRef(null)
   const recRef = useRef(null)
   const wakeRef = useRef(null)
+  const followingRef = useRef(null)   // jobId currently being streamed (re-entrancy guard)
+  const abortRef = useRef(null)
 
   const scrollDown = () => requestAnimationFrame(() => {
     const el = bodyRef.current?.closest('.mnx-body')
@@ -35,17 +37,25 @@ export default function Chat() {
 
   // Follow a job to completion; reconnect-safe. Ends by reloading history
   // (the canonical thread is the source of truth, not our local state).
+  // Re-entrancy guard: mount AND visibilitychange can both fire for the same
+  // job — without the guard two streams open and the server replays deltas to
+  // each, visibly doubling tokens until the first ends.
   const follow = useCallback(async (jobId) => {
+    if (followingRef.current === jobId) return
+    followingRef.current = jobId
     setBusy(true)
+    setLive('')
     localStorage.setItem(ACTIVE_KEY, jobId)
     try { wakeRef.current = await navigator.wakeLock?.request('screen') } catch { /* not critical */ }
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
     try {
       let done = false
       await streamJob(jobId, (d) => {
         if (d.type === 'status') setStatusLine(d.text)
-        if (d.type === 'token') setLive(prev => prev + d.text), scrollDown()
+        if (d.type === 'token') { setLive(prev => prev + d.text); scrollDown() }
         if (d.type === 'done' || d.type === 'error') done = true
-      })
+      }, ctrl.signal)
       if (!done) {
         // Stream ended without a terminal event (proxy reap) — poll the job.
         const job = await api(`/api/chat/job/${jobId}`)
@@ -55,20 +65,25 @@ export default function Chat() {
         localStorage.removeItem(ACTIVE_KEY)
         setBusy(false); setLive(''); setStatusLine('')
         await loadHistory()
-        return
       }
-      // Still running (rare) — leave busy; visibilitychange will re-attach.
-    } catch {
-      // Couldn't attach — job may still finish; keep it resumable.
-      setBusy(false); setStatusLine('Connection lost — reply will land in history (and Telegram if escalated).')
+      // else still running (rare) — leave busy; visibilitychange will re-attach.
+    } catch (e) {
+      if (e.name !== 'AbortError') {
+        // Couldn't attach — job may still finish; keep it resumable.
+        setBusy(false); setStatusLine('Connection lost — reply will land in history (and Telegram if escalated).')
+      }
     } finally {
+      followingRef.current = null
       try { wakeRef.current?.release() } catch { /* released on hide anyway */ }
     }
   }, [loadHistory])
 
   useEffect(() => {
     loadHistory()
-    const pending = localStorage.getItem(ACTIVE_KEY)
+    // A Telegram completion deep link (/m/chat?job=<id>) targets a specific
+    // job; otherwise resume whatever was last active.
+    const linked = new URLSearchParams(location.search).get('job')
+    const pending = linked || localStorage.getItem(ACTIVE_KEY)
     if (pending) follow(pending)
     const onVis = () => {
       if (document.visibilityState !== 'visible') return
@@ -77,7 +92,10 @@ export default function Chat() {
       else loadHistory()
     }
     document.addEventListener('visibilitychange', onVis)
-    return () => document.removeEventListener('visibilitychange', onVis)
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      abortRef.current?.abort()   // stop streaming + setState when Chat unmounts
+    }
   }, [follow, loadHistory])
 
   const send = async () => {

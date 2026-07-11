@@ -34,7 +34,7 @@ export default function Domains({ onQueuedChange }) {
 
   const openDoc = async (d) => {
     try {
-      const r = await api(`/api/file?path=${encodeURIComponent(d.path)}&repo=${encodeURIComponent(d.repoId)}`)
+      const r = await api(`/api/file?p=${encodeURIComponent(d.path)}&repo=${encodeURIComponent(d.repoId)}`)
       setDoc({ title: d.title, content: r.content })
     } catch (e) { setFlash(`Couldn't load: ${e.message}`) }
   }

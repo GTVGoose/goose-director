@@ -104,21 +104,14 @@ export function initBrain(deps) {
     const txt = readFileSafe(threadFile(threadId))
     if (txt) {
       const lines = txt.trim().split('\n')
-      for (const line of lines.slice(-HISTORY_MAX * 3)) {
-        try { const r = JSON.parse(line); if (r.role && !r.reset) rows.push(r) } catch { /* skip */ }
-        if (lines[lines.length - 1]) { /* noop */ }
+      // Walk backward: collect rows until the most recent reset marker (which
+      // truncates the usable history), stopping once we have a full tail.
+      for (let i = lines.length - 1; i >= 0 && rows.length < HISTORY_MAX; i--) {
+        let r
+        try { r = JSON.parse(lines[i]) } catch { continue }
+        if (r?.reset) break
+        if (r?.role) rows.unshift(r)
       }
-      // A reset marker truncates the usable tail: keep only rows after the last one.
-      try {
-        const lastReset = lines.map(l => { try { return JSON.parse(l) } catch { return null } })
-          .reduce((acc, r, i) => (r?.reset ? i : acc), -1)
-        if (lastReset >= 0) {
-          rows.length = 0
-          for (const line of lines.slice(lastReset + 1)) {
-            try { const r = JSON.parse(line); if (r.role) rows.push(r) } catch { /* skip */ }
-          }
-        }
-      } catch { /* keep what we have */ }
     }
     const tail = rows.slice(-HISTORY_MAX)
     tails.set(threadId, tail)
