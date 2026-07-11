@@ -26,7 +26,10 @@ You are receiving messages from the Director (or an authorized Smiley Face Studi
 1. BE CONCISE. Replies are read on a phone. 1–4 short sentences. No markdown headers, minimal formatting, no bullet lists unless asked.
 2. ACT, DON'T ASK. When given a task, use your tools to do it, then report the result briefly. Only ask a question if you are genuinely blocked.
 3. CONFIRM IRREVERSIBLE ACTIONS. Before deleting files, overwriting important documents, pushing to git, or anything you cannot undo, state plainly what you are about to do and wait for a "yes".
-4. You operate with the Director's delegated authority but you are NOT the Director. You do not declare canon or install sigils. The Director decides.`
+4. You operate with the Director's delegated authority but you are NOT the Director. You do not declare canon or install sigils. The Director decides.
+5. HAND OFF WHEN IT'S BEYOND YOU. You are the fast local brain. If a request needs cloud-level reasoning, repo-wide work, or producing/delivering a file (e.g. "make a PDF and send it") — anything past your local tools — do NOT attempt it or narrate it. Reply with EXACTLY one line and nothing else:
+   NEEDS_DIRECTOR: <one-line reason>
+   The system then hands the task to the cloud Director (Claude), which completes it and replies. There is no "sandbox" or "activate cloud" tool for you to call — the NEEDS_DIRECTOR line IS how you reach the cloud.`
 
 export function initTelegram(deps) {
   const { app, config, REPO, readFileSafe, runAgentLoop, generateTTS, ollamaUrl, signal } = deps
@@ -129,6 +132,25 @@ export function initTelegram(deps) {
 
   function cleanup(paths) { for (const p of paths) { try { fs.unlinkSync(p) } catch {} } }
 
+  // Upload a local file (PDF, etc.) as a Telegram document. Used for anything
+  // referenced by filename in a status push — phones can't open a bare .md
+  // path, so callers convert to PDF first and hand us the rendered file.
+  async function sendDocument(chatId, filePath, filename) {
+    if (!chatId || !filePath || !fs.existsSync(filePath)) return false
+    try {
+      const form = new FormData()
+      form.append('chat_id', String(chatId))
+      form.append('document', new Blob([fs.readFileSync(filePath)], { type: 'application/pdf' }), filename || path.basename(filePath))
+      const r = await fetch(`${API}/sendDocument`, { method: 'POST', body: form })
+      const data = await r.json()
+      if (!data.ok) console.error('[Telegram] sendDocument failed:', data.description)
+      return !!data.ok
+    } catch (e) {
+      console.error('[Telegram] sendDocument error:', e.message)
+      return false
+    }
+  }
+
   // ── Outbound notify with Director/Boris curation ────────────────────────────
   // audience: 'director' (default, you only) | 'all' (you + Boris)
   // tag: optional string; if present and in borisTags, Boris also receives it
@@ -140,6 +162,16 @@ export function initTelegram(deps) {
     const tagAllowed = tag && borisTags.includes(String(tag).toLowerCase())
     if ((audience === 'all' || audience === 'boris' || tagAllowed) && borisChatId) targets.add(borisChatId)
     for (const id of targets) await sendText(id, text)
+  }
+
+  // Same audience curation as notify(), but for a file (e.g. a rendered PDF).
+  async function notifyDocument(filePath, { audience = 'director', tag = '', filename = '' } = {}) {
+    if (!filePath) return
+    const targets = new Set()
+    if (directorChatId) targets.add(directorChatId)
+    const tagAllowed = tag && borisTags.includes(String(tag).toLowerCase())
+    if ((audience === 'all' || audience === 'boris' || tagAllowed) && borisChatId) targets.add(borisChatId)
+    for (const id of targets) await sendDocument(id, filePath, filename)
   }
 
   // ── Voice transcription (whisper.cpp preferred, then openai-whisper) ─────────
@@ -219,13 +251,39 @@ export function initTelegram(deps) {
   ]
   const findClaude = () => CLAUDE_PATHS.find(p => fs.existsSync(p)) || 'claude'
 
-  function runClaudeHeavy(userText) {
+  // Cloud-handoff rate cap — the runaway guard. The Director path runs on the
+  // Claude Max CLI (metered $0, so it does NOT touch the server's paid-$ budget
+  // breaker), which is exactly why phone use is free to lean on it. This cap
+  // bounds a pathological loop from spamming Claude. Generous by default; raise
+  // via NEXUS_TG_HANDOFF_MAX_PER_HOUR (Director isn't worried about spend).
+  const HANDOFF_MAX_PER_HOUR = Number(process.env.NEXUS_TG_HANDOFF_MAX_PER_HOUR || 30)
+  const handoffLog = []
+  const canHandoff = () => {
+    const cutoff = Date.now() - 3600_000
+    while (handoffLog.length && handoffLog[0] < cutoff) handoffLog.shift()
+    return handoffLog.length < HANDOFF_MAX_PER_HOUR
+  }
+
+  // Deterministic triage: does this message clearly need the cloud Director?
+  // (Belt-and-suspenders with the model's own NEEDS_DIRECTOR escape hatch.)
+  const triageNeedsDirector = (text) =>
+    /\b(pdf|convert|render|\.md\b|send me|email me|as a (pdf|doc|file|document)|turn .+ into|generate a (file|doc|report))\b/i.test(text) ||
+    /\b(sandbox|council|cloud|use claude|deep dive|activate cloud|multi-?model|orchestrat)\b/i.test(text)
+
+  // ── The Director (cloud conductor) path ──────────────────────────────────────
+  // Runs the Claude Max CLI in the repo with full tools — the proven Tier-2/3
+  // conductor. For file delivery it renders (e.g. bin/md_to_pdf.py for markdown)
+  // and emits `SEND_FILE: <abs path>` lines; we detect those and push the file to
+  // the phone via sendDocument, then reply with the remaining phone-readable text.
+  function runDirector(userText) {
     return new Promise((resolve) => {
       const prompt =
         `${TELEGRAM_MODE_OVERRIDE}\n\n` +
-        `You are the heavy-reasoning half of Umbruh, reached by Telegram escalation from the Director's phone. ` +
-        `Work from the goose-agent-system repo you are launched in when the task needs files. ` +
-        `Reply in 1-6 short phone-readable sentences, plain text, no markdown.\n\n` +
+        `You are the cloud Director — the heavy-reasoning conductor of Umbruh, reached by Telegram handoff from the Director's phone. You are launched in the goose-agent-system repo and have full tools.\n\n` +
+        `If the task is to deliver a document to the phone (a PDF, a file, "send me X"): produce the file on disk, then output — on its OWN line, one per file — a marker:\n` +
+        `SEND_FILE: /absolute/path/to/file\n` +
+        `For a Markdown source, render a PDF first with:  python3 bin/md_to_pdf.py --in <source.md> --out <output.pdf>  (write the PDF under /tmp). Then emit its SEND_FILE line.\n` +
+        `Otherwise just answer. Keep any prose reply to 1-6 short phone-readable sentences, plain text, no markdown.\n\n` +
         `Director's message: ${userText}`
       execFile(
         findClaude(),
@@ -239,30 +297,55 @@ export function initTelegram(deps) {
         },
         (err, stdout) => {
           if (err && !stdout) {
-            console.error('[Telegram] claude escalation failed:', err.message)
-            return resolve(null)
+            console.error('[Telegram] director handoff failed:', err.message)
+            return resolve({ text: null, files: [] })
           }
-          try {
-            const j = JSON.parse(stdout)
-            resolve((j.result || '').trim() || null)
-          } catch {
-            resolve(String(stdout || '').trim().slice(0, 3500) || null)
-          }
+          let raw
+          try { raw = (JSON.parse(stdout).result || '').trim() }
+          catch { raw = String(stdout || '').trim().slice(0, 3500) }
+          // Pull out SEND_FILE markers; only keep files that actually exist.
+          const files = []
+          const text = raw.split('\n').filter(line => {
+            const m = /^\s*SEND_FILE:\s*(.+?)\s*$/.exec(line)
+            if (m) { if (fs.existsSync(m[1])) files.push(m[1]); return false }
+            return true
+          }).join('\n').trim()
+          resolve({ text: text || null, files })
         },
       )
     })
   }
 
-  // ── Run a user message through the two-brain routing ─────────────────────────
+  // Run the Director path, deliver any files to the phone, return the text reply.
+  async function handToDirector(chatId, userText) {
+    if (!canHandoff()) {
+      return `⏸️ Cloud handoff is paused — more than ${HANDOFF_MAX_PER_HOUR} cloud tasks this hour (runaway guard). It resets within the hour, or raise NEXUS_TG_HANDOFF_MAX_PER_HOUR. Local Umbruh is still live for quick things.`
+    }
+    handoffLog.push(Date.now())
+    const { text, files } = await runDirector(userText)
+    for (const f of files) {
+      try { await sendDocument(chatId, f, path.basename(f)) }
+      catch (e) { console.error('[Telegram] sendDocument failed:', e.message) }
+    }
+    if (!text && files.length) return `📎 Sent ${files.length} file${files.length === 1 ? '' : 's'}.`
+    return text
+  }
+
+  // ── Run a user message through the tiered routing ────────────────────────────
+  // Tier 1 local (fast/private) → hands UP to the Tier-2/3 cloud Director when:
+  //  (a) the Director forces it with a "deep"/"claude" prefix,
+  //  (b) deterministic triage sees file/PDF/cloud/sandbox intent,
+  //  (c) the local model itself replies NEEDS_DIRECTOR (its escape hatch), or
+  //  (d) the local loop fails / hits its step limit.
   async function runTask(chatId, userText) {
     const prior = history.get(chatId) || []
     const heavy = /^(deep|claude)\b[:,]?\s*/i.exec(userText)
     let reply = null
     let via = 'local'
 
-    if (heavy) {
-      via = 'claude'
-      reply = await runClaudeHeavy(userText.slice(heavy[0].length).trim() || userText)
+    if (heavy || triageNeedsDirector(userText)) {
+      via = 'director'
+      reply = await handToDirector(chatId, heavy ? (userText.slice(heavy[0].length).trim() || userText) : userText)
     } else {
       try {
         const messages = [
@@ -272,18 +355,20 @@ export function initTelegram(deps) {
         ]
         reply = await runAgentLoop(messages, ollamaUrl, 8, true)
       } catch (e) {
-        console.error('[Telegram] local loop failed, escalating to Claude:', e.message)
+        console.error('[Telegram] local loop failed, handing to Director:', e.message)
         reply = null
       }
-      if (!reply?.trim() || /step limit/i.test(reply)) {
-        via = 'claude-fallback'
-        const escalated = await runClaudeHeavy(userText)
+      // Escape hatch (NEEDS_DIRECTOR) or failure/step-limit → hand up.
+      const needsDirector = reply && /(^|\n)\s*NEEDS_DIRECTOR:/i.test(reply)
+      if (!reply?.trim() || /step limit/i.test(reply) || needsDirector) {
+        via = 'director-fallback'
+        const escalated = await handToDirector(chatId, userText)
         if (escalated) reply = escalated
       }
     }
 
     if (!reply?.trim()) {
-      reply = `⚠️ Both brains missed that one (local Umbruh loop and the Claude escalation). Nothing is lost — try rephrasing, or prefix with "deep" to force the heavy path. This channel is built to never go silent on you.`
+      reply = `⚠️ Both brains missed that one (local Umbruh and the cloud Director). Nothing is lost — try rephrasing, or prefix with "deep" to force the cloud path. This channel is built to never go silent on you.`
     }
     // Update short-term history (exclude system).
     const next = [...prior, { role: 'user', content: userText }, { role: 'assistant', content: reply }]
@@ -329,7 +414,12 @@ export function initTelegram(deps) {
     if (text === '/forks' || text === '/brief') {
       if (!isDirector(chatId)) { await sendText(chatId, 'Director-only command.'); return }
       if (!signal) { await sendText(chatId, 'Signal delivery module is not wired in this build.'); return }
-      await sendText(chatId, text === '/forks' ? signal.forksSummary() : signal.buildBrief())
+      if (text === '/forks') {
+        await sendText(chatId, signal.forksSummary())
+      } else {
+        await sendText(chatId, signal.buildBrief())
+        if (signal.sendBriefAttachments) await signal.sendBriefAttachments()
+      }
       return
     }
 
@@ -514,5 +604,5 @@ export function initTelegram(deps) {
   poll()
 
   // Expose notify for any in-process callers (e.g. future server hooks).
-  return { notify }
+  return { notify, notifyDocument }
 }

@@ -79,13 +79,41 @@ try {
 
 
 const app = express()
-app.use(cors())
+
+// CORS lock (2026-07-03): the console is only ever reached same-origin (packaged
+// app serves the UI from this same port) or via vite's server-side dev proxy —
+// a browser never legitimately makes a cross-origin call here. So we reflect ONLY
+// same-origin/non-browser requests (no Origin header) and localhost/127.0.0.1
+// origins. This kills the drive-by attack where any website you have open runs
+// fetch('http://127.0.0.1:3001/api/file?p=...') and reads your private domain
+// data out of the response. Pair with the path-traversal guard below.
+const LOCALHOST_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin || LOCALHOST_ORIGIN.test(origin)) return cb(null, true)
+    return cb(null, false) // not an error, just no CORS headers → browser withholds the response
+  },
+}))
 app.use(express.json())
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 function readFileSafe(filePath) {
   try { return fs.readFileSync(filePath, 'utf8') } catch { return null }
+}
+
+// Resolve a caller-supplied relative path against a trusted base and refuse
+// anything that escapes it (path traversal). Returns the absolute path, or null
+// if `relPath` climbs out of `base` (e.g. '../../etc/passwd') or is absolute.
+// This is what keeps /api/file scoped to the connected repo — without it, the
+// private, gitignored domain data (health/finance) under REPO could be read by
+// walking up and back down anywhere on disk.
+function resolveInside(base, relPath) {
+  if (!base || typeof relPath !== 'string') return null
+  const baseResolved = path.resolve(base)
+  const full = path.resolve(baseResolved, relPath)
+  if (full !== baseResolved && !full.startsWith(baseResolved + path.sep)) return null
+  return full
 }
 
 // Extract a header field from a markdown file
@@ -479,6 +507,33 @@ function loadAgents(root = REPO) {
   return []
 }
 
+// ─── mounted repos (multi-repo, personal Nexus) ──────────────────────────────
+// The PRIMARY repo (config.repoPath / REPO) is always mounted and is the default
+// working directory for actions. config.repos holds ADDITIONAL repos, each
+// { id, name, path, role }. role: 'reference' (read-only — indexed for discovery)
+// or 'workspace' (may become an action target, Phase 3). Discovery endpoints
+// union across all mounted repos and tag each result with its repoId; the
+// traversal guard (resolveInside) is applied against the SPECIFIC repo root, so
+// multi-root never widens the file-read surface. Product build ships no
+// config.repos, so this is a no-op there (single primary repo).
+function primaryRepo() {
+  const type = detectVaultType(REPO)
+  return { id: 'primary', name: vaultDisplayName(REPO, type) || path.basename(REPO || '') || 'Primary', path: REPO, role: 'workspace', primary: true }
+}
+function mountedRepos() {
+  const out = [primaryRepo()]
+  for (const r of (Array.isArray(config.repos) ? config.repos : [])) {
+    if (!r || !r.path) continue
+    out.push({ id: r.id, name: r.name || path.basename(r.path), path: r.path, role: r.role === 'workspace' ? 'workspace' : 'reference', primary: false })
+  }
+  return out
+}
+function repoById(id) {
+  if (!id || id === 'primary') return primaryRepo()
+  return mountedRepos().find(r => r.id === id) || null
+}
+function repoSlug(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'repo' }
+
 
 // ─── routes ─────────────────────────────────────────────────────────────────
 
@@ -556,6 +611,60 @@ app.post('/api/config', (req, res) => {
     ui: config.ui || {},
     telegramRestartNeeded: !!telegram,
   })
+})
+
+// GET /api/repos — all mounted repos (primary + additional), with liveness.
+app.get('/api/repos', (req, res) => {
+  res.json(mountedRepos().map(r => {
+    const exists = !!r.path && fs.existsSync(r.path)
+    return { ...r, exists, vaultType: exists ? detectVaultType(r.path) : null }
+  }))
+})
+
+// POST /api/repos — add / remove / update an ADDITIONAL repo (never the primary;
+// the primary is set via /api/config repoPath). Personal-Nexus feature.
+//   { action:'add', path, name?, role? } | { action:'remove', id } | { action:'update', id, name?, role? }
+app.post('/api/repos', (req, res) => {
+  const { action } = req.body || {}
+  config.repos = Array.isArray(config.repos) ? config.repos : []
+
+  if (action === 'add') {
+    let { path: p, name, role } = req.body
+    if (!p || typeof p !== 'string') return res.status(400).json({ ok: false, error: 'path required' })
+    const abs = path.resolve(p.trim().replace(/^~(?=\/|$)/, os.homedir()))
+    if (!fs.existsSync(abs) || !fs.statSync(abs).isDirectory()) return res.status(400).json({ ok: false, error: `Not a folder: ${abs}` })
+    // Safety: repos must live under the user's home, and must NOT nest with any
+    // already-mounted repo (nesting makes the per-repo traversal guard ambiguous).
+    const home = path.resolve(os.homedir())
+    if (abs !== home && !abs.startsWith(home + path.sep)) return res.status(400).json({ ok: false, error: 'A repo must live under your home folder.' })
+    for (const r of mountedRepos()) {
+      const rp = path.resolve(r.path)
+      if (abs === rp || abs.startsWith(rp + path.sep) || rp.startsWith(abs + path.sep)) {
+        return res.status(400).json({ ok: false, error: `That folder overlaps a connected repo (${r.name}). Pick a folder that isn't inside or containing another.` })
+      }
+    }
+    let id = repoSlug(name || path.basename(abs))
+    const taken = new Set(mountedRepos().map(r => r.id)); const base = id; let n = 2
+    while (taken.has(id)) id = `${base}-${n++}`
+    config.repos.push({ id, name: (name && name.trim()) || path.basename(abs), path: abs, role: role === 'workspace' ? 'workspace' : 'reference' })
+  } else if (action === 'remove') {
+    const { id } = req.body
+    if (!id || id === 'primary') return res.status(400).json({ ok: false, error: 'Cannot remove the primary repo.' })
+    config.repos = config.repos.filter(r => r.id !== id)
+  } else if (action === 'update') {
+    const { id, name, role } = req.body
+    if (!id || id === 'primary') return res.status(400).json({ ok: false, error: 'The primary repo is managed in Vault connection.' })
+    const r = config.repos.find(x => x.id === id)
+    if (!r) return res.status(404).json({ ok: false, error: 'repo not found' })
+    if (name !== undefined) r.name = String(name).trim().slice(0, 60)
+    if (role !== undefined) r.role = role === 'workspace' ? 'workspace' : 'reference'
+  } else {
+    return res.status(400).json({ ok: false, error: 'action must be add | remove | update' })
+  }
+
+  try { fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n') }
+  catch (e) { return res.status(500).json({ ok: false, error: `Could not save config: ${e.message}` }) }
+  res.json({ ok: true, repos: mountedRepos() })
 })
 
 // GET /api/agents — full fleet from the registry (authoritative), enriched
@@ -1133,12 +1242,90 @@ app.post('/api/usage', (req, res) => {
 
 // GET /api/file — read a specific file from the repo (for source bundle assembly)
 app.get('/api/file', (req, res) => {
-  const { p } = req.query
+  const { p, repo } = req.query
   if (!p) return res.status(400).json({ error: 'p param required' })
-  const filePath = path.join(REPO, p)
+  const r = repoById(repo)                              // defaults to primary
+  if (!r || !r.path) return res.status(404).json({ error: 'unknown repo' })
+  const filePath = resolveInside(r.path, p)             // guard against THIS repo's root
+  if (!filePath) return res.status(403).json({ error: 'path outside repo' })
   const text = readFileSafe(filePath)
   if (!text) return res.status(404).json({ error: 'file not found' })
-  res.json({ path: p, content: text })
+  res.json({ path: p, repo: r.id, content: text })
+})
+
+// GET /api/domains — auto-discover life/work domains under <repo>/domains and
+// surface their plans, goals, records, and data streams for the Domains view.
+// Config-driven: any folder dropped into domains/ shows up — nothing about
+// health/finance is hardcoded, so this stays product-safe (the section itself
+// is personal-only, wired in personal-extensions.jsx). Reads are local + the
+// server is loopback-only; the .ndjson observation streams are summarized
+// (record count + last date), not dumped, so the view stays fast.
+app.get('/api/domains', (req, res) => {
+  const titleOf = (text, fallback) => {
+    const h1 = text.match(/^#\s+(.+)/m)
+    return h1 ? h1[1].trim() : fallback
+  }
+  const humanize = (s) => s.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+
+  // Scan one repo's domains/ dir. Every doc/stream is tagged with repoId so the
+  // client fetches content via /api/file?repo=<id>, keeping the guard per-repo.
+  const scanRepo = (repo) => {
+    const domainsRoot = resolveInside(repo.path, 'domains')
+    if (!domainsRoot || !fs.existsSync(domainsRoot)) return []
+    const domains = []
+    for (const dirent of fs.readdirSync(domainsRoot, { withFileTypes: true })) {
+      if (!dirent.isDirectory() || dirent.name.startsWith('.')) continue
+      const domainId = dirent.name
+      const domainDir = path.join(domainsRoot, domainId)
+      const docs = []
+      const streams = []
+
+      const walk = (dir) => {
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+          if (e.name.startsWith('.') || e.name === 'node_modules') continue
+          const full = path.join(dir, e.name)
+          const rel = path.relative(repo.path, full).replace(/\\/g, '/')   // repo-relative → feeds /api/file
+          const inDomain = path.relative(domainDir, full).replace(/\\/g, '/')
+          if (e.isDirectory()) { walk(full); continue }
+
+          if (e.name.endsWith('.md') || e.name.endsWith('.markdown')) {
+            const text = readFileSafe(full) || ''
+            const stat = fs.statSync(full)
+            const parts = inDomain.split('/')
+            const category = parts.length > 1 ? humanize(parts[parts.length - 2]) : 'Overview'
+            docs.push({ path: rel, repoId: repo.id, title: titleOf(text, e.name), category, lastMod: stat.mtime.toISOString().slice(0, 10) })
+          } else if (e.name.endsWith('.ndjson') && !e.name.includes('.template.')) {
+            const text = readFileSafe(full) || ''
+            const lines = text.split('\n').filter(l => l.trim())
+            let lastDate = null
+            for (let i = lines.length - 1; i >= 0; i--) {
+              try {
+                const rec = JSON.parse(lines[i])
+                lastDate = rec.date || rec.timestamp || rec.effectiveDateTime || rec.t || null
+                if (lastDate) { lastDate = String(lastDate).slice(0, 10); break }
+              } catch { /* skip malformed */ }
+            }
+            streams.push({ name: e.name.replace(/\.ndjson$/, ''), path: rel, repoId: repo.id, records: lines.length, lastDate })
+          }
+        }
+      }
+      walk(domainDir)
+
+      // Sort docs so plans/overview float up, then by recency.
+      const catRank = { 'Overview': 0, 'Goals': 1, 'Records': 2 }
+      docs.sort((a, b) => (catRank[a.category] ?? 5) - (catRank[b.category] ?? 5) || b.lastMod.localeCompare(a.lastMod))
+      streams.sort((a, b) => a.name.localeCompare(b.name))
+
+      // key disambiguates same-named domains across repos (e.g. two "health").
+      domains.push({ key: `${repo.id}:${domainId}`, id: domainId, label: humanize(domainId), repoId: repo.id, repoName: repo.name, docs, streams })
+    }
+    return domains
+  }
+
+  const out = []
+  for (const repo of mountedRepos()) out.push(...scanRepo(repo))
+  out.sort((a, b) => a.label.localeCompare(b.label) || a.repoName.localeCompare(b.repoName))
+  res.json(out)
 })
 
 // POST /api/relay — send a prompt to a model, stream response
@@ -1374,7 +1561,12 @@ const PRICE = {
 }
 const usage = { calls: 0, inTok: 0, outTok: 0, costUSD: 0, byModel: {}, since: new Date().toISOString() }
 // Soft daily ceiling on *paid* spend (USD). 0 disables. Override via NEXUS_DAILY_BUDGET_USD.
-let budgetUSD = Number(process.env.NEXUS_DAILY_BUDGET_USD || 5)
+// Note: this governs PAID-API providers only. The Claude Max CLI path (provider
+// 'claude-code', incl. the Telegram cloud-Director handoff) is metered $0 and does
+// NOT count against this — so remote phone use leans on the subscription freely.
+// Raised 5 → 25 (2026-07-04): Director does heavy Claude work and isn't optimizing
+// tokens from the phone; the breaker stays as a runaway backstop, not a leash.
+let budgetUSD = Number(process.env.NEXUS_DAILY_BUDGET_USD || 25)
 
 function recordUsage(mc, inTok = 0, outTok = 0) {
   inTok = inTok || 0; outTok = outTok || 0
@@ -1740,7 +1932,7 @@ app.get('/api/knowledge', (req, res) => {
     return 'Document'
   }
 
-  function walkDir(dir, baseDir) {
+  function walkDir(dir, baseDir, repo) {
     if (!fs.existsSync(dir)) return
     const entries = fs.readdirSync(dir, { withFileTypes: true })
     for (const entry of entries) {
@@ -1749,7 +1941,7 @@ app.get('/api/knowledge', (req, res) => {
       if (entry.isDirectory()) {
         // Skip node_modules, .git, hidden dirs
         if (!entry.name.startsWith('.') && entry.name !== 'node_modules') {
-          walkDir(fullPath, baseDir)
+          walkDir(fullPath, baseDir, repo)
         }
       } else if (entry.name.endsWith('.md') || entry.name.endsWith('.yaml')) {
         const text = readFileSafe(fullPath)
@@ -1773,6 +1965,8 @@ app.get('/api/knowledge', (req, res) => {
 
         index.push({
           path: relPath.replace(/\\/g, '/'),
+          repoId: repo.id,
+          repoName: repo.name,
           title,
           docType,
           canonStatus,
@@ -1787,8 +1981,9 @@ app.get('/api/knowledge', (req, res) => {
     }
   }
 
-  if (fs.existsSync(REPO)) {
-    walkDir(REPO, REPO)
+  // Union across all mounted repos; each entry is tagged with its repoId/repoName.
+  for (const r of mountedRepos()) {
+    if (r.path && fs.existsSync(r.path)) walkDir(r.path, r.path, r)
   }
 
   // Also include workspace governance docs as fallback
@@ -2839,6 +3034,13 @@ try {
   const tgOllamaUrl = (process.env.OLLAMA_BASE_URL || 'http://localhost:11434').replace(/\/$/, '')
   const tgApi = initTelegram({ app, config, REPO, readFileSafe, runAgentLoop, generateTTS, ollamaUrl: tgOllamaUrl, signal: signalApi })
   if (signalApi && tgApi?.notify) signalApi.setNotify(tgApi.notify)
+  if (signalApi && tgApi?.notifyDocument) signalApi.setNotifyDocument(tgApi.notifyDocument)
+
+  // ─── Umbruh ingress gate (vault → Goose system → Director's Telegram) ──────
+  // Inside the Telegram try block on purpose: without notify() the gate cannot
+  // deliver, so a disabled/dev run must not claim vault messages it can't send.
+  const gateApi = initGate({ config, ollamaUrl: tgOllamaUrl })
+  if (gateApi && tgApi?.notify) gateApi.setNotify(tgApi.notify)
 } catch (e) {
   console.error('[Telegram] init failed:', e.message)
 }
@@ -2857,12 +3059,22 @@ app.post('/api/sync-ui', (req, res) => {
     return res.status(404).json({ ok: false, error: 'Sync tool not found:\n' + SYNC })
   }
   const sameTree = path.resolve(DIST_TARGET) === path.resolve(SRC, 'dist')
+  // When running from the packaged app, __dirname is the bundle's app/ dir. The
+  // built UI (dist) gets copied here — but historically the SERVER files did NOT,
+  // so a "sync" shipped new UI against a stale server (e.g. new /api/domains UI
+  // calling a route the old server lacked → "No domains found"). Carry the server
+  // files (server/telegram/signal .mjs) too, so a sync actually deploys the whole
+  // app. These take effect on the NEXT LAUNCH (the running node process keeps the
+  // old code in memory), so we flag serverSynced and the UI prompts a relaunch.
+  const APP_DIR = path.dirname(DIST_TARGET)
+  const SERVER_FILES = ['server.mjs', 'telegram.mjs', 'signal.mjs', 'gate.mjs']
+  const syncServerCmd = SERVER_FILES.map(f => `cp "${SRC}/${f}" "${APP_DIR}/${f}"`).join(' && ')
   // login shell (-l) so npm/node resolve on PATH inside the packaged app.
   const cmd = !apply
     ? `"${SYNC}"`
     : sameTree
       ? `"${SYNC}" --apply && cd "${SRC}" && npm run build`
-      : `"${SYNC}" --apply && cd "${SRC}" && npm run build && rm -rf "${DIST_TARGET}" && cp -R "${SRC}/dist" "${DIST_TARGET}"`
+      : `"${SYNC}" --apply && cd "${SRC}" && npm run build && rm -rf "${DIST_TARGET}" && cp -R "${SRC}/dist" "${DIST_TARGET}" && ${syncServerCmd}`
   // strip ANSI colour codes + stray control chars so the panel shows clean text
   const clean = (s) => (s || '').toString()
     .replace(/\x1B\[[0-9;]*[A-Za-z]/g, '')
@@ -2873,7 +3085,9 @@ app.post('/api/sync-ui', (req, res) => {
       timeout: apply ? 240000 : 60000,
       maxBuffer: 8 * 1024 * 1024,
     })
-    res.json({ ok: true, output: clean(output), reload: apply })
+    // serverSynced ⇒ server files changed on disk but the live process is stale:
+    // the UI reloads the webview for UI changes AND tells the Director to relaunch.
+    res.json({ ok: true, output: clean(output), reload: apply, serverSynced: apply && !sameTree })
   } catch (e) {
     res.json({ ok: false, output: clean(e.stdout), error: clean(e.stderr || e.message) })
   }
@@ -2901,20 +3115,3 @@ app.listen(PORT, HOST, () => {
   console.log('Goose Director API running on http://localhost:3001')
   console.log('Repo path:', REPO, fs.existsSync(REPO) ? '✓ found' : '✗ not found — using static data')
 })
-  if (signalApi && tgApi?.notifyDocument) signalApi.setNotifyDocument(tgApi.notifyDocument)
-
-  // ─── Umbruh ingress gate (vault → Goose system → Director's Telegram) ──────
-  // Inside the Telegram try block on purpose: without notify() the gate cannot
-  // deliver, so a disabled/dev run must not claim vault messages it can't send.
-  const gateApi = initGate({ config, ollamaUrl: tgOllamaUrl })
-  if (gateApi && tgApi?.notify) gateApi.setNotify(tgApi.notify)
-  // When running from the packaged app, __dirname is the bundle's app/ dir. The
-  // built UI (dist) gets copied here — but historically the SERVER files did NOT,
-  // so a "sync" shipped new UI against a stale server (e.g. new /api/domains UI
-  // calling a route the old server lacked → "No domains found"). Carry the server
-  // files (server/telegram/signal .mjs) too, so a sync actually deploys the whole
-  // app. These take effect on the NEXT LAUNCH (the running node process keeps the
-  // old code in memory), so we flag serverSynced and the UI prompts a relaunch.
-  const APP_DIR = path.dirname(DIST_TARGET)
-  const SERVER_FILES = ['server.mjs', 'telegram.mjs', 'signal.mjs', 'gate.mjs']
-  const syncServerCmd = SERVER_FILES.map(f => `cp "${SRC}/${f}" "${APP_DIR}/${f}"`).join(' && ')

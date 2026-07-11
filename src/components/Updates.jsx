@@ -22,6 +22,16 @@ export default function Updates() {
       const data = await res.json()
       setOutput((data.output || data.error || '(no output)').trim())
       if (apply && data.ok) {
+        if (data.serverSynced) {
+          // Server files were updated on disk, but the running node process still
+          // holds the old code — a webview reload won't pick it up. Hold and tell
+          // the Director to fully relaunch. (Reloading now would only refresh the
+          // UI and mask that the server is still stale — the exact trap that hid
+          // the /api/domains mismatch.)
+          setStatus('Updated ✓ — UI + server synced. Quit and reopen Nexus to load the new server (a reload alone keeps the old server running).')
+          setBusy(false)
+          return
+        }
         setStatus('Updated ✓ — reloading…')
         setTimeout(() => window.location.reload(), 1400)
         return

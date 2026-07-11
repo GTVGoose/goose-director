@@ -20,6 +20,7 @@ export default function Knowledge() {
   const [search, setSearch] = useState('')
   const [filterType, setFilterType] = useState('all')
   const [filterStatus, setFilterStatus] = useState('all')
+  const [filterRepo, setFilterRepo] = useState('all')
   const [view, setView] = useState('docs') // 'docs' | 'threads'
   const [selected, setSelected] = useState(null)
 
@@ -36,6 +37,7 @@ export default function Knowledge() {
 
   const docTypes = ['all', ...new Set(docs.map(d => d.docType).filter(Boolean))]
   const statuses = ['all', ...new Set(docs.map(d => d.canonStatus).filter(Boolean))]
+  const repos = ['all', ...new Set(docs.map(d => d.repoName).filter(Boolean))]
 
   const filtered = docs.filter(d => {
     const q = search.toLowerCase()
@@ -44,9 +46,11 @@ export default function Knowledge() {
       || d.excerpt?.toLowerCase().includes(q)
       || d.docType?.toLowerCase().includes(q)
       || d.canonStatus?.toLowerCase().includes(q)
+      || d.repoName?.toLowerCase().includes(q)
     const matchType = filterType === 'all' || d.docType === filterType
     const matchStatus = filterStatus === 'all' || d.canonStatus === filterStatus
-    return matchSearch && matchType && matchStatus
+    const matchRepo = filterRepo === 'all' || d.repoName === filterRepo
+    return matchSearch && matchType && matchStatus && matchRepo
   })
 
   const deleteThread = async (id) => {
@@ -83,6 +87,7 @@ export default function Knowledge() {
           <div style={{ display: 'flex', gap: 6 }}>
             <FilterSelect label="Type" value={filterType} onChange={setFilterType} options={docTypes} />
             <FilterSelect label="Status" value={filterStatus} onChange={setFilterStatus} options={statuses} />
+            {repos.length > 2 && <FilterSelect label="Repo" value={filterRepo} onChange={setFilterRepo} options={repos} />}
             <span style={{ fontSize: 12, color: 'var(--color-text-3)', alignSelf: 'center', marginLeft: 4 }}>
               {filtered.length} of {docs.length}
             </span>
@@ -95,9 +100,10 @@ export default function Knowledge() {
 
           {view === 'docs' && filtered.map((doc, i) => (
             <DocRow
-              key={i}
+              key={`${doc.repoId || 'primary'}:${doc.path}:${i}`}
               doc={doc}
-              selected={selected?.path === doc.path}
+              showRepo={repos.length > 2}
+              selected={selected?.path === doc.path && selected?.repoId === doc.repoId}
               onClick={() => setSelected(doc)}
             />
           ))}
@@ -198,7 +204,7 @@ export default function Knowledge() {
   )
 }
 
-function DocRow({ doc, selected, onClick }) {
+function DocRow({ doc, selected, onClick, showRepo }) {
   const icon = DOC_TYPE_ICONS[doc.docType] || 'ti-file-text'
   return (
     <div
@@ -223,7 +229,10 @@ function DocRow({ doc, selected, onClick }) {
               <StatusBadge status={doc.canonStatus} />
             </>
           )}
-          <span style={{ fontSize: 11, color: 'var(--color-text-3)', marginLeft: 'auto' }}>{doc.lastMod}</span>
+          {showRepo && doc.repoName && (
+            <span style={{ fontSize: 10, padding: '0px 5px', borderRadius: 4, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border)', color: 'var(--color-text-3)', marginLeft: 'auto' }}>{doc.repoName}</span>
+          )}
+          <span style={{ fontSize: 11, color: 'var(--color-text-3)', marginLeft: showRepo && doc.repoName ? 6 : 'auto' }}>{doc.lastMod}</span>
         </div>
         {doc.excerpt && (
           <div style={{ fontSize: 11, color: 'var(--color-text-3)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

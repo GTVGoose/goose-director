@@ -394,6 +394,114 @@ function VaultCard() {
   )
 }
 
+// Additional repos (multi-repo). The primary vault (VaultCard) is always mounted;
+// this connects EXTRA repos that Nexus indexes for discovery (Domains, Knowledge).
+// 'reference' = read-only/indexed; 'workspace' = eligible as an action target (Phase 3).
+function AdditionalReposCard() {
+  const [repos, setRepos] = useState([])
+  const [adding, setAdding] = useState(false)
+  const [path, setPath] = useState('')
+  const [name, setName] = useState('')
+  const [role, setRole] = useState('reference')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+
+  const load = () => fetch('/api/repos').then(r => r.json()).then(setRepos).catch(() => {})
+  useEffect(() => { load() }, [])
+
+  const post = async (body) => {
+    setBusy(true); setMsg(null)
+    try {
+      const res = await fetch('/api/repos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const data = await res.json()
+      if (data.ok) { setRepos(data.repos); return true }
+      setMsg({ ok: false, text: data.error || 'Failed' }); return false
+    } catch (e) { setMsg({ ok: false, text: e.message }); return false }
+    finally { setBusy(false) }
+  }
+
+  const add = async () => {
+    if (!path.trim()) return
+    if (await post({ action: 'add', path, name: name.trim() || undefined, role })) {
+      setAdding(false); setPath(''); setName(''); setRole('reference')
+    }
+  }
+
+  const additional = repos.filter(r => !r.primary)
+
+  return (
+    <div style={{ background: 'var(--color-surface)', border: '0.5px solid var(--color-border)', borderRadius: 8, padding: 24, marginBottom: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Additional repos</div>
+      <div style={{ fontSize: 12, color: 'var(--color-text-3)', marginBottom: 14, lineHeight: 1.5 }}>
+        Connect more repos for Nexus to index alongside the primary vault. Their Domains &amp; Knowledge
+        show up tagged by repo. <span className="mono">reference</span> = read-only; <span className="mono">workspace</span> = usable as an action target later.
+      </div>
+
+      {repos.filter(r => r.primary).map(r => (
+        <div key={r.id} style={{ fontSize: 12, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: 'var(--color-accent-bg)', color: 'var(--color-accent-text)', border: '0.5px solid var(--color-accent-border)', fontWeight: 600 }}>PRIMARY</span>
+          <span style={{ fontWeight: 500 }}>{r.name}</span>
+          <span className="mono" style={{ color: 'var(--color-text-3)' }}>{r.path}</span>
+        </div>
+      ))}
+
+      {additional.map(r => (
+        <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderTop: '0.5px solid var(--color-border)', fontSize: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
+              {r.name}
+              {!r.exists && <span style={{ color: 'var(--color-unavailable)', fontSize: 11 }}>(not found)</span>}
+            </div>
+            <div className="mono" style={{ color: 'var(--color-text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.path}</div>
+          </div>
+          <select
+            value={r.role}
+            onChange={e => post({ action: 'update', id: r.id, role: e.target.value })}
+            disabled={busy}
+            style={{ fontSize: 11, padding: '3px 6px', borderRadius: 5, border: '0.5px solid var(--color-border-strong)', background: 'var(--color-surface)', color: 'var(--color-text)' }}
+          >
+            <option value="reference">reference</option>
+            <option value="workspace">workspace</option>
+          </select>
+          <button onClick={() => post({ action: 'remove', id: r.id })} disabled={busy}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-3)', fontSize: 14 }}>
+            <i className="ti ti-trash"></i>
+          </button>
+        </div>
+      ))}
+
+      {adding ? (
+        <div style={{ marginTop: 12, borderTop: '0.5px solid var(--color-border)', paddingTop: 12 }}>
+          <input value={path} onChange={e => setPath(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()}
+            placeholder="/absolute/path/to/repo (must be under your home folder)" autoFocus
+            style={{ width: '100%', fontFamily: 'SF Mono, Menlo, monospace', fontSize: 12, marginBottom: 8 }} />
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="Display name (optional)"
+              style={{ flex: 1, fontSize: 12 }} />
+            <select value={role} onChange={e => setRole(e.target.value)}
+              style={{ fontSize: 12, padding: '4px 8px', borderRadius: 5, border: '0.5px solid var(--color-border-strong)', background: 'var(--color-surface)', color: 'var(--color-text)' }}>
+              <option value="reference">reference</option>
+              <option value="workspace">workspace</option>
+            </select>
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <button onClick={add} disabled={busy || !path.trim()}
+              style={{ background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 6, padding: '7px 16px', fontSize: 12, fontWeight: 500, color: busy || !path.trim() ? 'var(--color-text-3)' : 'var(--color-text)' }}>
+              {busy ? 'Adding…' : 'Add repo'}</button>
+            <button onClick={() => { setAdding(false); setMsg(null) }} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--color-text-3)' }}>Cancel</button>
+            {msg && <span style={{ fontSize: 12, color: msg.ok ? 'var(--color-available)' : 'var(--color-unavailable)' }}>{msg.text}</span>}
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => { setAdding(true); setMsg(null) }}
+          style={{ marginTop: 12, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 6, padding: '7px 16px', fontSize: 12, fontWeight: 500, color: 'var(--color-text)' }}>
+          + Connect a repo
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function Settings() {
   const [anthropicKey, setAnthropicKey] = useState('')
   const [openaiKey, setOpenaiKey] = useState('')
@@ -484,6 +592,7 @@ export default function Settings() {
   return (
     <div style={{ maxWidth: 560, margin: '0 auto', paddingTop: 8 }}>
       <VaultCard />
+      <AdditionalReposCard />
       <PersonalizationCard />
 
       <div style={{

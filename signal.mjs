@@ -34,6 +34,7 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
+import { execFileSync } from 'child_process'
 
 export function initSignal({ app, config, REPO, readFileSafe }) {
   const cfg = config.signal || {}
@@ -45,6 +46,74 @@ export function initSignal({ app, config, REPO, readFileSafe }) {
 
   let notify = null // injected by server.mjs after initTelegram
   const setNotify = (fn) => { notify = fn }
+  let notifyDocument = null // injected alongside notify — sends a local file as a Telegram document
+  const setNotifyDocument = (fn) => { notifyDocument = fn }
+
+  // ── Markdown → PDF (phone-friendly) ─────────────────────────────────────────
+  // The brief and fork pushes point the Director at .md source files ("read
+  // activation-plan.md"), but a raw .md path isn't openable from a phone.
+  // Render referenced files to PDF once per revision and send them alongside
+  // the text so "go read X" actually works from Telegram.
+  const pdfCacheDir = path.join(os.tmpdir(), 'nexus-signal-pdf')
+  function mdToPdf(mdPath) {
+    try {
+      fs.mkdirSync(pdfCacheDir, { recursive: true })
+      const mtime = Math.round(fs.statSync(mdPath).mtimeMs)
+      const outPath = path.join(pdfCacheDir, `${path.basename(mdPath, '.md')}-${mtime}.pdf`)
+      if (!fs.existsSync(outPath)) {
+        const script = path.join(REPO, 'bin', 'md_to_pdf.py')
+        execFileSync('python3', [script, '--in', mdPath, '--out', outPath], { stdio: 'ignore', timeout: 20000 })
+      }
+      return fs.existsSync(outPath) ? outPath : null
+    } catch (e) {
+      console.error('[Signal] md_to_pdf failed for', mdPath, e.message)
+      return null
+    }
+  }
+
+  // Finds "(file-a.md · file-b.md)" style references anywhere inside
+  // clock-item text and resolves them against the owning campaign's directory.
+  function extractMdRefs(itemText, camDir) {
+    const out = []
+    for (const group of itemText.match(/\(([^)]+)\)/g) || []) {
+      const inner = group.slice(1, -1)
+      for (const raw of inner.split(/[·,]/)) {
+        const name = raw.trim()
+        if (!/\.md$/i.test(name)) continue
+        const p = path.isAbsolute(name) ? name : path.join(campaignsRoot, camDir, name)
+        if (fs.existsSync(p)) out.push(p)
+      }
+    }
+    return out
+  }
+
+  function briefAttachments() {
+    const files = new Set()
+    let campaigns = []
+    try {
+      campaigns = fs.readdirSync(campaignsRoot).filter(d =>
+        !d.startsWith('.') && fs.statSync(path.join(campaignsRoot, d)).isDirectory())
+    } catch {}
+    for (const cam of campaigns) {
+      for (const c of clockItems(cam)) {
+        for (const f of extractMdRefs(c.item, cam)) files.add(f)
+      }
+    }
+    return [...files]
+  }
+
+  async function sendBriefAttachments() {
+    if (!notifyDocument) return
+    for (const f of briefAttachments()) {
+      const pdf = mdToPdf(f)
+      if (!pdf) continue
+      try {
+        await notifyDocument(pdf, { audience: 'director', filename: `${path.basename(f, '.md')}.pdf` })
+      } catch (e) {
+        console.error('[Signal] brief attachment send failed:', f, e.message)
+      }
+    }
+  }
 
   // ── Persistent state (dedupe pushes + one brief per day, across restarts) ──
   const stateDir = path.join(os.homedir(), 'Library/Application Support/Nexus')
@@ -134,6 +203,13 @@ export function initSignal({ app, config, REPO, readFileSafe }) {
       if (notify) {
         notify(forkPushText(fork), { audience: 'director' })
           .catch(e => console.error('[Signal] fork push failed:', e.message))
+        if (notifyDocument) {
+          const pdf = mdToPdf(fork.file)
+          if (pdf) {
+            notifyDocument(pdf, { audience: 'director', filename: `${fork.fork_id}.pdf` })
+              .catch(e => console.error('[Signal] fork pdf send failed:', e.message))
+          }
+        }
         console.log('[Signal] urgent fork pushed:', key)
       } else {
         console.log('[Signal] urgent fork found (Telegram not wired):', key)
@@ -237,6 +313,7 @@ export function initSignal({ app, config, REPO, readFileSafe }) {
     archiveBrief(text)
     if (notify) {
       notify(text, { audience: 'director' }).catch(e => console.error('[Signal] brief send failed:', e.message))
+      sendBriefAttachments().catch(e => console.error('[Signal] brief attachments failed:', e.message))
       console.log('[Signal] daily brief sent for', today)
     } else {
       console.log('[Signal] daily brief built (Telegram not wired) for', today)
@@ -299,5 +376,5 @@ export function initSignal({ app, config, REPO, readFileSafe }) {
   sendDailyBriefIfDue()
 
   console.log(`[Signal] fleet delivery wired — campaigns at ${campaignsRoot}, brief at ${briefHour}`)
-  return { setNotify, listForks, buildBrief, forksSummary, resolveFork }
+  return { setNotify, setNotifyDocument, listForks, buildBrief, sendBriefAttachments, forksSummary, resolveFork }
 }
