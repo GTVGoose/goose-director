@@ -98,6 +98,35 @@ app.use(cors({
 }))
 app.use(express.json())
 
+// ─── Remote-access gateway (plan 2026-07-11 §3f) ─────────────────────────────
+// `tailscale serve` proxies tailnet traffic to this loopback port and stamps
+// X-Forwarded-For / Tailscale-User-Login headers; direct loopback traffic
+// (Electron, vite proxy, local curl) has neither. Requests arriving through
+// the proxy may ONLY reach the mini-Nexus mobile surface, and every mobile
+// API call must carry the PIN — endpoints that assumed "server is loopback-
+// only" (relay, sandbox, settings, sync-ui, …) stay loopback-only even if
+// serve is configured to expose the whole origin.
+const MOBILE_API_ALLOW = [
+  /^\/api\/chat(\/|$)/,          // job submit / stream / job / history / reset
+  /^\/api\/events$/,
+  /^\/api\/domains$/,            // read: domain map
+  /^\/api\/domains\/observe$/,   // write: quick-append (idempotent)
+  /^\/api\/file$/,               // read: doc content (repo-scoped + traversal-guarded)
+  /^\/api\/transcribe$/,
+  /^\/api\/voice-(relay|context|memory)$/,
+  /^\/api\/health$/,             // reachability probe (no data)
+]
+app.use((req, res, next) => {
+  const proxied = !!(req.headers['x-forwarded-for'] || req.headers['tailscale-user-login'])
+  if (!proxied) return next()                          // local traffic: unchanged
+  if (!req.path.startsWith('/api')) return next()      // static shell/assets are fine
+  const allowed = MOBILE_API_ALLOW.some(re => re.test(req.path))
+  if (!allowed) return res.status(403).json({ error: 'loopback-only endpoint' })
+  if (req.path === '/api/health') return next()        // probe stays PIN-free (returns no data)
+  if (!mobileAuthCheck(req, res)) return
+  next()
+})
+
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 function readFileSafe(filePath) {
@@ -3249,6 +3278,53 @@ app.post('/api/domains/observe', (req, res) => {
   catch (e) { return res.status(500).json({ error: 'write failed: ' + e.message }) }
   brain.appendEvent({ kind: 'observation', text: `${domain}: ${rec.note.slice(0, 100)}`, domain, repoId: repo.id })
   res.json({ ok: true, record: rec })
+})
+
+// POST /api/transcribe — raw audio body (webm/opus from MediaRecorder) →
+// whisper on the Mac → { text }. Same ffmpeg→whisper.cpp→openai-whisper
+// chain the Telegram bot uses for voice notes; degrades to a clear error
+// when whisper isn't installed.
+app.post('/api/transcribe', express.raw({ type: 'audio/*', limit: '25mb' }), (req, res) => {
+  if (!mobileAuthCheck(req, res)) return
+  if (!req.body?.length) return res.status(400).json({ error: 'audio body required' })
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const srcPath = `/tmp/mnx-stt-${id}.webm`
+  const wavPath = `/tmp/mnx-stt-${id}.wav`
+  const env = { ...process.env, PATH: '/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin:/usr/sbin' }
+  const rm = (paths) => { for (const p of paths) { try { fs.unlinkSync(p) } catch {} } }
+  try {
+    fs.writeFileSync(srcPath, req.body)
+    execSync(`ffmpeg -y -i '${srcPath}' -ar 16000 -ac 1 '${wavPath}'`, { stdio: 'ignore', timeout: 30000, env })
+  } catch (e) {
+    rm([srcPath, wavPath])
+    return res.status(500).json({ error: 'audio decode failed (is ffmpeg installed?)' })
+  }
+  // 1) whisper.cpp
+  const cppBin = process.env.WHISPER_CPP_BIN
+  const cppModel = process.env.WHISPER_CPP_MODEL
+  if (cppBin && cppModel && fs.existsSync(cppBin) && fs.existsSync(cppModel)) {
+    try {
+      const outBase = `/tmp/mnx-stt-${id}`
+      execSync(`'${cppBin}' -m '${cppModel}' -f '${wavPath}' -nt -otxt -of '${outBase}'`, { stdio: 'ignore', timeout: 120000, env })
+      const txt = readFileSafe(`${outBase}.txt`)
+      rm([srcPath, wavPath, `${outBase}.txt`])
+      if (txt) return res.json({ text: txt.trim() })
+    } catch (e) { console.error('[transcribe] whisper.cpp failed:', e.message) }
+  }
+  // 2) openai-whisper CLI
+  try {
+    const model = process.env.WHISPER_MODEL || 'base.en'
+    const outDir = `/tmp/mnx-stt-out-${id}`
+    fs.mkdirSync(outDir, { recursive: true })
+    execSync(`whisper '${wavPath}' --model ${model} --language en --output_format txt --output_dir '${outDir}' --fp16 False`, { stdio: 'ignore', timeout: 180000, env })
+    const files = fs.readdirSync(outDir).filter(f => f.endsWith('.txt'))
+    const txt = files.length ? readFileSafe(path.join(outDir, files[0])) : ''
+    rm([srcPath, wavPath])
+    try { fs.rmSync(outDir, { recursive: true, force: true }) } catch {}
+    if (txt) return res.json({ text: txt.trim() })
+  } catch (e) { console.error('[transcribe] openai-whisper failed:', e.message) }
+  rm([srcPath, wavPath])
+  res.status(503).json({ error: 'no transcriber available — run install-telegram.command to set up whisper' })
 })
 
 // ─── Signal fleet delivery (fork watcher + daily brief + Signal Desk API) ────

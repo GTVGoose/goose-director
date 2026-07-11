@@ -1,0 +1,220 @@
+/* Mini Nexus mobile surface — builds on the console tokens in app.css.
+   One-thumb layout: content scrolls, composer + tab bar pinned, generous
+   tap targets, safe-area padding for gesture-nav phones. */
+
+.mnx {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+  overscroll-behavior: none;
+}
+
+.mnx-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 10px;
+  border-bottom: 0.5px solid var(--color-border);
+  flex-shrink: 0;
+}
+.mnx-header .title { font-size: 16px; font-weight: 600; letter-spacing: 0.02em; }
+.mnx-header .sub { font-size: 11px; color: var(--color-text-3); margin-top: 1px; }
+.mnx-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-text-3); }
+.mnx-dot.ok { background: var(--color-dual-text); }
+.mnx-dot.busy { background: var(--color-active); animation: mnx-pulse 1s infinite; }
+@keyframes mnx-pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+.mnx-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+
+/* ── Bottom tab bar ── */
+.mnx-tabs {
+  display: flex;
+  border-top: 0.5px solid var(--color-border);
+  background: var(--color-surface);
+  flex-shrink: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.mnx-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 0 8px;
+  background: none;
+  border: none;
+  color: var(--color-text-3);
+  font-size: 10px;
+  cursor: pointer;
+}
+.mnx-tab i { font-size: 20px; }
+.mnx-tab.active { color: var(--color-accent-text); }
+
+/* ── Chat ── */
+.mnx-chat { display: flex; flex-direction: column; gap: 10px; padding: 14px 14px 20px; }
+.mnx-bubble {
+  max-width: 86%;
+  padding: 10px 13px;
+  border-radius: 14px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.mnx-bubble.user { align-self: flex-end; background: var(--color-accent-bg); border: 0.5px solid var(--color-accent-border); }
+.mnx-bubble.assistant { align-self: flex-start; background: var(--color-surface-2); border: 0.5px solid var(--color-border); }
+.mnx-bubble .meta { font-size: 10px; color: var(--color-text-3); margin-top: 5px; }
+.mnx-status-line { align-self: center; font-size: 11px; color: var(--color-text-3); padding: 2px 0; }
+
+.mnx-composer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 10px 12px;
+  border-top: 0.5px solid var(--color-border);
+  background: var(--color-surface);
+  flex-shrink: 0;
+}
+.mnx-composer textarea {
+  flex: 1;
+  resize: none;
+  max-height: 110px;
+  background: var(--color-surface-2);
+  border: 0.5px solid var(--color-border-mid);
+  border-radius: 12px;
+  color: var(--color-text);
+  font-size: 15px;
+  padding: 10px 12px;
+  outline: none;
+  font-family: inherit;
+}
+.mnx-composer textarea:focus { border-color: var(--color-accent); }
+.mnx-icon-btn {
+  width: 42px; height: 42px;
+  border-radius: 12px;
+  border: 0.5px solid var(--color-border-mid);
+  background: var(--color-surface-2);
+  color: var(--color-text-2);
+  font-size: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.mnx-icon-btn.primary { background: var(--color-accent-bg); border-color: var(--color-accent-border); color: var(--color-accent-text); }
+.mnx-icon-btn.rec { background: var(--color-escalation-bg); border-color: var(--color-escalation-border); color: var(--color-escalation-text); animation: mnx-pulse 1s infinite; }
+.mnx-icon-btn:disabled { opacity: 0.4; }
+
+/* ── Domains ── */
+.mnx-cards { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
+.mnx-card {
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-border);
+  border-radius: 14px;
+  padding: 14px;
+  cursor: pointer;
+}
+.mnx-card .head { display: flex; align-items: center; gap: 10px; }
+.mnx-card .head i { font-size: 18px; color: var(--color-accent-text); }
+.mnx-card .name { font-size: 14.5px; font-weight: 600; }
+.mnx-card .detail { font-size: 11.5px; color: var(--color-text-3); margin-top: 6px; line-height: 1.45; }
+.mnx-chiprow { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 14px 8px; }
+.mnx-chip {
+  padding: 7px 13px;
+  border-radius: 999px;
+  border: 0.5px solid var(--color-border-mid);
+  background: var(--color-surface-2);
+  color: var(--color-text-2);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.mnx-chip.active { background: var(--color-accent-bg); border-color: var(--color-accent-border); color: var(--color-accent-text); }
+.mnx-doc {
+  padding: 12px 14px;
+  border-bottom: 0.5px solid var(--color-border);
+  cursor: pointer;
+}
+.mnx-doc .t { font-size: 13.5px; }
+.mnx-doc .m { font-size: 10.5px; color: var(--color-text-3); margin-top: 2px; }
+.mnx-reader {
+  padding: 16px 16px 40px;
+  font-size: 14px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  color: var(--color-text-2);
+}
+.mnx-reader h1 { color: var(--color-text); }
+
+/* preview-before-append card — a misheard health note silently written would
+   erode trust in the whole domain layer, so confirm is always explicit */
+.mnx-preview {
+  margin: 0 14px 12px;
+  background: var(--color-active-bg);
+  border: 0.5px solid var(--color-active-border);
+  border-radius: 14px;
+  padding: 13px;
+}
+.mnx-preview .k { font-size: 10px; color: var(--color-active-text); text-transform: uppercase; letter-spacing: 0.08em; }
+.mnx-preview .v { font-size: 14px; margin: 6px 0 10px; }
+.mnx-btnrow { display: flex; gap: 8px; }
+.mnx-btn {
+  flex: 1;
+  padding: 11px 0;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  border: 0.5px solid var(--color-border-mid);
+  background: var(--color-surface-2);
+  color: var(--color-text-2);
+  cursor: pointer;
+}
+.mnx-btn.primary { background: var(--color-accent-bg); border-color: var(--color-accent-border); color: var(--color-accent-text); }
+
+/* ── Status feed ── */
+.mnx-events { padding: 8px 0 24px; }
+.mnx-event { display: flex; gap: 11px; padding: 11px 16px; border-bottom: 0.5px solid var(--color-border); }
+.mnx-event i { font-size: 16px; color: var(--color-text-3); margin-top: 1px; }
+.mnx-event .txt { font-size: 13px; line-height: 1.45; flex: 1; white-space: pre-wrap; word-wrap: break-word; }
+.mnx-event .when { font-size: 10px; color: var(--color-text-3); margin-top: 3px; }
+
+/* ── PIN / offline full-screens ── */
+.mnx-gate {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 18px; padding: 36px; text-align: center;
+  background: var(--color-bg); color: var(--color-text);
+}
+.mnx-gate .sigil { width: 52px; height: 52px; border-radius: 50%; background: var(--color-active); box-shadow: 0 0 32px rgba(200,164,74,0.35); }
+.mnx-gate h1 { font-size: 21px; font-weight: 300; letter-spacing: 0.04em; }
+.mnx-gate p { font-size: 13px; color: var(--color-text-2); line-height: 1.6; max-width: 300px; }
+.mnx-gate input {
+  background: var(--color-surface-2);
+  border: 0.5px solid var(--color-border-mid);
+  border-radius: 12px;
+  color: var(--color-text);
+  font-size: 20px;
+  padding: 13px 18px;
+  width: 100%; max-width: 240px;
+  text-align: center; letter-spacing: 0.3em;
+  outline: none;
+}
+.mnx-gate .err { color: var(--color-escalation-text); font-size: 12.5px; min-height: 18px; }
+.mnx-gate .big {
+  width: 100%; max-width: 240px;
+  padding: 13px 0;
+  border-radius: 12px;
+  border: 0.5px solid var(--color-accent-border);
+  background: var(--color-accent-bg);
+  color: var(--color-accent-text);
+  font-size: 15px; font-weight: 600;
+  cursor: pointer;
+}
+.mnx-gate a.tg { color: var(--color-passive-text); font-size: 13.5px; text-decoration: none; border: 0.5px solid var(--color-passive-border); background: var(--color-passive-bg); border-radius: 12px; padding: 12px 22px; }
+
+.mnx-empty { padding: 40px 20px; text-align: center; color: var(--color-text-3); font-size: 13px; line-height: 1.6; }
+.mnx-outbox-note { margin: 0 14px 10px; font-size: 11.5px; color: var(--color-active-text); }
