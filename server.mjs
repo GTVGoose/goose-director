@@ -1453,6 +1453,7 @@ app.post('/api/relay', async (req, res) => {
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
+      let inTok = 0, outTok = 0
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -1463,11 +1464,19 @@ app.post('/api/relay', async (req, res) => {
               const data = JSON.parse(line.slice(6))
               if (data.type === 'content_block_delta' && data.delta?.text) {
                 sendChunk(data.delta.text)
+              } else if (data.type === 'message_start' && data.message?.usage) {
+                // input_tokens arrives on message_start; output starts near 0.
+                inTok = data.message.usage.input_tokens || 0
+                outTok = data.message.usage.output_tokens || 0
+              } else if (data.type === 'message_delta' && data.usage?.output_tokens != null) {
+                // message_delta carries the running (final) output_tokens count.
+                outTok = data.usage.output_tokens
               }
             } catch {}
           }
         }
       }
+      recordUsage(modelConfig, inTok, outTok)
       sendDone({ model: modelConfig.model, provider: 'anthropic' })
 
     } else if (compatFor(modelConfig)) {
@@ -1480,18 +1489,24 @@ app.post('/api/relay', async (req, res) => {
       if (systemContent) oaiMessages.push({ role: 'system', content: systemContent })
       oaiMessages.push(...messages.map(m => ({ role: m.role, content: m.content })))
 
-      const response = await fetch(`${compat.base}/chat/completions`, {
+      const baseBody = { model: modelConfig.model, stream: true, messages: oaiMessages }
+      const doFetch = (withUsage) => fetch(`${compat.base}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${compat.key}`,
         },
-        body: JSON.stringify({
-          model: modelConfig.model,
-          stream: true,
-          messages: oaiMessages,
-        }),
+        // stream_options.include_usage asks for a final usage-only chunk (OpenAI
+        // spec) so the meter sees real tokens. Not every OpenAI-compat provider
+        // accepts the extra field — a strict one (e.g. Mistral) may 400/422 it.
+        body: JSON.stringify(withUsage ? { ...baseBody, stream_options: { include_usage: true } } : baseBody),
       })
+      // Best-effort: request usage, but if the provider rejects the field, retry
+      // once WITHOUT it so streaming never regresses (usage simply stays 0).
+      let response = await doFetch(true)
+      if (!response.ok && (response.status === 400 || response.status === 422)) {
+        response = await doFetch(false)
+      }
 
       if (!response.ok) {
         const err = await response.text()
@@ -1500,6 +1515,7 @@ app.post('/api/relay', async (req, res) => {
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
+      let inTok = 0, outTok = 0
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -1510,10 +1526,16 @@ app.post('/api/relay', async (req, res) => {
               const data = JSON.parse(line.slice(6))
               const text = data.choices?.[0]?.delta?.content
               if (text) sendChunk(text)
+              // Final chunk (choices empty) carries usage when include_usage held.
+              if (data.usage) {
+                inTok = data.usage.prompt_tokens || inTok
+                outTok = data.usage.completion_tokens || outTok
+              }
             } catch {}
           }
         }
       }
+      recordUsage(modelConfig, inTok, outTok)
       sendDone({ model: modelConfig.model, provider: modelConfig.provider })
 
     } else if (modelConfig.provider === 'ollama') {
@@ -1536,6 +1558,7 @@ app.post('/api/relay', async (req, res) => {
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
+      let inTok = 0, outTok = 0
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -1544,9 +1567,15 @@ app.post('/api/relay', async (req, res) => {
           try {
             const data = JSON.parse(line)
             if (data.message?.content) sendChunk(data.message.content)
+            // The final streamed object (done:true) carries the token counts.
+            if (data.done) {
+              inTok = data.prompt_eval_count || inTok
+              outTok = data.eval_count || outTok
+            }
           } catch {}
         }
       }
+      recordUsage(modelConfig, inTok, outTok)  // ollama meters tokens at $0
       sendDone({ model: modelConfig.model, provider: 'ollama' })
 
     } else if (modelConfig.provider === 'claude-code') {
@@ -1674,11 +1703,28 @@ function buildDocContext(sourceDocs) {
 // to free/local when a ceiling is near. Pricing is $ per 1M tokens [in, out] —
 // estimate only; ollama (local) is free; a claude-code (Max-subscription) provider
 // would be metered as tokens-but-$0 (covered by the subscription, not credits).
+// Exact-model prices win when known. Estimates only — confirm/adjust at gate G1.
 const PRICE = {
   'claude-sonnet-4-6': [3, 15],
   'claude-haiku-4-5-20251001': [0.8, 4],
   'gpt-4o': [2.5, 10],
+  'gemini-flash-latest': [0.30, 2.50],
+  'deepseek-chat': [0.27, 1.10],
+  'mistral-large-latest': [2, 6],
+  'qwen-plus': [0.40, 1.20],
 }
+// Per-provider fallback [in, out] $/1M — used when a paid model's exact string
+// isn't in PRICE (model aliases float, e.g. "-latest"). Keeps the meter honest:
+// a configured cloud is estimated, not silently billed $0. Also G1-confirmable.
+const PROVIDER_PRICE = {
+  openai:   [2.5, 10],
+  gemini:   [0.30, 2.50],
+  deepseek: [0.27, 1.10],
+  mistral:  [2, 6],
+  qwen:     [0.40, 1.20],
+}
+// Models we've already warned about (unknown price) — warn once, not every call.
+const _priceWarned = new Set()
 const usage = { calls: 0, inTok: 0, outTok: 0, costUSD: 0, byModel: {}, since: new Date().toISOString() }
 // Soft daily ceiling on *paid* spend (USD). 0 disables. Override via NEXUS_DAILY_BUDGET_USD.
 // Note: this governs PAID-API providers only. The Claude Max CLI path (provider
@@ -1691,7 +1737,20 @@ let budgetUSD = Number(process.env.NEXUS_DAILY_BUDGET_USD || 25)
 function recordUsage(mc, inTok = 0, outTok = 0) {
   inTok = inTok || 0; outTok = outTok || 0
   const paid = mc.provider !== 'ollama' && mc.provider !== 'claude-code'
-  const [pin, pout] = (paid && PRICE[mc.model]) || [0, 0]
+  let rate = [0, 0]
+  if (paid) {
+    rate = PRICE[mc.model] || PROVIDER_PRICE[mc.provider] || null
+    if (!rate) {
+      // Unknown paid provider/model: price $0 but SURFACE it (once) so spend
+      // isn't silently under-reported. Add an entry to PRICE/PROVIDER_PRICE.
+      if (!_priceWarned.has(mc.model)) {
+        _priceWarned.add(mc.model)
+        console.warn(`[usage] no price for paid model "${mc.model}" (provider "${mc.provider}") — metering tokens but cost as $0. Add it to PRICE/PROVIDER_PRICE.`)
+      }
+      rate = [0, 0]
+    }
+  }
+  const [pin, pout] = rate
   const cost = (inTok * pin + outTok * pout) / 1e6
   usage.calls++; usage.inTok += inTok; usage.outTok += outTok; usage.costUSD += cost
   const b = (usage.byModel[mc.id] || (usage.byModel[mc.id] = { calls: 0, inTok: 0, outTok: 0, costUSD: 0, provider: mc.provider }))
