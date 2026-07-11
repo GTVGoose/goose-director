@@ -5,10 +5,12 @@ import path from 'path'
 import os from 'os'
 import yaml from 'js-yaml'
 import { fileURLToPath } from 'url'
+import crypto from 'crypto'
 import { execFileSync, execSync, spawn } from 'child_process'
 import { initTelegram } from './telegram.mjs'
 import { initSignal } from './signal.mjs'
 import { initGate } from './gate.mjs'
+import { initBrain } from './brain.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -2290,12 +2292,45 @@ Do not include raw conversation — only structured output.`
 })
 
 // ─── Voice interface ──────────────────────────────────────────────────────────
-function voicePinCheck(req, res) {
-  const configPin = String(config.voicePin || '1234')
-  const supplied = (req.headers['x-voice-pin'] || '').trim()
-  if (supplied !== configPin) { res.status(401).json({ error: 'Invalid PIN' }); return false }
+// Mobile/voice auth — hardened 2026-07-11 (plan §3f). The chat pipeline ends in
+// full-tool execution on this Mac, so this fails CLOSED: no access while the
+// PIN is unset or still the factory default, rate-limited attempts, constant-
+// time compare, and an optional Tailscale identity second factor.
+const PIN_FAILS = new Map() // ip -> { count, resetAt }
+function mobileAuthCheck(req, res) {
+  const configPin = String(config.voicePin || '')
+  if (!configPin || configPin === '1234') {
+    res.status(403).json({ error: 'Mobile access disabled: set a non-default voicePin in goose.config.json ("1234" is the factory default and is refused).' })
+    return false
+  }
+  const ip = req.ip || req.socket?.remoteAddress || '?'
+  const now = Date.now()
+  const rec = PIN_FAILS.get(ip) || { count: 0, resetAt: now + 60_000 }
+  if (now > rec.resetAt) { rec.count = 0; rec.resetAt = now + 60_000 }
+  if (rec.count >= 5) { res.status(429).json({ error: 'Too many PIN attempts — wait a minute.' }); return false }
+  // Query-param fallback exists because EventSource/GET streams can't set headers.
+  const supplied = String(req.headers['x-voice-pin'] || req.query?.pin || '').trim()
+  const a = crypto.createHash('sha256').update(supplied).digest()
+  const b = crypto.createHash('sha256').update(configPin).digest()
+  if (!crypto.timingSafeEqual(a, b)) {
+    rec.count += 1
+    PIN_FAILS.set(ip, rec)
+    res.status(401).json({ error: 'Invalid PIN' })
+    return false
+  }
+  // Optional second factor: when fronted by `tailscale serve`, the proxy injects
+  // the caller's tailnet identity; pin mobile access to one login if configured.
+  const wantUser = config.mobile?.tailscaleUser
+  if (wantUser) {
+    const got = String(req.headers['tailscale-user-login'] || '')
+    if (got.toLowerCase() !== String(wantUser).toLowerCase()) {
+      res.status(403).json({ error: 'Tailscale identity mismatch' })
+      return false
+    }
+  }
   return true
 }
+const voicePinCheck = mobileAuthCheck
 
 const VOICE_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -3038,121 +3073,182 @@ app.post('/api/voice-relay', async (req, res) => {
   if (!voicePinCheck(req, res)) return
   const { messages, contextDocs } = req.body
   if (!messages?.length) return res.status(400).json({ error: 'messages required' })
-  const ollamaUrl = (process.env.OLLAMA_BASE_URL || 'http://localhost:11434').replace(/\/$/, '')
-
-  // Load Umbruh's Modelfile SYSTEM block
-  let modelfileSystem = ''
-  const modelfilePath = path.join(REPO, 'agents/umbruh/Modelfile')
-  if (fs.existsSync(modelfilePath)) {
-    const mf = readFileSafe(modelfilePath) || ''
-    const sysMatch = mf.match(/SYSTEM\s+"""([\s\S]*?)"""/)
-    if (sysMatch) modelfileSystem = sysMatch[1].trim()
-  }
-
-  // Load short-term voice memory
-  let voiceMemory = ''
-  const voiceMemPath = path.join(REPO, 'agents/umbruh/umbruh-voice-memory.md')
-  if (fs.existsSync(voiceMemPath)) voiceMemory = (readFileSafe(voiceMemPath) || '').trim()
-
-  // Build system: voice override → personality → memory → context docs
-  const voiceModeOverride = `ACTIVE MODE: VOICE SESSION
-
-You are speaking aloud to the Director via a mobile voice interface. Different rules apply here:
-
-1. MEMORY IS AUTOMATIC. The interface handles all memory saving without your involvement. Do NOT mention context patches, propose approval workflows, ask for permission to save, or use phrases like "shall I propose a context patch." When the Director shares something, simply receive it naturally and continue the conversation.
-2. BE CONCISE. You are speaking, not writing. Keep responses to 2-4 sentences unless depth is clearly called for. No bullet points. No headers.
-3. CONVERSATIONAL TONE. Warm, direct, present. This is a conversation, not a document.`
-
-  const memoryBlock = voiceMemory
-    ? `SAVED MEMORIES FROM PREVIOUS SESSIONS:\nQuote these directly and precisely when the Director asks about them.\n\n${voiceMemory}`
-    : ''
-  const contextContent = (contextDocs || []).map(d => `--- ${d.title} ---\n${d.content}`).join('\n\n')
-  const systemContent = [voiceModeOverride, modelfileSystem, memoryBlock, contextContent].filter(Boolean).join('\n\n---\n\n')
-
-  const ollamaMessages = [
-    ...(systemContent ? [{ role: 'system', content: systemContent }] : []),
-    ...messages
-  ]
+  const userText = [...messages].reverse().find(m => m.role === 'user')?.content || ''
+  if (!String(userText).trim()) return res.status(400).json({ error: 'no user message' })
 
   // SSE stream setup
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
   res.setHeader('X-Accel-Buffering', 'no')
+  res.flushHeaders?.()
 
   const send = (data) => res.write('data: ' + JSON.stringify(data) + '\n\n')
 
+  // 2026-07-11 fold (plan A7): voice runs through the shared brain — the same
+  // tiered routing as Telegram and the mini Nexus (including the Claude
+  // escalation this endpoint previously lacked) and the ONE canonical director
+  // thread, so a voice session continues the same conversation as every other
+  // surface. Sentence-level TTS streams off the brain's token deltas; TTS calls
+  // ride a promise chain so audio arrives in order.
+  let sentenceBuf = ''
+  let spokeAny = false
+  let ttsChain = Promise.resolve()
+  const speak = (sentence) => {
+    const s = (sentence || '').trim()
+    if (!s) return
+    ttsChain = ttsChain.then(async () => {
+      const audio = await generateTTS(s)
+      if (audio) { spokeAny = true; send({ type: 'audio', text: s, audio }) }
+    }).catch(e => console.error('[voice-relay] tts failed:', e.message))
+  }
+
   try {
-    const lastUserMsg = messages.filter(m => m.role === 'user').pop()?.content?.toLowerCase() || ''
-    const needsTools = sandboxEnabled()
-      && /\b(open|run|execute|find|search|write|read|fetch|go to|check|list|create|delete|move|copy|install|launch|browse|look up|show me|get me|update|edit|save)\b/.test(lastUserMsg)
-
-    let fullText = ''
-
-    if (needsTools) {
-      // Tool path: run full agent loop, then stream TTS sentence by sentence
-      send({ type: 'status', text: 'Working…' })
-      const reply = await runAgentLoop(ollamaMessages, ollamaUrl, 8, true)
-      fullText = reply
-      for (const sentence of splitIntoSentences(reply)) {
-        const audio = await generateTTS(sentence)
-        if (audio) send({ type: 'audio', text: sentence, audio })
-      }
-    } else {
-      // Conversational path: stream Ollama tokens, TTS each sentence on detection
-      const ollamaRes = await fetch(`${ollamaUrl}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: UMBRUH_MODEL, messages: ollamaMessages, stream: true })
-      })
-      if (!ollamaRes.ok) throw new Error(`Ollama ${ollamaRes.status}`)
-
-      const reader = ollamaRes.body.getReader()
-      const decoder = new TextDecoder()
-      let jsonBuf = ''
-      let sentenceBuf = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        jsonBuf += decoder.decode(value, { stream: true })
-        const lines = jsonBuf.split('\n')
-        jsonBuf = lines.pop()
-
-        for (const line of lines) {
-          if (!line.trim()) continue
-          let chunk
-          try { chunk = JSON.parse(line) } catch { continue }
-
-          const token = chunk.message?.content || ''
-          sentenceBuf += token
-          fullText += token
-
+    const { reply } = await brain.runTask('director', String(userText), {
+      channel: 'voice',
+      contextDocs,
+      preferStreaming: true,
+      onDelta: (d) => {
+        if (d.type === 'token') {
+          sentenceBuf += d.text
           const { complete, remaining } = extractCompleteSentences(sentenceBuf)
-          for (const sentence of complete) {
-            if (sentence.trim()) {
-              const audio = await generateTTS(sentence)
-              if (audio) send({ type: 'audio', text: sentence, audio })
-            }
-          }
           sentenceBuf = remaining
-
-          // Flush final fragment when Ollama signals done
-          if (chunk.done && sentenceBuf.trim()) {
-            const audio = await generateTTS(sentenceBuf.trim())
-            if (audio) send({ type: 'audio', text: sentenceBuf.trim(), audio })
-          }
+          for (const s of complete) speak(s)
+        } else if (d.type === 'status') {
+          send({ type: 'status', text: d.text })
         }
-      }
+      },
+    })
+    if (sentenceBuf.trim()) speak(sentenceBuf)
+    await ttsChain
+    // Tool-loop and escalated replies arrive whole (no token deltas) — speak them now.
+    if (!spokeAny && reply) {
+      for (const s of splitIntoSentences(reply)) speak(s)
+      await ttsChain
     }
-
-    send({ type: 'done', content: fullText })
+    send({ type: 'done', content: reply })
   } catch (e) {
     console.error('[voice-relay] error:', e.message)
     send({ type: 'error', error: e.message })
   }
 
   res.end()
+})
+
+// ─── The shared tiered brain (plan 2026-07-11) ───────────────────────────────
+// ONE brain for every transport: Telegram, the mini Nexus PWA (/m), and /voice.
+// Owns routing (local umbruh-lite → Claude escalation), the canonical persisted
+// director thread, the chat job model, and the event log. Telegram's notify()
+// is injected after initTelegram so escalated mobile jobs can push completions.
+const brain = initBrain({
+  config,
+  REPO,
+  readFileSafe,
+  runAgentLoop,
+  ollamaUrl: (process.env.OLLAMA_BASE_URL || 'http://localhost:11434').replace(/\/$/, ''),
+  userDataDir: process.env.NEXUS_USER_DATA || __dirname,
+})
+
+// ─── Mini Nexus mobile API (plan 2026-07-11, Phase A) ────────────────────────
+// PIN-gated (hardened mobileAuthCheck) routes backing the /m PWA: job-model
+// chat that survives a locked phone, canonical history, the status-feed event
+// log, and idempotent domain quick-appends for the offline outbox.
+
+// POST /api/chat { text } → { job } — returns immediately; work continues even
+// if this socket (or the phone's screen) dies. Stream/poll the job to follow.
+app.post('/api/chat', (req, res) => {
+  if (!mobileAuthCheck(req, res)) return
+  const text = String(req.body?.text || '').trim()
+  if (!text) return res.status(400).json({ error: 'text required' })
+  const job = brain.submitJob('director', text, { channel: 'pwa', preferStreaming: true })
+  res.json({ job: { id: job.id, status: job.status, createdAt: job.createdAt } })
+})
+
+// GET /api/chat/job/:id — the job's persisted state; survives any disconnect.
+app.get('/api/chat/job/:id', (req, res) => {
+  if (!mobileAuthCheck(req, res)) return
+  const job = brain.getJob(req.params.id)
+  if (!job) return res.status(404).json({ error: 'job not found' })
+  res.json(job)
+})
+
+// GET /api/chat/stream/:id — reconnectable SSE view onto a job. Replays all
+// prior deltas so a phone waking from screen lock catches up, then follows
+// live. Heartbeat comments keep the proxy and mobile radio from reaping it.
+app.get('/api/chat/stream/:id', (req, res) => {
+  if (!mobileAuthCheck(req, res)) return
+  const job = brain.getJob(req.params.id)
+  if (!job) return res.status(404).json({ error: 'job not found' })
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('X-Accel-Buffering', 'no')
+  res.flushHeaders?.()
+  const send = (d) => res.write('data: ' + JSON.stringify(d) + '\n\n')
+  for (const d of (job.deltas || [])) send(d)
+  if (job.status === 'done' || job.status === 'error') return res.end()
+  const hb = setInterval(() => res.write(': ping\n\n'), 20000)
+  const unsub = brain.subscribeJob(req.params.id, (d) => {
+    send(d)
+    if (d.type === 'done' || d.type === 'error') { clearInterval(hb); unsub?.(); res.end() }
+  })
+  if (!unsub) { clearInterval(hb); return res.end() } // finished between getJob and subscribe
+  req.on('close', () => { clearInterval(hb); unsub() })
+})
+
+// GET /api/chat/history?n=50 — tail of the canonical director thread.
+app.get('/api/chat/history', (req, res) => {
+  if (!mobileAuthCheck(req, res)) return
+  const n = Math.min(Number(req.query.n) || 50, 500)
+  res.json(brain.history('director', n))
+})
+
+// POST /api/chat/reset — same as Telegram's /reset, from any surface.
+app.post('/api/chat/reset', (req, res) => {
+  if (!mobileAuthCheck(req, res)) return
+  brain.resetThread('director')
+  res.json({ ok: true })
+})
+
+// GET /api/events?n=100 — the status feed (everything notify() pushed, plus
+// chat-job and observation events), newest first.
+app.get('/api/events', (req, res) => {
+  if (!mobileAuthCheck(req, res)) return
+  const n = Math.min(Number(req.query.n) || 100, 500)
+  res.json(brain.listEvents(n))
+})
+
+// POST /api/domains/observe — append a structured observation to a domain's
+// stream. Body: { id, domain, note, repoId?, type?, source?, transcript? }.
+// `id` is a client-generated UUID: the offline outbox retries after flaky
+// wakes, and NDJSON appends aren't idempotent, so the server dedupes on it.
+app.post('/api/domains/observe', (req, res) => {
+  if (!mobileAuthCheck(req, res)) return
+  const { id, domain, repoId, note, type, source, transcript } = req.body || {}
+  if (!id || !domain || !note) return res.status(400).json({ error: 'id, domain, note required' })
+  const repos = mountedRepos()
+  const repo = repoId ? repos.find(r => r.id === repoId) : repos[0]
+  if (!repo) return res.status(404).json({ error: 'repo not found' })
+  const domainsRoot = resolveInside(repo.path, 'domains')
+  const domainDir = domainsRoot ? resolveInside(domainsRoot, String(domain)) : null
+  if (!domainDir || !fs.existsSync(domainDir)) return res.status(404).json({ error: `domain not found: ${domain}` })
+  const file = path.join(domainDir, 'observations.ndjson')
+  const cleanId = String(id).replace(/[^a-zA-Z0-9-]/g, '').slice(0, 64)
+  if (!cleanId) return res.status(400).json({ error: 'invalid id' })
+  const existing = readFileSafe(file) || ''
+  if (existing.includes(`"id":"${cleanId}"`)) return res.json({ ok: true, deduped: true })
+  const ts = new Date().toISOString()
+  const rec = {
+    id: cleanId, ts, date: ts.slice(0, 10),
+    type: String(type || 'note').slice(0, 40),
+    note: String(note).slice(0, 4000),
+    source: String(source || 'mini-nexus').slice(0, 60),
+    ...(transcript ? { transcript: String(transcript).slice(0, 8000) } : {}),
+  }
+  try { fs.appendFileSync(file, JSON.stringify(rec) + '\n') }
+  catch (e) { return res.status(500).json({ error: 'write failed: ' + e.message }) }
+  brain.appendEvent({ kind: 'observation', text: `${domain}: ${rec.note.slice(0, 100)}`, domain, repoId: repo.id })
+  res.json({ ok: true, record: rec })
 })
 
 // ─── Signal fleet delivery (fork watcher + daily brief + Signal Desk API) ────
@@ -3170,9 +3266,13 @@ try {
 try {
   if (process.env.NEXUS_DISABLE_TELEGRAM) throw new Error('disabled by NEXUS_DISABLE_TELEGRAM (dev run)')
   const tgOllamaUrl = (process.env.OLLAMA_BASE_URL || 'http://localhost:11434').replace(/\/$/, '')
-  const tgApi = initTelegram({ app, config, REPO, readFileSafe, runAgentLoop, generateTTS, ollamaUrl: tgOllamaUrl, signal: signalApi })
+  const tgApi = initTelegram({ app, config, REPO, readFileSafe, generateTTS, signal: signalApi, brain })
   if (signalApi && tgApi?.notify) signalApi.setNotify(tgApi.notify)
   if (signalApi && tgApi?.notifyDocument) signalApi.setNotifyDocument(tgApi.notifyDocument)
+  // Give the brain its push channel: escalated mini-Nexus jobs notify the phone
+  // through Telegram, and Director-path files default to a Telegram document.
+  if (tgApi?.notify) brain.setNotify(tgApi.notify)
+  if (tgApi?.notifyDocument) brain.setNotifyDocument(tgApi.notifyDocument)
 
   // ─── Umbruh ingress gate (vault → Goose system → Director's Telegram) ──────
   // Inside the Telegram try block on purpose: without notify() the gate cannot

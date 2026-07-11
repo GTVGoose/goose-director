@@ -8,7 +8,13 @@
 //      on loop logs (LOOP_LOG.md, DIRECTOR_STATUS.md, + any extra paths in config).
 //   2. INBOUND remote control — the Director (or an authorized chat) can send a
 //      text or a voice note from their phone; it is transcribed (voice) and run
-//      through Umbruh's agentic tool loop on the Mac, then the result is sent back.
+//      through the shared tiered brain (brain.mjs) on the Mac, then the result
+//      is sent back.
+//
+// 2026-07-11: this module is now a thin TRANSPORT. The tiered routing (local
+// umbruh-lite loop → Claude escalation), history, and system prompts moved to
+// brain.mjs so Telegram, the mini Nexus PWA, and /voice share ONE brain and
+// ONE canonical Director thread. See docs/plans/2026-07-11-mini-nexus-chat-and-domains.md.
 //
 // No new npm deps: uses built-in fetch + child_process. Voice transcription shells
 // out to whisper.cpp or openai-whisper (see install-telegram.command).
@@ -16,23 +22,10 @@
 
 import fs from 'fs'
 import path from 'path'
-import os from 'os'
-import { execSync, execFileSync, execFile } from 'child_process'
-
-const TELEGRAM_MODE_OVERRIDE = `ACTIVE MODE: TELEGRAM REMOTE SESSION
-
-You are receiving messages from the Director (or an authorized Smiley Face Studios collaborator) via Telegram while they are away from the Mac. You have full tool access (run_bash, read_file, write_file, fetch_url, open_app) to carry out tasks on the Director's Mac.
-
-1. BE CONCISE. Replies are read on a phone. 1–4 short sentences. No markdown headers, minimal formatting, no bullet lists unless asked.
-2. ACT, DON'T ASK. When given a task, use your tools to do it, then report the result briefly. Only ask a question if you are genuinely blocked.
-3. CONFIRM IRREVERSIBLE ACTIONS. Before deleting files, overwriting important documents, pushing to git, or anything you cannot undo, state plainly what you are about to do and wait for a "yes".
-4. You operate with the Director's delegated authority but you are NOT the Director. You do not declare canon or install sigils. The Director decides.
-5. HAND OFF WHEN IT'S BEYOND YOU. You are the fast local brain. If a request needs cloud-level reasoning, repo-wide work, or producing/delivering a file (e.g. "make a PDF and send it") — anything past your local tools — do NOT attempt it or narrate it. Reply with EXACTLY one line and nothing else:
-   NEEDS_DIRECTOR: <one-line reason>
-   The system then hands the task to the cloud Director (Claude), which completes it and replies. There is no "sandbox" or "activate cloud" tool for you to call — the NEEDS_DIRECTOR line IS how you reach the cloud.`
+import { execSync } from 'child_process'
 
 export function initTelegram(deps) {
-  const { app, config, REPO, readFileSafe, runAgentLoop, generateTTS, ollamaUrl, signal } = deps
+  const { app, config, REPO, readFileSafe, generateTTS, signal, brain } = deps
   const tg = config.telegram || {}
   const token = process.env.TELEGRAM_BOT_TOKEN
 
@@ -57,9 +50,9 @@ export function initTelegram(deps) {
   const isKnown = (id) => knownChats.has(String(id))
   const isDirector = (id) => String(id) === directorChatId
 
-  // Per-chat short-term history so multi-turn tasks work (resets on restart).
-  const history = new Map() // chatId -> [{role, content}]
-  const HISTORY_MAX = 12
+  // The Director's messages join the ONE canonical cross-surface thread; any
+  // other authorized chat (Boris) gets its own persisted thread.
+  const threadFor = (chatId) => (isDirector(chatId) ? 'director' : `tg-${chatId}`)
 
   // ── Telegram API helpers ───────────────────────────────────────────────────
   async function tgCall(method, body) {
@@ -155,8 +148,11 @@ export function initTelegram(deps) {
   // audience: 'director' (default, you only) | 'all' (you + Boris)
   // tag: optional string; if present and in borisTags, Boris also receives it
   //      even when audience is 'director'.
+  // Every notify is also recorded in the brain's event log so the mini Nexus
+  // status feed can show the same stream the phone receives.
   async function notify(text, { audience = 'director', tag = '' } = {}) {
     if (!text) return
+    brain?.appendEvent({ kind: 'notify', text: String(text), audience, tag })
     const targets = new Set()
     if (directorChatId) targets.add(directorChatId) // Director always gets everything
     const tagAllowed = tag && borisTags.includes(String(tag).toLowerCase())
@@ -221,158 +217,23 @@ export function initTelegram(deps) {
     return null
   }
 
-  // ── Umbruh system prompt for Telegram mode (mirrors voice-relay assembly) ────
-  function buildSystem() {
-    let modelfileSystem = ''
-    const modelfilePath = path.join(REPO, 'agents/umbruh/Modelfile')
-    if (fs.existsSync(modelfilePath)) {
-      const mf = readFileSafe(modelfilePath) || ''
-      const m = mf.match(/SYSTEM\s+"""([\s\S]*?)"""/)
-      if (m) modelfileSystem = m[1].trim()
-    }
-    let voiceMemory = ''
-    const voiceMemPath = path.join(REPO, 'agents/umbruh/umbruh-voice-memory.md')
-    if (fs.existsSync(voiceMemPath)) voiceMemory = (readFileSafe(voiceMemPath) || '').trim()
-    const memoryBlock = voiceMemory
-      ? `SAVED MEMORIES FROM PREVIOUS SESSIONS:\nQuote these directly when asked about them.\n\n${voiceMemory}`
-      : ''
-    return [TELEGRAM_MODE_OVERRIDE, modelfileSystem, memoryBlock].filter(Boolean).join('\n\n---\n\n')
-  }
+  // (System-prompt assembly moved to brain.mjs — shared by every transport.)
 
-  // ── Claude escalation (heavy tasks / local-loop failure) ────────────────────
-  // Fix + architecture 2026-07-03 (Director-approved): the channel must never go
-  // silent. Routing: light tasks → local umbruh-lite agent loop; heavy tasks
-  // (Director prefixes "deep …" or "claude …") or any local failure → escalate
-  // to the Claude CLI (Max plan, headless, cwd = goose-agent-system) and relay.
-  const CLAUDE_PATHS = [
-    path.join(os.homedir(), 'Library/pnpm/claude'),
-    '/opt/homebrew/bin/claude',
-    '/usr/local/bin/claude',
-  ]
-  const findClaude = () => CLAUDE_PATHS.find(p => fs.existsSync(p)) || 'claude'
-
-  // Cloud-handoff rate cap — the runaway guard. The Director path runs on the
-  // Claude Max CLI (metered $0, so it does NOT touch the server's paid-$ budget
-  // breaker), which is exactly why phone use is free to lean on it. This cap
-  // bounds a pathological loop from spamming Claude. Generous by default; raise
-  // via NEXUS_TG_HANDOFF_MAX_PER_HOUR (Director isn't worried about spend).
-  const HANDOFF_MAX_PER_HOUR = Number(process.env.NEXUS_TG_HANDOFF_MAX_PER_HOUR || 30)
-  const handoffLog = []
-  const canHandoff = () => {
-    const cutoff = Date.now() - 3600_000
-    while (handoffLog.length && handoffLog[0] < cutoff) handoffLog.shift()
-    return handoffLog.length < HANDOFF_MAX_PER_HOUR
-  }
-
-  // Deterministic triage: does this message clearly need the cloud Director?
-  // (Belt-and-suspenders with the model's own NEEDS_DIRECTOR escape hatch.)
-  const triageNeedsDirector = (text) =>
-    /\b(pdf|convert|render|\.md\b|send me|email me|as a (pdf|doc|file|document)|turn .+ into|generate a (file|doc|report))\b/i.test(text) ||
-    /\b(sandbox|council|cloud|use claude|deep dive|activate cloud|multi-?model|orchestrat)\b/i.test(text)
-
-  // ── The Director (cloud conductor) path ──────────────────────────────────────
-  // Runs the Claude Max CLI in the repo with full tools — the proven Tier-2/3
-  // conductor. For file delivery it renders (e.g. bin/md_to_pdf.py for markdown)
-  // and emits `SEND_FILE: <abs path>` lines; we detect those and push the file to
-  // the phone via sendDocument, then reply with the remaining phone-readable text.
-  function runDirector(userText) {
-    return new Promise((resolve) => {
-      const prompt =
-        `${TELEGRAM_MODE_OVERRIDE}\n\n` +
-        `You are the cloud Director — the heavy-reasoning conductor of Umbruh, reached by Telegram handoff from the Director's phone. You are launched in the goose-agent-system repo and have full tools.\n\n` +
-        `If the task is to deliver a document to the phone (a PDF, a file, "send me X"): produce the file on disk, then output — on its OWN line, one per file — a marker:\n` +
-        `SEND_FILE: /absolute/path/to/file\n` +
-        `For a Markdown source, render a PDF first with:  python3 bin/md_to_pdf.py --in <source.md> --out <output.pdf>  (write the PDF under /tmp). Then emit its SEND_FILE line.\n` +
-        `Otherwise just answer. Keep any prose reply to 1-6 short phone-readable sentences, plain text, no markdown.\n\n` +
-        `Director's message: ${userText}`
-      execFile(
-        findClaude(),
-        ['-p', prompt, '--output-format', 'json', '--dangerously-skip-permissions'],
-        {
-          cwd: fs.existsSync(REPO) ? REPO : os.homedir(),
-          timeout: 300000,
-          maxBuffer: 10 * 1024 * 1024,
-          encoding: 'utf8',
-          env: { ...process.env, PATH: `${process.env.PATH || ''}:${path.join(os.homedir(), 'Library/pnpm')}:/opt/homebrew/bin:/usr/local/bin` },
-        },
-        (err, stdout) => {
-          if (err && !stdout) {
-            console.error('[Telegram] director handoff failed:', err.message)
-            return resolve({ text: null, files: [] })
-          }
-          let raw
-          try { raw = (JSON.parse(stdout).result || '').trim() }
-          catch { raw = String(stdout || '').trim().slice(0, 3500) }
-          // Pull out SEND_FILE markers; only keep files that actually exist.
-          const files = []
-          const text = raw.split('\n').filter(line => {
-            const m = /^\s*SEND_FILE:\s*(.+?)\s*$/.exec(line)
-            if (m) { if (fs.existsSync(m[1])) files.push(m[1]); return false }
-            return true
-          }).join('\n').trim()
-          resolve({ text: text || null, files })
-        },
-      )
-    })
-  }
-
-  // Run the Director path, deliver any files to the phone, return the text reply.
-  async function handToDirector(chatId, userText) {
-    if (!canHandoff()) {
-      return `⏸️ Cloud handoff is paused — more than ${HANDOFF_MAX_PER_HOUR} cloud tasks this hour (runaway guard). It resets within the hour, or raise NEXUS_TG_HANDOFF_MAX_PER_HOUR. Local Umbruh is still live for quick things.`
-    }
-    handoffLog.push(Date.now())
-    const { text, files } = await runDirector(userText)
-    for (const f of files) {
-      try { await sendDocument(chatId, f, path.basename(f)) }
-      catch (e) { console.error('[Telegram] sendDocument failed:', e.message) }
-    }
-    if (!text && files.length) return `📎 Sent ${files.length} file${files.length === 1 ? '' : 's'}.`
-    return text
-  }
-
-  // ── Run a user message through the tiered routing ────────────────────────────
-  // Tier 1 local (fast/private) → hands UP to the Tier-2/3 cloud Director when:
-  //  (a) the Director forces it with a "deep"/"claude" prefix,
-  //  (b) deterministic triage sees file/PDF/cloud/sandbox intent,
-  //  (c) the local model itself replies NEEDS_DIRECTOR (its escape hatch), or
-  //  (d) the local loop fails / hits its step limit.
+  // ── Run a user message through the shared tiered brain ──────────────────────
+  // Routing (deep/claude prefix, triage, NEEDS_DIRECTOR, local failure → Claude
+  // escalation), history, and the runaway guard all live in brain.mjs now.
+  // This adapter only maps chat → thread and delivers produced files to the
+  // requesting chat via sendDocument.
   async function runTask(chatId, userText) {
-    const prior = history.get(chatId) || []
-    const heavy = /^(deep|claude)\b[:,]?\s*/i.exec(userText)
-    let reply = null
-    let via = 'local'
-
-    if (heavy || triageNeedsDirector(userText)) {
-      via = 'director'
-      reply = await handToDirector(chatId, heavy ? (userText.slice(heavy[0].length).trim() || userText) : userText)
-    } else {
-      try {
-        const messages = [
-          { role: 'system', content: buildSystem() },
-          ...prior,
-          { role: 'user', content: userText },
-        ]
-        reply = await runAgentLoop(messages, ollamaUrl, 8, true)
-      } catch (e) {
-        console.error('[Telegram] local loop failed, handing to Director:', e.message)
-        reply = null
-      }
-      // Escape hatch (NEEDS_DIRECTOR) or failure/step-limit → hand up.
-      const needsDirector = reply && /(^|\n)\s*NEEDS_DIRECTOR:/i.test(reply)
-      if (!reply?.trim() || /step limit/i.test(reply) || needsDirector) {
-        via = 'director-fallback'
-        const escalated = await handToDirector(chatId, userText)
-        if (escalated) reply = escalated
-      }
-    }
-
-    if (!reply?.trim()) {
-      reply = `⚠️ Both brains missed that one (local Umbruh and the cloud Director). Nothing is lost — try rephrasing, or prefix with "deep" to force the cloud path. This channel is built to never go silent on you.`
-    }
-    // Update short-term history (exclude system).
-    const next = [...prior, { role: 'user', content: userText }, { role: 'assistant', content: reply }]
-    history.set(chatId, next.slice(-HISTORY_MAX))
+    const { reply, via } = await brain.runTask(threadFor(chatId), userText, {
+      channel: 'telegram',
+      deliverFiles: async (files) => {
+        for (const f of files) {
+          try { await sendDocument(chatId, f, path.basename(f)) }
+          catch (e) { console.error('[Telegram] sendDocument failed:', e.message) }
+        }
+      },
+    })
     return via === 'local' ? reply : `🧠 ${reply}`
   }
 
@@ -424,7 +285,7 @@ export function initTelegram(deps) {
     }
 
     if (text === '/reset') {
-      history.delete(chatId)
+      brain.resetThread(threadFor(chatId))
       await sendText(chatId, 'Short-term memory cleared.')
       return
     }
