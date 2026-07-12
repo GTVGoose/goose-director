@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ACCENTS, applyAccent } from '../theme.js'
+import { ACCENTS, applyAccent, THEMES, applyTheme } from '../theme.js'
 
 const cardStyle = {
   background: 'var(--color-surface)',
@@ -12,6 +12,7 @@ const cardStyle = {
 function PersonalizationCard() {
   const [name, setName] = useState('')
   const [accent, setAccent] = useState('violet')
+  const [theme, setThemeKey] = useState('studio')
   const [loaded, setLoaded] = useState(false)
   const [msg, setMsg] = useState(null)
 
@@ -19,6 +20,7 @@ function PersonalizationCard() {
     fetch('/api/config').then(r => r.json()).then(cfg => {
       setName(cfg.ui?.consoleName || '')
       setAccent(cfg.ui?.accent || 'violet')
+      setThemeKey(THEMES[cfg.ui?.theme] ? cfg.ui.theme : 'studio')
       setLoaded(true)
     }).catch(() => {})
   }, [])
@@ -29,15 +31,22 @@ function PersonalizationCard() {
       const res = await fetch('/api/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ui: { consoleName: name, accent } }),
+        body: JSON.stringify({ ui: { consoleName: name, accent, theme } }),
       })
       const data = await res.json()
       if (data.ok) {
+        // Re-assert theme then accent (accent layers on top — option A).
+        applyTheme(theme)
         applyAccent(accent)
         setMsg({ ok: true, text: 'Saved.' })
       } else setMsg({ ok: false, text: data.error || 'Failed' })
     } catch (e) { setMsg({ ok: false, text: e.message }) }
   }
+
+  // A theme swatch reads its own overrides; where a theme leaves a token to the
+  // baseline (studio = all of them) fall back to the live default var so the
+  // preview matches what would actually render.
+  const swatch = (t, k, fallback) => (t.vars && t.vars[k]) || fallback
 
   return (
     <div style={cardStyle}>
@@ -77,6 +86,50 @@ function PersonalizationCard() {
         </div>
         <div style={{ fontSize: 11, color: 'var(--color-text-3)', marginTop: 6 }}>
           {ACCENTS[accent]?.label}
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 18 }}>
+        <div className="glyph-label" style={{ marginBottom: 8 }}>Theme</div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {Object.entries(THEMES).map(([key, t]) => {
+            const selected = theme === key
+            const bg = swatch(t, '--color-bg', 'var(--color-bg)')
+            const surf = swatch(t, '--color-surface-2', 'var(--color-surface-2)')
+            const txt = swatch(t, '--color-text', 'var(--color-text)')
+            const brd = swatch(t, '--color-border-strong', 'var(--color-border-strong)')
+            return (
+              <button
+                key={key}
+                onClick={() => { setThemeKey(key); applyTheme(key); applyAccent(accent) }}
+                title={t.label}
+                style={{
+                  width: 116, padding: 0, textAlign: 'left', cursor: 'pointer',
+                  background: 'none', borderRadius: 'var(--radius-lg)',
+                  border: selected ? '2px solid var(--color-text)' : `2px solid transparent`,
+                  outline: selected ? 'none' : `0.5px solid var(--color-border-mid)`,
+                  overflow: 'hidden',
+                }}
+              >
+                {/* mini preview built from the theme's own tokens */}
+                <div style={{ background: bg, padding: 8, borderBottom: `0.5px solid ${brd}` }}>
+                  <div style={{ height: 8, width: '70%', borderRadius: 2, background: txt, opacity: 0.85, marginBottom: 5 }} />
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <span style={{ width: 14, height: 14, borderRadius: 3, background: surf, border: `0.5px solid ${brd}` }} />
+                    <span style={{ width: 14, height: 14, borderRadius: '50%', background: 'var(--color-accent)' }} />
+                  </div>
+                </div>
+                <div style={{
+                  padding: '5px 8px', fontSize: 10.5, lineHeight: 1.3,
+                  color: selected ? 'var(--color-text)' : 'var(--color-text-2)',
+                  background: 'var(--color-surface-2)',
+                }}>{t.label}</div>
+              </button>
+            )
+          })}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--color-text-3)', marginTop: 6 }}>
+          Full-interface look. Your accent color layers on top of any theme. More themes coming soon.
         </div>
       </div>
 

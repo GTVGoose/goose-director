@@ -8,7 +8,7 @@ import Invoke from './components/Invoke.jsx'
 import Knowledge from './components/Knowledge.jsx'
 import Settings from './components/Settings.jsx'
 import Setup from './components/Setup.jsx'
-import { applyAccent } from './theme.js'
+import { applyAccent, applyTheme } from './theme.js'
 import { personalViews, personalViewMeta } from './personal-extensions.jsx'
 
 export default function App() {
@@ -37,6 +37,9 @@ export default function App() {
       setHealth(await healthRes.json())
       const cfg = await configRes.json()
       setUi(cfg.ui || {})
+      // Theme first (sets the full-token baseline), THEN accent so the user's
+      // explicit accent layers on top (option A). ui.theme absent ⇒ studio ⇒ today.
+      applyTheme(cfg.ui?.theme)
       applyAccent(cfg.ui?.accent)
       document.title = cfg.vaultName ? `Nexus — ${cfg.ui?.consoleName || cfg.vaultName}` : 'Nexus'
       setLastRefresh(new Date())

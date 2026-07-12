@@ -620,6 +620,9 @@ app.post('/api/config', (req, res) => {
     config.ui = { ...(config.ui || {}) }
     if (ui.consoleName !== undefined) config.ui.consoleName = String(ui.consoleName).slice(0, 60)
     if (ui.accent !== undefined) config.ui.accent = String(ui.accent).slice(0, 20)
+    // Full-UI theme (T23) — string key into THEMES; absent ⇒ 'studio' ⇒ today's
+    // look. String-coerced + undefined-guarded so an unrelated save can't drop it.
+    if (ui.theme !== undefined) config.ui.theme = String(ui.theme).slice(0, 40)
   }
 
   if (telegram && typeof telegram === 'object') {
