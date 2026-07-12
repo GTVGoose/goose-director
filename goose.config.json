@@ -9,11 +9,12 @@
     "agents/umbruh"
   ],
   "voicePin": "1234",
+  "_voicePin_note": "LEGACY fallback only. The mobile/voice PIN is a SECRET — set NEXUS_MOBILE_PIN in ~/Library/Application Support/Nexus/.env (the same .env as TELEGRAM_BOT_TOKEN), NOT here. This '1234' default is REFUSED by the server (fail-closed). Kept only so older installs that already put a real PIN here keep working.",
   "mobile": {
     "baseUrl": "",
     "tailscaleUser": "",
-    "_note": "Mini Nexus PWA (plan 2026-07-11). baseUrl: the tailscale serve HTTPS origin (e.g. https://your-mac.your-tailnet.ts.net) — used for deep links in Telegram push messages; leave empty to skip links. tailscaleUser: optional second factor — if set, mobile API calls must arrive through tailscale serve with a matching Tailscale-User-Login header. NOTE: mobile + voice APIs FAIL CLOSED while voicePin is unset or the factory '1234' — set a real PIN to enable them.",
-    "_setup": "On the Mac: tailscale serve --bg 3001   then install the PWA from Chrome on the phone at the ts.net URL."
+    "_note": "Mini Nexus PWA (plan 2026-07-11). baseUrl: the tailscale serve HTTPS origin (e.g. https://your-mac.your-tailnet.ts.net) — used for deep links in Telegram push messages; leave empty to skip links. tailscaleUser: optional second factor — if set, mobile API calls must arrive through tailscale serve with a matching Tailscale-User-Login header. PIN: set NEXUS_MOBILE_PIN in the Nexus .env — the mobile + voice APIs FAIL CLOSED while it is unset or the factory '1234'.",
+    "_setup": "On the Mac: run ./install-mini-nexus.command (sets the PIN in .env, starts tailscale serve), then install the PWA from Chrome on the phone at the ts.net URL."
   },
   "gate": {
     "enabled": true,

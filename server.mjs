@@ -68,7 +68,7 @@ try {
 // API keys/tokens out of any plaintext file. Store one with:
 //   security add-generic-password -U -a "$USER" -s ANTHROPIC_API_KEY -w '<value>'
 try {
-  for (const key of ['ANTHROPIC_API_KEY', 'TELEGRAM_BOT_TOKEN', 'NOTIFY_SECRET']) {
+  for (const key of ['ANTHROPIC_API_KEY', 'TELEGRAM_BOT_TOKEN', 'NOTIFY_SECRET', 'NEXUS_MOBILE_PIN']) {
     if (process.env[key]) continue
     try {
       const v = execFileSync('/usr/bin/security',
@@ -2336,9 +2336,13 @@ Do not include raw conversation — only structured output.`
 // time compare, and an optional Tailscale identity second factor.
 const PIN_FAILS = new Map() // ip -> { count, resetAt }
 function mobileAuthCheck(req, res) {
-  const configPin = String(config.voicePin || '')
+  // The PIN is a SECRET, so it lives with the other secrets: NEXUS_MOBILE_PIN
+  // in the single ~/Library/Application Support/Nexus/.env (or the Keychain) —
+  // NOT in one of the many git-tracked goose.config.json files. The legacy
+  // config.voicePin is still honored as a fallback for older installs.
+  const configPin = String(process.env.NEXUS_MOBILE_PIN || config.voicePin || '')
   if (!configPin || configPin === '1234') {
-    res.status(403).json({ error: 'Mobile access disabled: set a non-default voicePin in goose.config.json ("1234" is the factory default and is refused).' })
+    res.status(403).json({ error: 'Mobile access disabled: set NEXUS_MOBILE_PIN in your Nexus .env (the factory "1234" is refused). See install-mini-nexus.command.' })
     return false
   }
   // Behind `tailscale serve` every request connects from loopback, so req.ip

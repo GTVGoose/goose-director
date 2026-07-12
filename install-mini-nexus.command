@@ -30,14 +30,34 @@ fi
 echo "✓ Tailscale is up"
 
 # 2. Non-default PIN? (server refuses mobile requests otherwise)
-PIN=$(python3 -c "import json;print(json.load(open('goose.config.json')).get('voicePin',''))" 2>/dev/null || echo "")
+#    The PIN is a secret → it lives in the Nexus .env as NEXUS_MOBILE_PIN,
+#    alongside TELEGRAM_BOT_TOKEN / NOTIFY_SECRET — one file, not the many
+#    goose.config.json copies. (Legacy config.voicePin still works as a
+#    fallback, but .env is the recommended home.)
+ENV_FILE="$HOME/Library/Application Support/Nexus/.env"
+PIN=""
+[ -f "$ENV_FILE" ] && PIN=$(grep -E '^NEXUS_MOBILE_PIN=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d ' ')
+# fall back to a legacy config.voicePin if that's all that's set
+if { [ -z "$PIN" ] || [ "$PIN" = "1234" ]; } && [ -f goose.config.json ]; then
+  LEGACY=$(python3 -c "import json;print(json.load(open('goose.config.json')).get('voicePin',''))" 2>/dev/null || echo "")
+  [ -n "$LEGACY" ] && [ "$LEGACY" != "1234" ] && PIN="$LEGACY"
+fi
 if [ -z "$PIN" ] || [ "$PIN" = "1234" ]; then
-  echo "✗ voicePin in goose.config.json is unset or still the factory '1234'."
-  echo "  The mobile + voice APIs FAIL CLOSED until you set a real PIN (any 4-8 digits you'll remember)."
-  echo "  Edit goose.config.json → \"voicePin\": \"<your pin>\"  then relaunch Nexus and re-run this."
+  echo "✗ No mobile PIN set (or it's still the factory '1234')."
+  echo "  The mobile + voice APIs FAIL CLOSED until you set one. Pick any 4-8 digits, then:"
+  echo ""
+  echo "    echo 'NEXUS_MOBILE_PIN=<your pin>' >> \"$ENV_FILE\""
+  echo ""
+  echo "  Relaunch Nexus and re-run this. (This is the same .env that holds your bot token.)"
+  read -r -p "  Set one now? Enter a PIN (or press Enter to skip): " NEWPIN
+  if [ -n "$NEWPIN" ] && [ "$NEWPIN" != "1234" ]; then
+    mkdir -p "$(dirname "$ENV_FILE")"
+    echo "NEXUS_MOBILE_PIN=$NEWPIN" >> "$ENV_FILE"
+    echo "  ✓ Written to $ENV_FILE — relaunch Nexus for it to take effect, then re-run this."
+  fi
   exit 1
 fi
-echo "✓ voicePin is set (non-default)"
+echo "✓ Mobile PIN is set (non-default)"
 
 # 3. Serve the Nexus origin over tailnet HTTPS. Proxies to loopback — the
 #    server keeps its 127.0.0.1 bind. The server's own remote-access gateway
