@@ -135,9 +135,11 @@ function PinGate({ onDone }) {
     <div className="mnx-gate">
       <div className="sigil" />
       <h1>Mini Nexus</h1>
-      <p>Pocket window into the Goose system. Enter the mobile PIN set in goose.config.json.</p>
+      <p>Pocket window into the Goose system. Enter your mobile PIN (NEXUS_MOBILE_PIN, set in the Nexus .env).</p>
       <input
-        type="password" inputMode="numeric" autoComplete="off"
+        type="password"
+        autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false}
+        placeholder="PIN (letters or numbers)"
         value={val} onChange={e => setVal(e.target.value)}
         onKeyDown={e => e.key === 'Enter' && submit()}
       />
