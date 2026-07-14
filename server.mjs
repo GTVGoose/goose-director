@@ -11,6 +11,10 @@ import { initTelegram } from './telegram.mjs'
 import { initSignal } from './signal.mjs'
 import { initGate } from './gate.mjs'
 import { initBrain } from './brain.mjs'
+// General-use engine routes (2026-07-14 lineage sync from the nexus-product
+// general-use build): capability manifest, skills, routing policies, artifacts,
+// projects, memory, runs, Agentic System Builder. Self-contained module.
+import { registerGeneralUseRoutes, generalUseStores } from './src/generaluse-routes.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -623,6 +627,10 @@ app.post('/api/config', (req, res) => {
     // Full-UI theme (T23) — string key into THEMES; absent ⇒ 'studio' ⇒ today's
     // look. String-coerced + undefined-guarded so an unrelated save can't drop it.
     if (ui.theme !== undefined) config.ui.theme = String(ui.theme).slice(0, 40)
+    // General-use engine surface flags (2026-07-14 sync). Bool-coerced, undefined-guarded.
+    for (const f of ['library', 'runInspector', 'projects', 'visibility', 'builder']) {
+      if (ui[f] !== undefined) config.ui[f] = !!ui[f]
+    }
   }
 
   if (telegram && typeof telegram === 'object') {
@@ -3442,6 +3450,15 @@ if (fs.existsSync(distDir)) {
 }
 
 // ─── start ──────────────────────────────────────────────────────────────────
+// Register the general-use engine routes just before listen, so they see the
+// fully-initialized `config`. Read-only/additive; personal routes are untouched.
+registerGeneralUseRoutes(app, {
+  getConfig: () => config,
+  sandboxEnabled,
+  sanitizeCapabilities: (typeof sanitizeCapabilities === 'function' ? sanitizeCapabilities : undefined),
+  priceFor: (modelString) => (PRICE[modelString] ? PRICE[modelString][0] : undefined),
+})
+
 const PORT = Number(process.env.NEXUS_PORT) || 3001
 // Bind loopback-only by default so the API/UI is never exposed to the LAN.
 // Override with NEXUS_HOST only if you deliberately need remote access (+ firewall).

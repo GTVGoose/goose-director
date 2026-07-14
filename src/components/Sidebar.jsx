@@ -1,6 +1,6 @@
 import { personalNav } from '../personal-extensions.jsx'
 
-export default function Sidebar({ view, onNav, escalations, reviews, vaultName, chatHome, councilLabel, membrane }) {
+export default function Sidebar({ view, onNav, escalations, reviews, vaultName, chatHome, councilLabel, membrane, library, runInspector, projects, visibility, builder }) {
 
   const nav = (id, icon, label, sub, badge) => (
     <button
@@ -146,12 +146,20 @@ export default function Sidebar({ view, onNav, escalations, reviews, vaultName, 
         {nav('dashboard', 'layout-dashboard', 'Overview', 'System state at a glance')}
         {nav('agents', 'users', 'Agents', 'Who runs, how, and where')}
         {nav('knowledge', 'books', 'Knowledge', 'Search all canon and docs')}
+        {/* General-use engine surfaces (flag-gated, 2026-07-14 sync) */}
+        {library && nav('library', 'files', 'Library', 'Durable artifacts and outputs')}
+        {projects && nav('projects', 'folders', 'Projects', 'Durable context boundaries')}
+
+        {visibility && section('System')}
+        {visibility && nav('visibility', 'eye', 'Visibility', 'Library, runs, projects')}
 
         {section('Monitor')}
+        {runInspector && nav('runs', 'list-details', 'Runs', 'Council run traces')}
         {nav('status', 'bell', 'Status Layer', 'Background agent activity', statusBadge)}
         {nav('canon', 'git-branch', 'Canon State', 'What\'s inside and outside')}
 
         {section('Act')}
+        {builder && nav('builder', 'wand', 'Builder', 'Build your first agentic system')}
         {nav('invoke', 'terminal-2', 'Invoke', 'Send work to any agent or model')}
         {renderPersonalNav()}
 
