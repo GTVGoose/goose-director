@@ -181,5 +181,17 @@
     "visibility": true,
     "builder": true,
     "onboardingComplete": true
+  },
+  "tokenBank": {
+    "providers": {
+      "claude-code": {
+        "capTokens": null,
+        "_hint": "Set to your Claude Max plan's effective weekly token budget to enable bank-aware routing away from Claude when low."
+      },
+      "openai": {
+        "capUSD": null,
+        "_hint": "Set to your monthly OpenAI credit budget. Live rate-window headroom is read from response headers regardless."
+      }
+    }
   }
 }

@@ -17,6 +17,7 @@ import { initBrain } from './brain.mjs'
 import { registerGeneralUseRoutes, generalUseStores } from './src/generaluse-routes.mjs'
 import { roleForPhase } from './src/lib/run-roles.js'
 import { applyRoutingPolicy } from './src/lib/routing-policies.js'
+import { createTokenBank } from './src/lib/token-bank.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -1327,6 +1328,7 @@ app.get('/api/usage', (req, res) => {
     budgetUSD,
     overBudget: budgetUSD > 0 && usage.costUSD >= budgetUSD,
     remainingUSD: budgetUSD > 0 ? Math.max(0, budgetUSD - usage.costUSD) : null,
+    bank: tokenBank.snapshot(),
   })
 })
 
@@ -1748,6 +1750,45 @@ const usage = { calls: 0, inTok: 0, outTok: 0, costUSD: 0, byModel: {}, since: n
 // tokens from the phone; the breaker stays as a runaway backstop, not a leash.
 let budgetUSD = Number(process.env.NEXUS_DAILY_BUDGET_USD || 25)
 
+// ─── Token bank (2026-07-14) ─────────────────────────────────────────────────
+// Per-provider PERIOD ledger so bank-aware routing can lean on whichever
+// subscription/credit pool has headroom left. Providers expose little
+// remaining-quota truth (OpenAI blocks credit-balance for API keys; Claude Max
+// has no quota API), so this is a LOCAL ledger fed by real usage + OpenAI's live
+// rate-limit headers + 429 detection. Caps are operator-set via config.tokenBank;
+// until a cap is set a provider reads "unknown" and routing falls back to its
+// default order. Persisted to userData so it survives restarts within a period.
+const TOKEN_BANK_FILE = path.join(process.env.NEXUS_USER_DATA || __dirname, 'token-bank.json')
+const DEFAULT_BANK_CFG = {
+  'claude-code': { label: 'Claude (Max)', periodHours: 168, note: 'Weekly Max usage window — set capTokens to your plan’s effective token budget.' },
+  'openai':      { label: 'OpenAI',       periodHours: 720, note: 'Monthly credit window — set capUSD to your spend cap. Live rate-window headroom is read from response headers.' },
+}
+const bankCfg = { ...DEFAULT_BANK_CFG }
+for (const [id, c] of Object.entries(config.tokenBank?.providers || {})) bankCfg[id] = { ...(bankCfg[id] || {}), ...c }
+const tokenBank = createTokenBank(bankCfg)
+try { if (fs.existsSync(TOKEN_BANK_FILE)) tokenBank.hydrate(JSON.parse(fs.readFileSync(TOKEN_BANK_FILE, 'utf8'))) } catch { /* fresh bank */ }
+let _bankSaveTimer = null
+function persistTokenBank() {
+  clearTimeout(_bankSaveTimer)
+  _bankSaveTimer = setTimeout(() => {
+    try { fs.writeFileSync(TOKEN_BANK_FILE, JSON.stringify(tokenBank.dump(), null, 2)) } catch { /* best-effort */ }
+  }, 1500)
+}
+// OpenAI returns a live rolling-window headroom on every response — capture it.
+function captureOpenAIHeadroom(res) {
+  const rem = Number(res.headers.get('x-ratelimit-remaining-tokens'))
+  const lim = Number(res.headers.get('x-ratelimit-limit-tokens'))
+  if (!Number.isFinite(rem) || !Number.isFinite(lim) || lim <= 0) return
+  const m = /([\d.]+)s/.exec(res.headers.get('x-ratelimit-reset-tokens') || '')
+  tokenBank.setLive('openai', { remainingTokens: rem, limitTokens: lim, resetSeconds: m ? parseFloat(m[1]) : undefined })
+}
+function retryAfterMs(res) {
+  const ra = Number(res.headers.get('retry-after'))
+  if (Number.isFinite(ra) && ra > 0) return ra * 1000
+  const m = /([\d.]+)s/.exec(res.headers.get('x-ratelimit-reset-tokens') || '')
+  return m ? Math.max(1000, Math.round(parseFloat(m[1]) * 1000)) : 60_000
+}
+
 function recordUsage(mc, inTok = 0, outTok = 0) {
   inTok = inTok || 0; outTok = outTok || 0
   const paid = mc.provider !== 'ollama' && mc.provider !== 'claude-code'
@@ -1756,6 +1797,9 @@ function recordUsage(mc, inTok = 0, outTok = 0) {
   usage.calls++; usage.inTok += inTok; usage.outTok += outTok; usage.costUSD += cost
   const b = (usage.byModel[mc.id] || (usage.byModel[mc.id] = { calls: 0, inTok: 0, outTok: 0, costUSD: 0, provider: mc.provider }))
   b.calls++; b.inTok += inTok; b.outTok += outTok; b.costUSD += cost
+  // Feed the token bank: Claude Max is $0-metered but still burns its usage
+  // window, so count TOKENS for it too (usd just tracks paid spend).
+  if (tokenBank.has(mc.provider)) { tokenBank.consume(mc.provider, { tokens: inTok + outTok, usd: cost }); persistTokenBank() }
   return { cost, overBudget: budgetUSD > 0 && usage.costUSD >= budgetUSD }
 }
 const overBudget = () => budgetUSD > 0 && usage.costUSD >= budgetUSD
@@ -1793,7 +1837,12 @@ async function callModel(modelConfig, systemContent, messages) {
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${compat.key}` },
       body: JSON.stringify({ model: modelConfig.model, messages: msgs }),
     })
-    if (!r.ok) throw new Error(`${compat.label} ${r.status}: ${(await r.text()).slice(0, 200)}`)
+    if (modelConfig.provider === 'openai') captureOpenAIHeadroom(r)
+    if (!r.ok) {
+      // 429 / usage-limit → mark the provider tapped out so routing fails over.
+      if (r.status === 429 && tokenBank.has(modelConfig.provider)) { tokenBank.markExhausted(modelConfig.provider, retryAfterMs(r)); persistTokenBank() }
+      throw new Error(`${compat.label} ${r.status}: ${(await r.text()).slice(0, 200)}`)
+    }
     const data = await r.json()
     recordUsage(modelConfig, data.usage?.prompt_tokens, data.usage?.completion_tokens)
     return (data.choices?.[0]?.message?.content || '').trim()
