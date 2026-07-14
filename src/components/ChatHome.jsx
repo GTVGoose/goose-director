@@ -51,6 +51,17 @@ const UNIT_CSS = `
 // exactly what the council does). Brand voice, no lore. Rotates while the unit works.
 const PHRASES = ['the wind takes it…', 'the V forms…', 'trading the lead…', 'riding the draft…', 'coming in to land…']
 
+// Council protocols (Sandbox fold-in, 2026-07-14): the same /api/sandbox modes the
+// standalone Sandbox view exposed, now selectable from the composer once ≥2 models
+// join. A/B (champion vs challenger) stays in Sandbox — it takes file inputs, not a
+// chat turn.
+const COUNCIL_MODES = [
+  { id: 'roundtable',   label: 'Roundtable',   hint: 'Each member answers; the Brain synthesizes one reply.' },
+  { id: 'debate',       label: 'Debate',       hint: 'Members argue positions across rounds; the Brain judges.' },
+  { id: 'orchestrator', label: 'Orchestrator', hint: 'The Brain decomposes the task and delegates the parts.' },
+  { id: 'director',     label: 'Director',     hint: 'The Brain plans, routes each part, uses tools, composes.' },
+]
+
 // T17: cost-meter formatters. Costs are ESTIMATES from the server's built-in pricing
 // table (see /api/usage + recordUsage); scale the precision so tiny spends stay legible.
 const fmtUSD = (n) => {
@@ -79,6 +90,16 @@ export default function ChatHome({ canonDocs = [], onNav }) {
   const [saveNote, setSaveNote] = useState(null)
   const [councilRun, setCouncilRun] = useState(null)   // live/last /api/sandbox run → CouncilInspector (T11)
   const [inspectorOpen, setInspectorOpen] = useState(false)
+  // Sandbox-modes fold-in (2026-07-14 IA review): once ≥2 models join, the unit
+  // can run any council protocol — not just roundtable. Same /api/sandbox engine.
+  const [councilMode, setCouncilMode] = useState('roundtable')
+  // Invoke fold-in: agent-role system prompt + canon-doc attach, the two things
+  // the standalone Invoke view had that Chat didn't. Same /api/relay contract.
+  const [agentRoles, setAgentRoles] = useState([])
+  const [roleId, setRoleId] = useState('')
+  const [attachedDocs, setAttachedDocs] = useState([])   // [{title, path}]
+  const [showAttach, setShowAttach] = useState(false)
+  const [docSearch, setDocSearch] = useState('')
   // T15/T16 unit strip: which part of the unit is working right now (drives the
   // pulse/neuron animations), the local-model "representation" node, and the
   // rotating status phrase. All presentation — the run protocol is unchanged.
@@ -103,6 +124,7 @@ export default function ChatHome({ canonDocs = [], onNav }) {
       const ms = d.models || []
       setModels(ms)
       setBrainId(d.brainId || null)
+      setAgentRoles(d.agentRoles || [])
       if (initial) {
         const first = ms.find(m => m.available && m.id === d.brainId) || ms.find(m => m.available)
         if (first) setSelectedModel(first.id)
@@ -234,7 +256,12 @@ export default function ChatHome({ canonDocs = [], onNav }) {
       const res = await fetch('/api/relay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelId: selectedModel, messages: newConv, sourceDocs: [] }),
+        body: JSON.stringify({
+          modelId: selectedModel, messages: newConv,
+          // Invoke fold-in: role system prompt + attached canon docs ride along.
+          systemPrompt: agentRoles.find(r => r.id === roleId)?.systemPrompt,
+          sourceDocs: attachedDocs,
+        }),
       })
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
@@ -288,17 +315,23 @@ export default function ChatHome({ canonDocs = [], onNav }) {
     // Parallel richer snapshot for the docked CouncilInspector (T11). Same `turns`
     // array; the inspector reads phase/round/subtask, so we enrich the pushes below.
     const aggName = models.find(m => m.id === selectedModel)?.name || selectedModel
-    const insp = { running: true, mode: 'roundtable', members, aggregator: aggName, status: 'Convening the council…', active: null, final: null, error: null }
+    const insp = { running: true, mode: councilMode, members, aggregator: aggName, status: 'Convening the council…', active: null, final: null, error: null }
     const syncInsp = (patch) => { Object.assign(insp, patch); setCouncilRun({ ...insp, turns: [...turns] }) }
     syncInsp({})
     try {
+      // Sandbox fold-in: the composer's protocol selector picks the mode. Director
+      // mode routes through the Brain as director (with tools, per the Sandbox
+      // doctrine); the other modes aggregate through the Brain as before.
+      const isDirector = councilMode === 'director'
       const res = await fetch('/api/sandbox', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          task, participantIds: unit, mode: 'roundtable',
-          aggregatorId: selectedModel, rounds: 2, tools: false,
-          sourceDocs: [], roleAssignments: {},
+          task, participantIds: unit, mode: councilMode,
+          ...(isDirector
+            ? { directorId: selectedModel, tools: true }
+            : { aggregatorId: selectedModel, rounds: 2, tools: false }),
+          sourceDocs: attachedDocs, roleAssignments: {},
         }),
       })
       const reader = res.body.getReader()
@@ -722,6 +755,23 @@ export default function ChatHome({ canonDocs = [], onNav }) {
             {unitStatusLine}
           </div>
 
+          {/* Council protocol selector (Sandbox fold-in) — only once ≥2 models are
+              in the unit; a solo chat stays quiet. */}
+          {councilActive && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--color-text-3)', textTransform: 'uppercase', marginRight: 3 }}>Protocol</span>
+              {COUNCIL_MODES.map(m => (
+                <button key={m.id} onClick={() => setCouncilMode(m.id)} title={m.hint} style={{
+                  fontSize: 11, padding: '3px 10px', borderRadius: 'var(--radius-pill)', cursor: 'pointer',
+                  background: councilMode === m.id ? 'var(--color-recursive-bg)' : 'transparent',
+                  border: `0.5px solid ${councilMode === m.id ? 'var(--color-recursive-border)' : 'var(--color-border-mid)'}`,
+                  color: councilMode === m.id ? 'var(--color-recursive-text)' : 'var(--color-text-3)',
+                  fontWeight: councilMode === m.id ? 600 : 400,
+                }}>{m.label}</button>
+              ))}
+            </div>
+          )}
+
           {/* Composer: full-width box, Send UNDERNEATH it (right-aligned) so the
               textarea, the unit strip above, and the controls all share one right
               edge — no control spilling past the box (design-notes composer). */}
@@ -734,8 +784,55 @@ export default function ChatHome({ canonDocs = [], onNav }) {
             style={{ width: '100%', boxSizing: 'border-box', resize: 'none', fontSize: 13, lineHeight: 1.5, padding: '8px 10px', border: '0.5px solid var(--color-border-strong)', borderRadius: 8, background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'inherit' }}
           />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+            {/* Invoke fold-in: role + canon-doc attach, in a compact popover. */}
+            <div style={{ position: 'relative', flexShrink: 0 }}>
+              <button
+                onClick={() => setShowAttach(s => !s)}
+                title="Attach canon docs / set an agent role for this chat"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4, padding: '7px 10px', cursor: 'pointer',
+                  background: (attachedDocs.length || roleId) ? 'var(--color-recursive-bg)' : 'none',
+                  border: `0.5px solid ${(attachedDocs.length || roleId) ? 'var(--color-recursive-border)' : 'var(--color-border-strong)'}`,
+                  borderRadius: 8, fontSize: 12, color: (attachedDocs.length || roleId) ? 'var(--color-recursive-text)' : 'var(--color-text-3)',
+                }}
+              >
+                <i className="ti ti-paperclip" style={{ fontSize: 14 }} />
+                {(attachedDocs.length > 0 || roleId) && (
+                  <span style={{ fontSize: 10, fontWeight: 600 }}>
+                    {[roleId && (agentRoles.find(r => r.id === roleId)?.name || 'role'), attachedDocs.length && `${attachedDocs.length} doc${attachedDocs.length > 1 ? 's' : ''}`].filter(Boolean).join(' · ')}
+                  </span>
+                )}
+              </button>
+              {showAttach && (
+                <div style={{ position: 'absolute', bottom: '112%', left: 0, width: 300, zIndex: 110, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ padding: '8px 10px', borderBottom: '0.5px solid var(--color-border)' }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--color-text-3)', textTransform: 'uppercase', marginBottom: 5 }}>Agent role</div>
+                    <select value={roleId} onChange={e => setRoleId(e.target.value)} style={{ width: '100%', fontSize: 12 }}>
+                      <option value="">No role — plain chat</option>
+                      {agentRoles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ padding: '8px 10px' }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--color-text-3)', textTransform: 'uppercase', marginBottom: 5 }}>Attach canon docs</div>
+                    <input value={docSearch} onChange={e => setDocSearch(e.target.value)} placeholder="Search docs…" style={{ width: '100%', fontSize: 12, marginBottom: 6 }} />
+                    <div className="scroll-y" style={{ maxHeight: 170, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {canonDocs.filter(d => !docSearch || d.title.toLowerCase().includes(docSearch.toLowerCase())).slice(0, 40).map(d => {
+                        const on = attachedDocs.some(x => x.path === d.path)
+                        return (
+                          <button key={d.path} onClick={() => setAttachedDocs(a => on ? a.filter(x => x.path !== d.path) : [...a, { title: d.title, path: d.path }])} style={{ display: 'flex', alignItems: 'center', gap: 6, textAlign: 'left', background: on ? 'var(--color-recursive-bg)' : 'none', border: 'none', borderRadius: 5, padding: '4px 7px', cursor: 'pointer', fontSize: 12, color: on ? 'var(--color-recursive-text)' : 'var(--color-text-2)' }}>
+                            <i className={`ti ${on ? 'ti-check' : 'ti-file-text'}`} style={{ fontSize: 12, flexShrink: 0 }} />
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.title}</span>
+                          </button>
+                        )
+                      })}
+                      {canonDocs.length === 0 && <div style={{ fontSize: 11, color: 'var(--color-text-3)', padding: 4 }}>No canon docs found.</div>}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
             <div style={{ flex: 1, minWidth: 0, fontSize: 11, color: 'var(--color-text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              Enter to send · Shift+Enter for new line{councilActive ? ' · Council answers this message, then synthesizes' : ''}
+              Enter to send · Shift+Enter for new line{councilActive ? ` · ${COUNCIL_MODES.find(m => m.id === councilMode)?.hint || ''}` : ''}
             </div>
             {conversation.length > 0 && !streaming && (
               <button onClick={saveThread} className="btn-ghost" style={{ padding: '7px 12px', background: 'none', border: '0.5px solid var(--color-border-strong)', borderRadius: 8, fontSize: 12, color: saveNote ? 'var(--color-available)' : 'var(--color-text-3)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>

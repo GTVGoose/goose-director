@@ -153,12 +153,14 @@ export default function Sidebar({ view, onNav, escalations, reviews, vaultName, 
       }}>
         {/* WORK — task-first surfaces (audit IA: Chats · Projects · Library · …) */}
         {section('Work')}
-        {nav('chat', 'messages', 'Chat', 'Talk to the Brain')}
+        {nav('chat', 'messages', 'Chat', 'Solo or council — one composer')}
         {projects && nav('projects', 'folders', 'Projects', 'Durable context boundaries')}
         {library && nav('library', 'files', 'Library', 'Durable artifacts and outputs')}
-        {nav('invoke', 'terminal-2', 'Invoke', 'Send work to any agent or model')}
-        {/* Council (Sandbox) stays top-level per David 2026-07-14. */}
-        {pnav('sandbox', councilLabel ? 'Council' : undefined, councilLabel ? 'Many models, one council' : undefined)}
+        {/* Invoke + Sandbox folded INTO Chat (David's IA review, 2026-07-14 pm):
+            role + doc-attach live in the composer popover; the council protocols
+            (roundtable/debate/orchestrator/director) in the protocol selector.
+            Views stay renderable (AgentMap still deep-links to invoke; stale
+            view state must not white-screen) — they just leave the nav. */}
 
         {/* Personal top-level surfaces: Domains + Signal keep their own entries. */}
         {(hasPnav('domains') || hasPnav('signal')) && section('Domains')}

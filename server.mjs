@@ -1946,8 +1946,18 @@ async function callModel(modelConfig, systemContent, messages) {
         cwd: os.homedir(), env: codexEnv(),
       })
     } catch (e) {
-      const detail = String(e.stderr || e.stdout || e.message || '').replace(/\s+/g, ' ').slice(0, 400)
-      throw new Error(`Codex CLI failed (exit ${e.status ?? '?'}): ${detail}`)
+      const raw = String(e.stderr || e.stdout || e.message || '')
+      // codex dumps its whole transcript on stderr; surface the actual ERROR
+      // line (e.g. "Your workspace is out of credits") instead of banner noise.
+      const m = raw.match(/ERROR:\s*(.+)/)
+      const detail = (m ? m[1] : raw.replace(/\s+/g, ' ')).slice(0, 300)
+      // Out of credits / usage window drained → the subscription pool is dry.
+      // Mark it exhausted (1h) so bank-aware routing stops preferring the codex
+      // lane and falls back to the API variants until it refills.
+      if (/out of credits|rate.?limit|usage limit|quota/i.test(raw) && tokenBank.has('codex')) {
+        tokenBank.markExhausted('codex', 3600_000); persistTokenBank()
+      }
+      throw new Error(`ChatGPT subscription (Codex): ${detail}`)
     }
     recordUsage(modelConfig, 0, 0)   // subscription-metered; codex exec stdout carries no token counts
     return String(out || '').trim()
@@ -3383,6 +3393,9 @@ const brain = initBrain({
   subscriptionModelFor: async (family) => {
     if (family !== 'openai') return null
     if (config.providers?.openai?.prefer === 'api') return null
+    // Subscription pool drained (out of credits / usage window) → route the
+    // API variants instead until the bank's exhaustion window passes.
+    if (tokenBank.has('codex') && tokenBank.isLow('codex', 0)) return null
     const codex = (config.models || []).find(m => m.provider === 'codex')
     if (!codex) return null
     try { const v = await validateProvider('codex'); return v.ok ? codex.id : null } catch { return null }
