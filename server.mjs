@@ -1932,7 +1932,11 @@ async function callModel(modelConfig, systemContent, messages) {
     // is the one link not live-tested here (codex not yet installed); flags are the
     // documented minimal form and may be tuned after `codex login`.
     const prompt = [systemContent, ...messages.map(m => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))].filter(Boolean).join('\n\n')
-    const args = ['exec']
+    // --skip-git-repo-check: run outside a trusted git dir. --sandbox read-only:
+    // the brain routes only REASONING here (tool/file work goes to the Claude
+    // Director), so Codex must never touch the filesystem. Verified 2026-07-14
+    // against codex-cli 0.144.4: final message → stdout, exit 0.
+    const args = ['exec', '--skip-git-repo-check', '--sandbox', 'read-only']
     if (modelConfig.model && modelConfig.model !== 'default') args.push('--model', modelConfig.model)
     args.push(prompt)
     let out
