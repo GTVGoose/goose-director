@@ -633,9 +633,12 @@ export default function ChatHome({ canonDocs = [], onNav, project = null, onProj
                 working (pulse on the node, neuron traveling down the live path,
                 rotating status phrase) without opening the inspector. ── */}
           <style>{UNIT_CSS}</style>
-          {/* overflowX guard: at crushed widths the strip scrolls inside itself
-              instead of blowing the center column out of the flex row. */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 2, position: 'relative', minHeight: 66, width: '100%', minWidth: 0, overflowX: 'auto', overflowY: 'visible' }}>
+          {/* NO overflow guard here: overflow-x:auto turns this into a clip
+              container, and the brain/local/cloud PICKER POPOVERS (absolutely
+              positioned above the strip) get clipped invisible — clicks then
+              look dead (regression caught by David 2026-07-14). The nodes
+              themselves shrink (flexShrink + minWidth) to absorb narrow widths. */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 2, position: 'relative', minHeight: 66, width: '100%', minWidth: 0 }}>
 
             {/* Brain node */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, width: 104, minWidth: 44, flexShrink: 1 }}>
