@@ -866,6 +866,87 @@ const KEY_FIELDS = [
   { id: 'qwen',      field: 'qwenKey',      label: 'Qwen (Alibaba DashScope)', placeholder: 'sk-...' },
 ]
 
+// Per-provider auth lane: subscription (CLI login, $0) vs API key (paid).
+// v1 covers OpenAI (ChatGPT subscription via Codex CLI vs the API variants),
+// mirroring how Claude Max already runs $0 through the Claude Code CLI.
+function ProviderAccessCard() {
+  const [prefer, setPrefer] = useState('subscription')
+  const [codexAvailable, setCodexAvailable] = useState(null) // null = loading
+  const [loaded, setLoaded] = useState(false)
+  const [msg, setMsg] = useState(null)
+
+  const refresh = () => {
+    fetch('/api/config').then(r => r.json()).then(cfg => {
+      setPrefer(cfg.providers?.openai?.prefer === 'api' ? 'api' : 'subscription')
+      setLoaded(true)
+    }).catch(() => {})
+    fetch('/api/models').then(r => r.json()).then(d => {
+      const codex = (d.models || []).find(m => m.provider === 'codex')
+      setCodexAvailable(codex ? !!codex.available : false)
+    }).catch(() => setCodexAvailable(false))
+  }
+  useEffect(refresh, [])
+
+  const save = async (next) => {
+    setPrefer(next); setMsg(null)
+    try {
+      const res = await fetch('/api/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providers: { openai: { prefer: next } } }),
+      })
+      const data = await res.json()
+      setMsg(data.ok ? { ok: true, text: 'Saved.' } : { ok: false, text: data.error || 'Failed' })
+      setTimeout(refresh, 300)
+    } catch (e) { setMsg({ ok: false, text: e.message }) }
+  }
+
+  // Which lane is actually active given the preference + CLI availability.
+  const active = prefer === 'api' ? 'api'
+    : codexAvailable ? 'subscription'
+    : 'api-fallback'
+
+  const opt = (val, title, sub) => (
+    <button onClick={() => save(val)} disabled={!loaded} style={{
+      flex: 1, textAlign: 'left', cursor: 'pointer', padding: '12px 14px',
+      background: prefer === val ? 'var(--color-accent-bg)' : 'var(--color-surface-2)',
+      border: `1px solid ${prefer === val ? 'var(--color-accent)' : 'var(--color-border)'}`,
+      borderRadius: 8, color: 'var(--color-text)',
+    }}>
+      <div style={{ fontSize: 13, fontWeight: 600 }}>{title}</div>
+      <div style={{ fontSize: 11, color: 'var(--color-text-3)', marginTop: 3, lineHeight: 1.4 }}>{sub}</div>
+    </button>
+  )
+
+  return (
+    <div style={cardStyle}>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>OpenAI access</div>
+      <div style={{ fontSize: 12, color: 'var(--color-text-3)', marginBottom: 16, lineHeight: 1.5 }}>
+        Run GPT on your <strong style={{ color: 'var(--color-text-2)' }}>ChatGPT subscription</strong> ($0, via the Codex CLI) or on <strong style={{ color: 'var(--color-text-2)' }}>API credits</strong> (pay-per-token). Subscription is the OpenAI analog of Claude Max — preferred when available, with automatic fallback to the API.
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+        {opt('subscription', 'Subscription (recommended)', 'ChatGPT plan via Codex CLI · $0 API credits')}
+        {opt('api', 'API key', 'GPT-5.6 Sol / Terra / Luna · pay-per-token')}
+      </div>
+
+      {/* Live status */}
+      <div style={{ fontSize: 12, padding: '10px 12px', borderRadius: 8, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border)', lineHeight: 1.5 }}>
+        {active === 'subscription' && <span style={{ color: 'var(--color-available)' }}>● Active: subscription — Codex CLI detected, GPT runs $0 on your ChatGPT plan.</span>}
+        {active === 'api' && <span style={{ color: 'var(--color-text-2)' }}>● Active: API — GPT-5.6 variants billed to your OpenAI API credits.</span>}
+        {active === 'api-fallback' && (
+          <span style={{ color: 'var(--color-review-text, #d9a441)' }}>
+            ● Subscription selected, but the Codex CLI isn’t installed yet — currently falling back to the API. To activate $0 subscription billing:
+            <div style={{ marginTop: 6, fontFamily: 'var(--font-mono, monospace)', fontSize: 11, color: 'var(--color-text-2)' }}>
+              npm install -g @openai/codex<br />codex login &nbsp;<span style={{ color: 'var(--color-text-3)' }}># sign in with your ChatGPT account</span>
+            </div>
+          </span>
+        )}
+      </div>
+      {msg && <div style={{ marginTop: 10, fontSize: 12, color: msg.ok ? 'var(--color-available)' : 'var(--color-unavailable)' }}>{msg.text}</div>}
+    </div>
+  )
+}
+
 export default function Settings() {
   const [keys, setKeys] = useState({})
   const anyKey = Object.values(keys).some(Boolean)
@@ -1018,6 +1099,7 @@ export default function Settings() {
 
       <TelegramCard />
       <SandboxCard />
+      <ProviderAccessCard />
       <PricingCard />
       <CapabilitiesCard />
       <ReplayOnboardingCard />

@@ -79,7 +79,7 @@ const NEEDS_TOOLS_RE = /\b(open|run|execute|find|search|write|read|fetch|go to|c
 
 export function initBrain(deps) {
   const { config, REPO, readFileSafe, runAgentLoop, ollamaUrl, userDataDir,
-          callModel, modelById, tokenBank } = deps
+          callModel, modelById, tokenBank, subscriptionModelFor } = deps
   // Bank-aware GPT-5.6 escalation is available only when the host injected a
   // cloud caller + model lookup. Absent them, the brain behaves exactly as
   // before (local → Claude Director), so this is fully additive.
@@ -306,12 +306,20 @@ export function initBrain(deps) {
   }
 
   async function escalateReasoning(userText, prior, channel, contextDocs, deliverFiles, emit) {
+    // Prefer the $0 subscription lane (Codex) for OpenAI when it's available and
+    // not overridden to API — resolved host-side (knows the CLI + cached probe).
+    let subscriptionModel = null
+    if (typeof subscriptionModelFor === 'function') {
+      const subId = await subscriptionModelFor('openai')
+      if (subId) subscriptionModel = modelById(subId)
+    }
     const decision = chooseReasoningModel({
       complexity: classifyComplexity(userText),
-      models: gptVariants(),
+      models: gptVariants().map(m => ({ ...m, available: true })),
       bank: tokenBank || null,
       claudeAvailable: claudeAvailable(),
       prefer: escalationPrefer(),
+      subscriptionModel,
     })
     if (decision.via === 'variant') {
       emit?.({ type: 'status', text: `Token-bank route: ${decision.reason}` })

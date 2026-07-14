@@ -57,16 +57,20 @@ export function parseOverride(text) {
  * @param claudeAvailable is the Claude CLI usable
  * @param prefer 'claude' (default) | 'gpt' — healthy-state default
  * @param lowFloor fraction at/below which a provider counts as "low" (default 0.08)
- * @returns { via:'variant', modelId, provider:'openai', complexity, reason }
+ * @param subscriptionModel when set (codex is available + subscription preferred),
+ *        the OpenAI lane uses this $0 model instead of the paid API variants.
+ * @returns { via:'variant', modelId, provider, complexity, reason }
  *        | { via:'claude', complexity, reason }
  */
-export function chooseReasoningModel({ complexity, models = [], bank = null, claudeAvailable = true, prefer = 'claude', lowFloor = 0.08 }) {
+export function chooseReasoningModel({ complexity, models = [], bank = null, claudeAvailable = true, prefer = 'claude', lowFloor = 0.08, subscriptionModel = null }) {
   const gpt = models.filter(m => m.provider === 'openai' && m.available)
   const wantTier = TIER_FOR[complexity] || 'large'
-  const pickVariant = () => gpt.find(m => m.tier === wantTier) || gpt.find(m => m.tier === 'large') || gpt[0] || null
-  const toVariant = (reason) => { const v = pickVariant(); return v ? { via: 'variant', modelId: v.id, provider: 'openai', complexity, reason } : { via: 'claude', complexity, reason: 'no GPT variant → Claude' } }
+  // The $0 subscription lane (Codex) is preferred over the paid API variants when
+  // available; otherwise fall back to the complexity-matched API tier.
+  const pickVariant = () => subscriptionModel || gpt.find(m => m.tier === wantTier) || gpt.find(m => m.tier === 'large') || gpt[0] || null
+  const toVariant = (reason) => { const v = pickVariant(); return v ? { via: 'variant', modelId: v.id, provider: v.provider || 'openai', complexity, reason: (subscriptionModel ? 'subscription lane · ' : '') + reason } : { via: 'claude', complexity, reason: 'no GPT variant → Claude' } }
 
-  if (!gpt.length) return { via: 'claude', complexity, reason: 'no GPT variant available' }
+  if (!gpt.length && !subscriptionModel) return { via: 'claude', complexity, reason: 'no GPT variant available' }
   if (!claudeAvailable) return toVariant('Claude CLI unavailable → GPT')
 
   const claudeFrac = bank?.remainingFraction?.('claude-code')

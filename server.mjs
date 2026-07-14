@@ -602,6 +602,8 @@ app.get('/api/config', (req, res) => {
       enabled: sandboxEnabled(),
       model: sandboxModel(),
     },
+    // Per-provider auth preference (subscription CLI vs API key).
+    providers: config.providers || {},
   })
 })
 
@@ -646,6 +648,17 @@ app.post('/api/config', (req, res) => {
     config.sandbox = {
       enabled: sandbox.enabled !== undefined ? !!sandbox.enabled : sandboxEnabled(),
       model: sandbox.model !== undefined ? String(sandbox.model).trim() : sandboxModel(),
+    }
+  }
+
+  // Per-provider auth preference: subscription (CLI login, $0) vs api (paid key).
+  const { providers } = req.body
+  if (providers && typeof providers === 'object') {
+    config.providers = { ...(config.providers || {}) }
+    for (const [fam, cfg] of Object.entries(providers)) {
+      if (!cfg || typeof cfg !== 'object') continue
+      config.providers[fam] = { ...(config.providers[fam] || {}) }
+      if (cfg.prefer !== undefined) config.providers[fam].prefer = cfg.prefer === 'api' ? 'api' : 'subscription'
     }
   }
 
@@ -1167,6 +1180,17 @@ function cliEnv() {
   return env
 }
 
+// Like cliEnv, but for the OpenAI Codex CLI: strip the API keys so `codex` uses
+// the ChatGPT-subscription login (Plus/Pro) rather than API credits. Codex
+// prefers CODEX_API_KEY / OPENAI_API_KEY when present, which would bill
+// pay-per-token — the exact thing we're avoiding for the $0 subscription path.
+function codexEnv() {
+  const env = cliEnv()
+  delete env.OPENAI_API_KEY
+  delete env.CODEX_API_KEY
+  return env
+}
+
 // ─── OpenAI-compatible cloud providers ──────────────────────────────────────
 // Most non-Anthropic clouds speak the OpenAI chat/completions protocol, so one
 // engine serves them all. Each entry: default endpoint + the .env key that
@@ -1254,6 +1278,16 @@ async function validateProvider(provider) {
         result.ok = true
       } catch {
         result.error = 'Claude Code CLI not found — install it and log in with your Claude Max account'
+      }
+    } else if (provider === 'codex') {
+      // Available iff the OpenAI Codex CLI is installed. It runs on the ChatGPT
+      // subscription login ($0 API), the OpenAI analog of claude-code/Max. We can
+      // only cheaply check the binary; the login is exercised on the first call.
+      try {
+        execSync('codex --version', { timeout: 6000, encoding: 'utf8', env: codexEnv() })
+        result.ok = true
+      } catch {
+        result.error = 'Codex CLI not found — install it (npm i -g @openai/codex) and run `codex login` with your ChatGPT account'
       }
     } else {
       result.error = 'Unknown provider'
@@ -1760,8 +1794,9 @@ let budgetUSD = Number(process.env.NEXUS_DAILY_BUDGET_USD || 25)
 // default order. Persisted to userData so it survives restarts within a period.
 const TOKEN_BANK_FILE = path.join(process.env.NEXUS_USER_DATA || __dirname, 'token-bank.json')
 const DEFAULT_BANK_CFG = {
-  'claude-code': { label: 'Claude (Max)', periodHours: 168, note: 'Weekly Max usage window — set capTokens to your plan’s effective token budget.' },
-  'openai':      { label: 'OpenAI',       periodHours: 720, note: 'Monthly credit window — set capUSD to your spend cap. Live rate-window headroom is read from response headers.' },
+  'claude-code': { label: 'Claude (Max)',          periodHours: 168, note: 'Weekly Max usage window — set capTokens to your plan’s effective token budget.' },
+  'openai':      { label: 'OpenAI (API)',          periodHours: 720, note: 'Monthly credit window — set capUSD to your spend cap. Live rate-window headroom is read from response headers.' },
+  'codex':       { label: 'ChatGPT (subscription)', periodHours: 5,   note: '5-hour ChatGPT plan window (Codex). Task-based limits aren’t exposed by the CLI, so remaining shows as unknown unless you set an estimated capTokens.' },
 }
 const bankCfg = { ...DEFAULT_BANK_CFG }
 for (const [id, c] of Object.entries(config.tokenBank?.providers || {})) bankCfg[id] = { ...(bankCfg[id] || {}), ...c }
@@ -1791,7 +1826,7 @@ function retryAfterMs(res) {
 
 function recordUsage(mc, inTok = 0, outTok = 0) {
   inTok = inTok || 0; outTok = outTok || 0
-  const paid = mc.provider !== 'ollama' && mc.provider !== 'claude-code'
+  const paid = mc.provider !== 'ollama' && mc.provider !== 'claude-code' && mc.provider !== 'codex'
   const [pin, pout] = (paid && PRICE[mc.model]) || [0, 0]
   const cost = (inTok * pin + outTok * pout) / 1e6
   usage.calls++; usage.inTok += inTok; usage.outTok += outTok; usage.costUSD += cost
@@ -1888,6 +1923,30 @@ async function callModel(modelConfig, systemContent, messages) {
     const parsed = safeJson(out)
     recordUsage(modelConfig, parsed?.usage?.input_tokens, parsed?.usage?.output_tokens)
     return String(parsed?.result ?? out).trim()
+  }
+  if (provider === 'codex') {
+    // GPT via the OpenAI Codex CLI — billed to the ChatGPT SUBSCRIPTION (Plus/Pro),
+    // NOT API credits. `codex exec` runs non-interactively: progress → stderr, the
+    // final message → stdout. codexEnv() strips OPENAI_API_KEY/CODEX_API_KEY so it
+    // uses the ChatGPT login. $0-metered (provider not "paid"). NOTE: this exec path
+    // is the one link not live-tested here (codex not yet installed); flags are the
+    // documented minimal form and may be tuned after `codex login`.
+    const prompt = [systemContent, ...messages.map(m => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))].filter(Boolean).join('\n\n')
+    const args = ['exec']
+    if (modelConfig.model && modelConfig.model !== 'default') args.push('--model', modelConfig.model)
+    args.push(prompt)
+    let out
+    try {
+      out = execFileSync('codex', args, {
+        encoding: 'utf8', timeout: 180000, maxBuffer: 20 * 1024 * 1024,
+        cwd: os.homedir(), env: codexEnv(),
+      })
+    } catch (e) {
+      const detail = String(e.stderr || e.stdout || e.message || '').replace(/\s+/g, ' ').slice(0, 400)
+      throw new Error(`Codex CLI failed (exit ${e.status ?? '?'}): ${detail}`)
+    }
+    recordUsage(modelConfig, 0, 0)   // subscription-metered; codex exec stdout carries no token counts
+    return String(out || '').trim()
   }
   throw new Error(`Unknown provider: ${provider}`)
 }
@@ -3315,6 +3374,15 @@ const brain = initBrain({
   callModel,
   modelById: (id) => (config.models || []).find(m => m.id === id) || null,
   tokenBank,
+  // Resolve the $0 subscription model for a provider family when its CLI is
+  // available and the user hasn't forced API mode. Cached probe (validateProvider).
+  subscriptionModelFor: async (family) => {
+    if (family !== 'openai') return null
+    if (config.providers?.openai?.prefer === 'api') return null
+    const codex = (config.models || []).find(m => m.provider === 'codex')
+    if (!codex) return null
+    try { const v = await validateProvider('codex'); return v.ok ? codex.id : null } catch { return null }
+  },
 })
 
 // ─── Mini Nexus mobile API (plan 2026-07-11, Phase A) ────────────────────────

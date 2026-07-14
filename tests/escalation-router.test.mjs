@@ -62,6 +62,18 @@ test('no GPT available → Claude; no Claude → GPT', () => {
   assert.equal(r.modelId, 'gpt-5.6-terra')
 })
 
+test('subscription lane ($0 codex) preempts the paid API variants when set', () => {
+  const sub = { id: 'chatgpt-sub', provider: 'codex', tier: 'large' }
+  // healthy + gpt-first would normally pick an API variant; subscription wins.
+  const r = chooseReasoningModel({ complexity: 'hard', models: MODELS, prefer: 'gpt', subscriptionModel: sub })
+  assert.equal(r.via, 'variant')
+  assert.equal(r.modelId, 'chatgpt-sub')
+  assert.equal(r.provider, 'codex')
+  // even with no API variants available, the subscription lane still routes GPT.
+  const r2 = chooseReasoningModel({ complexity: 'medium', models: [], prefer: 'gpt', subscriptionModel: sub })
+  assert.equal(r2.modelId, 'chatgpt-sub')
+})
+
 test('both banks low → the one with more headroom wins', () => {
   const bank = createTokenBank({ 'claude-code': { periodHours: 168, capTokens: 1_000_000 }, 'openai': { periodHours: 720, capUSD: 100 } })
   bank.consume('claude-code', { tokens: 999_000 }) // 0.001
