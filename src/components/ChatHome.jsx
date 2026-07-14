@@ -714,33 +714,34 @@ export default function ChatHome({ canonDocs = [], onNav }) {
             {unitStatusLine}
           </div>
 
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-            <textarea
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-              placeholder={councilActive ? `Ask the Council (${1 + council.length} models)…` : `Message ${currentModel?.name || 'the Brain'}…`}
-              rows={3}
-              style={{ flex: 1, resize: 'none', fontSize: 13, lineHeight: 1.5, padding: '8px 10px', border: '0.5px solid var(--color-border-strong)', borderRadius: 8, background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'inherit' }}
-            />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <button
-                onClick={send}
-                disabled={!input.trim() || !selectedModel || streaming}
-                style={{ padding: '8px 14px', background: streaming ? 'var(--color-surface-2)' : 'var(--color-active-bg)', color: streaming ? 'var(--color-text-3)' : 'var(--color-active-text)', border: streaming ? '0.5px solid var(--color-border)' : '0.5px solid var(--color-active-border)', borderRadius: 8, fontSize: 13, cursor: (!input.trim() || !selectedModel || streaming) ? 'default' : 'pointer', opacity: (!input.trim() || !selectedModel) && !streaming ? 0.55 : 1, display: 'flex', alignItems: 'center', gap: 5 }}
-              >
-                <i className={`ti ${streaming ? 'ti-loader-2 spin' : 'ti-send'}`} style={{ fontSize: 15 }} />
-                {streaming ? '…' : 'Send'}
-              </button>
-              {conversation.length > 0 && !streaming && (
-                <button onClick={saveThread} className="btn-ghost" style={{ padding: '5px 10px', background: 'none', border: '0.5px solid var(--color-border-strong)', borderRadius: 8, fontSize: 11, color: saveNote ? 'var(--color-available)' : 'var(--color-text-3)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
-                  <i className={`ti ${saveNote ? 'ti-check' : 'ti-bookmark'}`} style={{ fontSize: 13 }} /> {saveNote || 'Save'}
-                </button>
-              )}
+          {/* Composer: full-width box, Send UNDERNEATH it (right-aligned) so the
+              textarea, the unit strip above, and the controls all share one right
+              edge — no control spilling past the box (design-notes composer). */}
+          <textarea
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
+            placeholder={councilActive ? `Ask the Council (${1 + council.length} models)…` : `Message ${currentModel?.name || 'the Brain'}…`}
+            rows={3}
+            style={{ width: '100%', boxSizing: 'border-box', resize: 'none', fontSize: 13, lineHeight: 1.5, padding: '8px 10px', border: '0.5px solid var(--color-border-strong)', borderRadius: 8, background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'inherit' }}
+          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 11, color: 'var(--color-text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              Enter to send · Shift+Enter for new line{councilActive ? ' · Council answers this message, then synthesizes' : ''}
             </div>
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--color-text-3)', marginTop: 4 }}>
-            Enter to send · Shift+Enter for new line{councilActive ? ' · Council answers this message (not prior turns), then synthesizes' : ''}
+            {conversation.length > 0 && !streaming && (
+              <button onClick={saveThread} className="btn-ghost" style={{ padding: '7px 12px', background: 'none', border: '0.5px solid var(--color-border-strong)', borderRadius: 8, fontSize: 12, color: saveNote ? 'var(--color-available)' : 'var(--color-text-3)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <i className={`ti ${saveNote ? 'ti-check' : 'ti-bookmark'}`} style={{ fontSize: 13 }} /> {saveNote || 'Save'}
+              </button>
+            )}
+            <button
+              onClick={send}
+              disabled={!input.trim() || !selectedModel || streaming}
+              style={{ padding: '8px 20px', background: streaming ? 'var(--color-surface-2)' : 'var(--color-active-bg)', color: streaming ? 'var(--color-text-3)' : 'var(--color-active-text)', border: streaming ? '0.5px solid var(--color-border)' : '0.5px solid var(--color-active-border)', borderRadius: 8, fontSize: 13, cursor: (!input.trim() || !selectedModel || streaming) ? 'default' : 'pointer', opacity: (!input.trim() || !selectedModel) && !streaming ? 0.55 : 1, display: 'flex', alignItems: 'center', gap: 5 }}
+            >
+              <i className={`ti ${streaming ? 'ti-loader-2 spin' : 'ti-send'}`} style={{ fontSize: 15 }} />
+              {streaming ? '…' : 'Send'}
+            </button>
           </div>
         </div>
       </div>

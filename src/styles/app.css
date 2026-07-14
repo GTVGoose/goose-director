@@ -119,6 +119,11 @@ button {
   cursor: pointer;
   font-family: inherit;
   letter-spacing: inherit;
+  /* Inherit the theme text color: card-style buttons (Library/Projects list
+     items) set no explicit color, and the UA default (near-black) is unreadable
+     on the dark surfaces of BOTH themes. Buttons that want another color still
+     set it explicitly and win over this. */
+  color: inherit;
 }
 
 /* ── Scrollbar ── thin, visible on hover-scroll surfaces */
