@@ -73,7 +73,7 @@ const fmtUSD = (n) => {
 }
 const fmtTok = (n) => (Number(n) || 0).toLocaleString('en-US')
 
-export default function ChatHome({ canonDocs = [], onNav }) {
+export default function ChatHome({ canonDocs = [], onNav, project = null, onProjectChange = () => {} }) {
   const [models, setModels] = useState([])
   const [brainId, setBrainId] = useState(null)
   const [selectedModel, setSelectedModel] = useState('')
@@ -100,6 +100,9 @@ export default function ChatHome({ canonDocs = [], onNav }) {
   const [attachedDocs, setAttachedDocs] = useState([])   // [{title, path}]
   const [showAttach, setShowAttach] = useState(false)
   const [docSearch, setDocSearch] = useState('')
+  // Project-as-workspace (B): the selector's roster; lazy-loaded on open.
+  const [projects, setProjects] = useState(null)
+  const [showProjectPicker, setShowProjectPicker] = useState(false)
   // T15/T16 unit strip: which part of the unit is working right now (drives the
   // pulse/neuron animations), the local-model "representation" node, and the
   // rotating status phrase. All presentation — the run protocol is unchanged.
@@ -259,7 +262,12 @@ export default function ChatHome({ canonDocs = [], onNav }) {
         body: JSON.stringify({
           modelId: selectedModel, messages: newConv,
           // Invoke fold-in: role system prompt + attached canon docs ride along.
-          systemPrompt: agentRoles.find(r => r.id === roleId)?.systemPrompt,
+          // Project workspace (B): the active project's instructions lead the
+          // system prompt so every solo turn is scoped to the project's context.
+          systemPrompt: [
+            project?.instructions && `PROJECT — ${project.name}:\n${project.instructions}`,
+            agentRoles.find(r => r.id === roleId)?.systemPrompt,
+          ].filter(Boolean).join('\n\n') || undefined,
           sourceDocs: attachedDocs,
         }),
       })
@@ -332,6 +340,11 @@ export default function ChatHome({ canonDocs = [], onNav }) {
             ? { directorId: selectedModel, tools: true }
             : { aggregatorId: selectedModel, rounds: 2, tools: false }),
           sourceDocs: attachedDocs, roleAssignments: {},
+          // Project workspace (B): scope the run record + minted artifacts to the
+          // project. The user's explicitly-convened unit is pinned via the custom
+          // routing policy so the project's routing DEFAULT can't silently swap
+          // the members they chose (defaults apply when you didn't choose).
+          ...(project ? { projectId: project.id, routingPolicy: 'custom', customSelection: unit } : {}),
         }),
       })
       const reader = res.body.getReader()
@@ -484,7 +497,36 @@ export default function ChatHome({ canonDocs = [], onNav }) {
               placement; alt considered: under the brain node in the composer strip,
               but that row is already dense with the unit picker). Session $ + tokens,
               a per-turn delta, and the full per-model breakdown one click away. ── */}
-        <div style={{ position: 'relative', display: 'flex', justifyContent: 'flex-end', marginBottom: 6, flexShrink: 0 }}>
+        <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 6, flexShrink: 0 }}>
+          {/* Project workspace (B): what this chat is working in. Scopes solo
+              system prompts, council run records, and minted artifacts. */}
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => { setShowProjectPicker(s => !s); if (projects === null) fetch('/api/projects').then(r => r.json()).then(d => setProjects(d.projects || [])).catch(() => setProjects([])) }}
+              title={project ? `Working in ${project.name} — instructions, runs, and artifacts scope here. Click to switch.` : 'Scope this chat to a project (instructions + saved runs/artifacts).'}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '4px 11px', cursor: 'pointer', fontSize: 11,
+                background: project ? 'var(--color-recursive-bg)' : 'var(--color-surface)',
+                border: `0.5px solid ${project ? 'var(--color-recursive-border)' : 'var(--color-border)'}`,
+                borderRadius: 'var(--radius-pill)', color: project ? 'var(--color-recursive-text)' : 'var(--color-text-3)',
+              }}
+            >
+              <i className="ti ti-folders" style={{ fontSize: 12 }} />
+              {project ? <>working in <b>{project.name}</b></> : 'no project'}
+              <i className="ti ti-chevron-down" style={{ fontSize: 10 }} />
+            </button>
+            {showProjectPicker && (
+              <div style={{ position: 'absolute', top: '115%', left: 0, width: 260, zIndex: 120, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+                <button onClick={() => { onProjectChange(null); setShowProjectPicker(false) }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 11px', fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', color: !project ? 'var(--color-recursive-text)' : 'var(--color-text-2)' }}>No project — plain chat</button>
+                {(projects || []).map(p => (
+                  <button key={p.id} onClick={() => { fetch(`/api/projects/${p.id}`).then(r => r.json()).then(full => onProjectChange(full.id ? full : p)).catch(() => onProjectChange(p)); setShowProjectPicker(false) }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 11px', fontSize: 12, background: project?.id === p.id ? 'var(--color-recursive-bg)' : 'none', border: 'none', borderTop: '0.5px solid var(--color-border)', cursor: 'pointer', color: project?.id === p.id ? 'var(--color-recursive-text)' : 'var(--color-text-2)' }}>
+                    {p.name}<span style={{ color: 'var(--color-text-3)', fontSize: 10 }}> · routing {p.routing}</span>
+                  </button>
+                ))}
+                {projects !== null && projects.length === 0 && <div style={{ padding: '7px 11px', fontSize: 11, color: 'var(--color-text-3)' }}>No projects yet — create one in Projects.</div>}
+              </div>
+            )}
+          </div>
           <button
             onClick={() => { setShowUsage(s => !s); fetchUsage() }}
             title="Session tokens + estimated spend (this app run). Click for the per-model breakdown."

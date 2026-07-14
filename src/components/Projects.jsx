@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react'
 
 const ROUTING = ['auto', 'fast', 'best', 'private', 'low-cost']
 
-export default function Projects() {
+export default function Projects({ onOpenInChat = () => {} }) {
   const [projects, setProjects] = useState(null)
   const [selected, setSelected] = useState(null)
   const [items, setItems] = useState(null)
@@ -66,7 +66,14 @@ export default function Projects() {
         {!selected && <div style={{ padding: 20, color: 'var(--color-text-3)' }}>Select a project to view its instructions, routing, and scoped runs + artifacts.</div>}
         {selected && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ fontSize: 15, fontWeight: 600 }}>{selected.name}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 15, fontWeight: 600, flex: 1 }}>{selected.name}</span>
+              {/* Projects-as-workspace (B): a project is something you WORK IN, not
+                  just view — this hands the project to Chat as its active scope. */}
+              <button onClick={() => onOpenInChat(selected)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer', background: 'var(--color-active-bg)', color: 'var(--color-active-text)', border: '0.5px solid var(--color-active-border)', borderRadius: 8, padding: '7px 14px' }}>
+                <i className="ti ti-messages" style={{ fontSize: 14 }} /> Work in this project
+              </button>
+            </div>
             <div style={{ ...card, fontSize: 11, color: 'var(--color-text-3)', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
               <span>routing: <strong style={{ color: 'var(--color-text-2)' }}>{selected.routing}</strong></span>
               {selected.providerRestrictions?.length > 0 && <span>restricts: {selected.providerRestrictions.join(', ')}</span>}

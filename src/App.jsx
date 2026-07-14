@@ -29,6 +29,10 @@ export default function App() {
   const [ui, setUi] = useState({})
   const [loading, setLoading] = useState(true)
   const [lastRefresh, setLastRefresh] = useState(new Date())
+  // Project-as-workspace (B, 2026-07-14): the project Chat is currently working
+  // in. Set from the Projects view ("Work in this project") or Chat's own
+  // selector; scopes instructions, run records, and minted artifacts.
+  const [chatProject, setChatProject] = useState(null)
 
   const refresh = async () => {
     setLoading(true)
@@ -247,7 +251,7 @@ export default function App() {
           {view === 'dashboard' && (
             <Dashboard agents={agents} statusData={statusData} canonDocs={canonDocs} onNav={setView} compact={!!(ui.overviewCompact || ui.chatHome)} />
           )}
-          {view === 'chat' && <ChatHome canonDocs={canonDocs} onNav={setView} />}
+          {view === 'chat' && <ChatHome canonDocs={canonDocs} onNav={setView} project={chatProject} onProjectChange={setChatProject} />}
           {view === 'agents' && <AgentMap agents={agents} onInvoke={() => setView('invoke')} />}
           {view === 'status' && <StatusLayer entries={statusData.entries} />}
           {view === 'canon' && <CanonState docs={canonDocs} />}
@@ -258,7 +262,7 @@ export default function App() {
           {view === 'library' && ui.library && <Library />}
           {view === 'runs' && ui.runInspector && <RunInspector />}
           {view === 'cost' && <TokenBank />}
-          {view === 'projects' && ui.projects && <Projects />}
+          {view === 'projects' && ui.projects && <Projects onOpenInChat={(p) => { setChatProject(p); setView('chat') }} />}
           {view === 'builder' && ui.builder && <Builder />}
           {view === 'settings' && <Settings />}
           {/* extension views (populated by the product overlay). Membrane (T14) is
