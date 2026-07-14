@@ -1,0 +1,107 @@
+{
+  "_note": "Recorded/synthetic provider response SHAPES for GU4.1 contract tests. No secrets, no live calls. Each is the raw JSON body a provider returns from its chat endpoint; adapters normalize these. verifiedOn marks when the shape was confirmed against public API docs.",
+  "anthropic_text": {
+    "verifiedOn": "2026-07-13",
+    "raw": {
+      "id": "msg_01ABC",
+      "type": "message",
+      "role": "assistant",
+      "content": [{ "type": "text", "text": "The largest ocean is the Pacific." }],
+      "stop_reason": "end_turn",
+      "usage": { "input_tokens": 12, "output_tokens": 8 }
+    }
+  },
+  "anthropic_tool": {
+    "verifiedOn": "2026-07-13",
+    "raw": {
+      "id": "msg_02DEF",
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        { "type": "text", "text": "Let me read that file." },
+        { "type": "tool_use", "id": "toolu_1", "name": "read_file", "input": { "path": "README.md" } }
+      ],
+      "stop_reason": "tool_use",
+      "usage": { "input_tokens": 40, "output_tokens": 25 }
+    }
+  },
+  "anthropic_thinking": {
+    "verifiedOn": "2026-07-13",
+    "raw": {
+      "id": "msg_03GHI",
+      "content": [
+        { "type": "thinking", "thinking": "The user wants the capital.", "signature": "sig_xyz" },
+        { "type": "text", "text": "Paris." }
+      ],
+      "stop_reason": "end_turn",
+      "usage": { "input_tokens": 10, "output_tokens": 15 }
+    }
+  },
+  "openai_tool": {
+    "verifiedOn": "2026-07-13",
+    "raw": {
+      "id": "chatcmpl-1",
+      "system_fingerprint": "fp_abc",
+      "choices": [{
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [{ "id": "call_1", "type": "function", "function": { "name": "fetch_url", "arguments": "{\"url\":\"https://example.com\"}" } }]
+        },
+        "finish_reason": "tool_calls"
+      }],
+      "usage": { "prompt_tokens": 30, "completion_tokens": 12 }
+    }
+  },
+  "gemini_grounded": {
+    "verifiedOn": "2026-07-13",
+    "raw": {
+      "choices": [{
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "As of 2026 the population is about 8.2 billion.",
+          "grounding_metadata": { "web_search_queries": ["world population 2026"], "grounding_chunks": [{ "web": { "uri": "https://example.org/pop", "title": "Population" } }] }
+        },
+        "finish_reason": "stop"
+      }],
+      "usage": { "prompt_tokens": 22, "completion_tokens": 14 }
+    }
+  },
+  "deepseek_reasoning": {
+    "verifiedOn": "2026-07-13",
+    "raw": {
+      "choices": [{
+        "index": 0,
+        "message": { "role": "assistant", "content": "42", "reasoning_content": "The user asked for 6 times 7, which is 42." },
+        "finish_reason": "stop"
+      }],
+      "usage": { "prompt_tokens": 18, "completion_tokens": 30, "prompt_cache_hit_tokens": 16, "prompt_cache_miss_tokens": 2 }
+    }
+  },
+  "mistral_text": {
+    "verifiedOn": "2026-07-13",
+    "raw": {
+      "choices": [{ "index": 0, "message": { "role": "assistant", "content": "Bonjour." }, "finish_reason": "stop" }],
+      "usage": { "prompt_tokens": 5, "completion_tokens": 3 }
+    }
+  },
+  "qwen_text": {
+    "verifiedOn": "2026-07-13",
+    "raw": {
+      "choices": [{ "index": 0, "message": { "role": "assistant", "content": "你好" }, "finish_reason": "stop" }],
+      "usage": { "prompt_tokens": 6, "completion_tokens": 2 }
+    }
+  },
+  "ollama_tool": {
+    "verifiedOn": "2026-07-13",
+    "raw": {
+      "model": "llama3.1:8b",
+      "message": { "role": "assistant", "content": "", "tool_calls": [{ "function": { "name": "read_file", "arguments": { "path": "x.md" } } }] },
+      "done": true,
+      "prompt_eval_count": 50,
+      "eval_count": 10
+    }
+  }
+}
