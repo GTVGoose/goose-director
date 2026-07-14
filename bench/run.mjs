@@ -73,7 +73,7 @@ async function runOne(task, laneName) {
     try {
       ({ text, ms, turns } = await askLane(lane, prompt))
     } catch (e) {
-      if (!/fetch failed|no answer event/i.test(e.message)) throw e
+      if (!/fetch failed|no answer event|→ (408|429|5\d\d)/i.test(e.message)) throw e
       await new Promise(r => setTimeout(r, 4000))       // transient overload: one retry
       ;({ text, ms, turns } = await askLane(lane, prompt))
     }
