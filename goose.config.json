@@ -200,6 +200,12 @@
       "openai": {
         "capUSD": null,
         "_hint": "Set to your monthly OpenAI credit budget. Live rate-window headroom is read from response headers regardless."
+      },
+      "deepseek": {
+        "label": "DeepSeek (prepaid)",
+        "periodHours": 8760,
+        "capUSD": 4.99,
+        "_hint": "Prepaid wallet balance audited 2026-07-14 ($4.99 topped up). Update capUSD when you top up; DeepSeek also exposes GET /user/balance for a future live feed."
       }
     }
   },
