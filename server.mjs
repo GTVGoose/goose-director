@@ -3310,6 +3310,11 @@ const brain = initBrain({
   runAgentLoop,
   ollamaUrl: (process.env.OLLAMA_BASE_URL || 'http://localhost:11434').replace(/\/$/, ''),
   userDataDir: process.env.NEXUS_USER_DATA || __dirname,
+  // Bank-aware GPT-5.6 escalation: give the brain a cloud caller, a model
+  // lookup, and the token bank. Reasoning-only — the Director still owns tools.
+  callModel,
+  modelById: (id) => (config.models || []).find(m => m.id === id) || null,
+  tokenBank,
 })
 
 // ─── Mini Nexus mobile API (plan 2026-07-11, Phase A) ────────────────────────

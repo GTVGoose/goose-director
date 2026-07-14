@@ -193,5 +193,9 @@
         "_hint": "Set to your monthly OpenAI credit budget. Live rate-window headroom is read from response headers regardless."
       }
     }
+  },
+  "routing": {
+    "escalationPrefer": "claude",
+    "_escalationPrefer_hint": "When BOTH banks are healthy, which cloud tier the local orchestrator escalates reasoning to: 'claude' = prefer Claude Max ($0), shift to complexity-graded GPT-5.6 as Claude's bank depletes; 'gpt' = route by complexity to Luna/Terra/Sol first."
   }
 }

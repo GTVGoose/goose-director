@@ -35,6 +35,7 @@ import path from 'path'
 import os from 'os'
 import crypto from 'crypto'
 import { execFile } from 'child_process'
+import { classifyComplexity, parseOverride, chooseReasoningModel } from './src/lib/escalation-router.js'
 
 // Per-channel mode overrides prepended to Umbruh's persona. The Telegram text
 // is verbatim from the previous telegram.mjs so bot behavior is unchanged.
@@ -77,7 +78,12 @@ const MODE_OVERRIDES = { telegram: TELEGRAM_MODE_OVERRIDE, pwa: PWA_MODE_OVERRID
 const NEEDS_TOOLS_RE = /\b(open|run|execute|find|search|write|read|fetch|go to|check|list|create|delete|move|copy|install|launch|browse|look up|show me|get me|update|edit|save)\b/i
 
 export function initBrain(deps) {
-  const { config, REPO, readFileSafe, runAgentLoop, ollamaUrl, userDataDir } = deps
+  const { config, REPO, readFileSafe, runAgentLoop, ollamaUrl, userDataDir,
+          callModel, modelById, tokenBank } = deps
+  // Bank-aware GPT-5.6 escalation is available only when the host injected a
+  // cloud caller + model lookup. Absent them, the brain behaves exactly as
+  // before (local → Claude Director), so this is fully additive.
+  const canRouteVariants = typeof callModel === 'function' && typeof modelById === 'function'
 
   const CHAT_DIR = path.join(userDataDir, 'chat')
   const JOBS_DIR = path.join(CHAT_DIR, 'jobs')
@@ -275,6 +281,48 @@ export function initBrain(deps) {
     return { text, files }
   }
 
+  // ── GPT-5.6 variant escalation (REASONING only) ────────────────────────────
+  // The Claude Director owns tool/file work; a GPT-5.6 call is a plain
+  // completion. These helpers route reasoning escalation to a bank+complexity-
+  // chosen variant, always with the Director as the safety net.
+  const claudeAvailable = () => CLAUDE_PATHS.some(p => fs.existsSync(p))
+  const gptVariants = () => (config.models || []).filter(m => m.provider === 'openai')
+  const escalationPrefer = () => (config.routing?.escalationPrefer === 'gpt' ? 'gpt' : 'claude')
+
+  async function callVariant(modelId, userText, prior, channel, contextDocs, emit) {
+    if (!canRouteVariants) return { text: null }
+    const mc = modelById(modelId)
+    if (!mc) return { text: null }
+    emit?.({ type: 'status', text: `Routing to ${mc.name || modelId}…` })
+    try {
+      const system = buildSystem(channel, contextDocs)
+      const messages = [...(prior || []), { role: 'user', content: userText }]
+      const text = await callModel(mc, system, messages)
+      return { text: (text || '').trim() || null, modelId }
+    } catch (e) {
+      console.error(`[Brain] variant ${modelId} failed:`, e.message)
+      return { text: null }
+    }
+  }
+
+  async function escalateReasoning(userText, prior, channel, contextDocs, deliverFiles, emit) {
+    const decision = chooseReasoningModel({
+      complexity: classifyComplexity(userText),
+      models: gptVariants(),
+      bank: tokenBank || null,
+      claudeAvailable: claudeAvailable(),
+      prefer: escalationPrefer(),
+    })
+    if (decision.via === 'variant') {
+      emit?.({ type: 'status', text: `Token-bank route: ${decision.reason}` })
+      const out = await callVariant(decision.modelId, userText, prior, channel, contextDocs, emit)
+      if (out.text) return { text: out.text, files: [], via: `variant:${decision.modelId}` }
+      // variant failed → Director safety net
+    }
+    const out = await handToDirector(userText, channel, deliverFiles, emit)
+    return { text: out.text, files: out.files, via: 'director' }
+  }
+
   // Fast conversational path: stream tokens (no tool loop). Used when the
   // transport prefers streaming (voice/PWA) and the message doesn't look like
   // a hands-on task. Falls back by throwing; caller catches.
@@ -312,14 +360,22 @@ export function initBrain(deps) {
     const { channel = 'telegram', contextDocs, preferStreaming = false, onDelta, deliverFiles } = opts
     return withThreadLock(threadId, async () => {
       const prior = loadTail(threadId).map(m => ({ role: m.role, content: m.content }))
-      const heavy = /^(deep|claude)\b[:,]?\s*/i.exec(userText)
+      const override = parseOverride(userText)        // luna:/terra:/sol:/gpt:/deep:/claude:
+      const toolTask = triageNeedsDirector(userText)  // file/PDF/agentic → needs the Director's tools
       let reply = null
       let files = []
       let via = 'local'
 
-      if (heavy || triageNeedsDirector(userText)) {
+      if (override?.kind === 'variant' && canRouteVariants && !toolTask) {
+        // Explicit GPT-5.6 variant, reasoning task → that model, Director net.
+        const out = await callVariant(override.modelId, override.text || userText, prior, channel, contextDocs, onDelta)
+        if (out.text) { reply = out.text; via = `variant:${override.modelId}` }
+        else { const d = await handToDirector(override.text || userText, channel, deliverFiles, onDelta); reply = d.text; files = d.files; via = 'director-fallback' }
+      } else if (override?.kind === 'claude' || override?.kind === 'variant' || toolTask) {
+        // deep/claude prefix, OR a tool task (incl. a variant prefix on one) →
+        // the Claude Director, which has tools.
         via = 'director'
-        const out = await handToDirector(heavy ? (userText.slice(heavy[0].length).trim() || userText) : userText, channel, deliverFiles, onDelta)
+        const out = await handToDirector(override?.text ?? userText, channel, deliverFiles, onDelta)
         reply = out.text
         files = out.files
       } else {
@@ -336,14 +392,21 @@ export function initBrain(deps) {
             reply = await runAgentLoop(messages, ollamaUrl, 8, true)
           }
         } catch (e) {
-          console.error('[Brain] local loop failed, handing to Director:', e.message)
+          console.error('[Brain] local loop failed, escalating:', e.message)
           reply = null
         }
         const needsDirector = reply && /(^|\n)\s*NEEDS_DIRECTOR:/i.test(reply)
         if (!reply?.trim() || /step limit/i.test(reply) || needsDirector) {
-          via = 'director-fallback'
-          const out = await handToDirector(userText, channel, deliverFiles, onDelta)
-          if (out.text) { reply = out.text; files = out.files }
+          // Reasoning escalation: bank + complexity choose a GPT-5.6 variant, else
+          // the Director. Tool-flagged work still goes straight to the Director.
+          if (canRouteVariants && !toolTask) {
+            const esc = await escalateReasoning(userText, prior, channel, contextDocs, deliverFiles, onDelta)
+            if (esc.text) { reply = esc.text; files = esc.files; via = esc.via }
+          } else {
+            via = 'director-fallback'
+            const out = await handToDirector(userText, channel, deliverFiles, onDelta)
+            if (out.text) { reply = out.text; files = out.files }
+          }
         }
       }
 
