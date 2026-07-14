@@ -198,10 +198,23 @@ export default function ChatHome({ canonDocs = [], onNav, project = null, onProj
   const unitWorking = unit.brain || unit.local || unit.cloud
   const unitStatusLine = unitWorking
     ? `${unit.activeName || (unit.brain ? (currentModel?.name || 'Brain') : unit.local ? (localModel?.name || 'Local model') : 'Cloud unit')} — ${phrase}`
-    : councilActive ? `Unit assembled · ${1 + council.length} minds · roundtable` : null
+    : councilActive ? `Unit assembled · ${1 + council.length} minds · ${councilMode}` : null
+
+  // Provider FAMILY = one council seat. Convening two ChatGPT variants (or the
+  // subscription + an API tier) is redundant — the stronger one supersedes the
+  // weaker (David, 2026-07-14) — so adding a family sibling SWAPS it into that
+  // family's seat, same pattern chooseLocal already uses for local models.
+  // openai (API tiers) + codex (subscription) are both the ChatGPT family;
+  // anthropic + claude-code are both Claude.
+  const FAMILY = { openai: 'chatgpt', codex: 'chatgpt', anthropic: 'claude', 'claude-code': 'claude' }
+  const familyOf = (id) => { const p = models.find(m => m.id === id)?.provider; return FAMILY[p] || p || id }
 
   const toggleCouncil = (id) =>
-    setCouncil(c => c.includes(id) ? c.filter(x => x !== id) : [...c, id])
+    setCouncil(c => {
+      if (c.includes(id)) return c.filter(x => x !== id)
+      const fam = familyOf(id)
+      return [...c.filter(x => familyOf(x) !== fam), id]
+    })
 
   // Local node: picking a model makes it the node's representation AND swaps it
   // into the unit in place of any other local member; picking it again stands it down.
