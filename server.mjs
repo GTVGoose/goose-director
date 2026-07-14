@@ -1488,6 +1488,31 @@ app.get('/api/domains', (req, res) => {
   res.json(out)
 })
 
+// Read a streaming body (SSE / NDJSON) line-by-line with a persistent buffer
+// across network reads. Node hands the reader raw TCP segments — under the
+// packaged app's runtime (Electron/Node 20) a `data:` line routinely arrives
+// split across two reads — so parsing each read in isolation silently drops
+// those lines (this is how Mistral relays streamed back completely empty).
+// onLine receives each complete line, trimmed, empty lines skipped.
+async function readStreamLines(body, onLine) {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let nl
+    while ((nl = buf.indexOf('\n')) !== -1) {
+      const line = buf.slice(0, nl).trim()
+      buf = buf.slice(nl + 1)
+      if (line) onLine(line)
+    }
+  }
+  const tail = (buf + decoder.decode()).trim()
+  if (tail) onLine(tail)
+}
+
 // POST /api/relay — send a prompt to a model, stream response
 app.post('/api/relay', async (req, res) => {
   const { modelId, systemPrompt, messages, sourceDocs } = req.body
@@ -1570,23 +1595,15 @@ app.post('/api/relay', async (req, res) => {
         return sendError(`Anthropic API error: ${err}`)
       }
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const chunk = decoder.decode(value)
-        for (const line of chunk.split('\n')) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              if (data.type === 'content_block_delta' && data.delta?.text) {
-                sendChunk(data.delta.text)
-              }
-            } catch {}
+      await readStreamLines(response.body, (line) => {
+        if (!line.startsWith('data: ')) return
+        try {
+          const data = JSON.parse(line.slice(6))
+          if (data.type === 'content_block_delta' && data.delta?.text) {
+            sendChunk(data.delta.text)
           }
-        }
-      }
+        } catch {}
+      })
       sendDone({ model: modelConfig.model, provider: 'anthropic' })
 
     } else if (compatFor(modelConfig)) {
@@ -1617,22 +1634,14 @@ app.post('/api/relay', async (req, res) => {
         return sendError(`${compat.label} API error: ${err}`)
       }
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const chunk = decoder.decode(value)
-        for (const line of chunk.split('\n')) {
-          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
-            try {
-              const data = JSON.parse(line.slice(6))
-              const text = data.choices?.[0]?.delta?.content
-              if (text) sendChunk(text)
-            } catch {}
-          }
-        }
-      }
+      await readStreamLines(response.body, (line) => {
+        if (!line.startsWith('data: ') || line === 'data: [DONE]') return
+        try {
+          const data = JSON.parse(line.slice(6))
+          const text = data.choices?.[0]?.delta?.content
+          if (text) sendChunk(text)
+        } catch {}
+      })
       sendDone({ model: modelConfig.model, provider: modelConfig.provider })
 
     } else if (modelConfig.provider === 'ollama') {
@@ -1653,19 +1662,12 @@ app.post('/api/relay', async (req, res) => {
 
       if (!response.ok) return sendError(`Ollama error: is Ollama running at ${base}?`)
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const lines = decoder.decode(value).split('\n').filter(Boolean)
-        for (const line of lines) {
-          try {
-            const data = JSON.parse(line)
-            if (data.message?.content) sendChunk(data.message.content)
-          } catch {}
-        }
-      }
+      await readStreamLines(response.body, (line) => {
+        try {
+          const data = JSON.parse(line)
+          if (data.message?.content) sendChunk(data.message.content)
+        } catch {}
+      })
       sendDone({ model: modelConfig.model, provider: 'ollama' })
 
     } else if (modelConfig.provider === 'claude-code') {
@@ -1718,6 +1720,55 @@ app.post('/api/relay', async (req, res) => {
           if (!streamed && finalResult?.result) sendChunk(String(finalResult.result))
           recordUsage(modelConfig, finalResult?.usage?.input_tokens, finalResult?.usage?.output_tokens)
           sendDone({ model, provider: 'claude-code' })
+        })
+      })
+      return // async streaming — the child's close handler ends the response
+
+    } else if (modelConfig.provider === 'codex') {
+      // GPT via the OpenAI Codex CLI — billed to the ChatGPT SUBSCRIPTION
+      // (Plus/Pro), NOT API credits ($0-metered, like callModel's codex path).
+      // `codex exec` runs non-interactively: progress → stderr, the final
+      // message → stdout, delivered when the turn completes — so the relay
+      // sends one text chunk on close rather than incremental deltas.
+      // codexEnv() strips OPENAI_API_KEY/CODEX_API_KEY so the CLI uses the
+      // ChatGPT login instead of pay-per-token API billing.
+      const prompt = [systemContent, ...messages.map(m => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))].filter(Boolean).join('\n\n')
+      const args = ['exec', '--skip-git-repo-check', '--sandbox', 'read-only']
+      if (modelConfig.model && modelConfig.model !== 'default') args.push('--model', modelConfig.model)
+      args.push(prompt)
+      // stdin MUST be closed ('ignore'): with a default open pipe, codex exec
+      // prints "Reading additional input from stdin..." and blocks on EOF forever.
+      const child = spawn('codex', args, { cwd: os.homedir(), env: codexEnv(), stdio: ['ignore', 'pipe', 'pipe'] })
+      let out = ''
+      let stderr = ''
+      let finished = false
+      const finish = (fn) => { if (!finished) { finished = true; fn() } }
+      child.stdout.on('data', (d) => { out += d })
+      child.stderr.on('data', (d) => { stderr += d })
+      const timer = setTimeout(() => child.kill('SIGKILL'), 300000)
+      child.on('error', (e) => {
+        clearTimeout(timer)
+        finish(() => sendError(`Codex CLI not found: ${e.message} — install it (npm i -g @openai/codex) and run \`codex login\``))
+      })
+      child.on('close', (code) => {
+        clearTimeout(timer)
+        finish(() => {
+          const text = out.trim()
+          if (code !== 0 && !text) {
+            // codex dumps its whole transcript on stderr; surface the actual
+            // ERROR line (e.g. "Your workspace is out of credits") not banner noise.
+            const m = stderr.match(/ERROR:\s*(.+)/)
+            const detail = (m ? m[1] : stderr.replace(/\s+/g, ' ')).slice(0, 300)
+            // Subscription pool dry → mark exhausted (1h) so bank-aware routing
+            // fails over to the API variants until the window refills.
+            if (/out of credits|rate.?limit|usage limit|quota/i.test(stderr) && tokenBank.has('codex')) {
+              tokenBank.markExhausted('codex', 3600_000); persistTokenBank()
+            }
+            return sendError(`ChatGPT subscription (Codex): ${detail || `codex exec failed (exit ${code}) — is the codex CLI installed and logged in?`}`)
+          }
+          if (text) sendChunk(text)
+          recordUsage(modelConfig, 0, 0)   // subscription-metered; codex exec stdout carries no token counts
+          sendDone({ model: modelConfig.model || 'default', provider: 'codex' })
         })
       })
       return // async streaming — the child's close handler ends the response
