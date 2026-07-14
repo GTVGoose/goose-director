@@ -1,29 +1,33 @@
 import { personalNav } from '../personal-extensions.jsx'
 
-export default function Sidebar({ view, onNav, escalations, reviews, vaultName, chatHome, councilLabel, membrane, library, runInspector, projects, visibility, builder }) {
+export default function Sidebar({ view, onNav, escalations, reviews, vaultName, chatHome, councilLabel, membrane, library, runInspector, projects, visibility, builder, visibilityActive }) {
 
-  const nav = (id, icon, label, sub, badge) => (
+  // `navTo` overrides the destination (default = id); `activeOverride` lets one
+  // entry (e.g. Visibility) stay highlighted across several views.
+  const nav = (id, icon, label, sub, badge, activeOverride, navTo) => {
+    const active = activeOverride !== undefined ? activeOverride : (view === id)
+    return (
     <button
       key={id}
-      onClick={() => onNav(id)}
-      className={view === id ? undefined : 'nav-btn'}
+      onClick={() => onNav(navTo || id)}
+      className={active ? undefined : 'nav-btn'}
       style={{
         display: 'flex',
         alignItems: 'center',
         gap: 9,
         padding: '7px 10px',
         width: '100%',
-        background: view === id
+        background: active
           ? 'var(--color-accent-bg)'
           : 'none',
         border: 'none',
-        borderLeft: view === id
+        borderLeft: active
           ? '2px solid var(--color-accent)'
           : '2px solid transparent',
         borderRadius: '0 var(--radius) var(--radius) 0',
         fontSize: 13,
-        color: view === id ? 'var(--color-text)' : 'var(--color-text-2)',
-        fontWeight: view === id ? 500 : 400,
+        color: active ? 'var(--color-text)' : 'var(--color-text-2)',
+        fontWeight: active ? 500 : 400,
         textAlign: 'left',
         cursor: 'pointer',
         marginBottom: 1,
@@ -33,7 +37,7 @@ export default function Sidebar({ view, onNav, escalations, reviews, vaultName, 
       <i className={`ti ti-${icon}`} style={{
         fontSize: 15,
         flexShrink: 0,
-        color: view === id ? 'var(--color-accent-text)' : 'var(--color-text-3)',
+        color: active ? 'var(--color-accent-text)' : 'var(--color-text-3)',
       }}></i>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -52,12 +56,22 @@ export default function Sidebar({ view, onNav, escalations, reviews, vaultName, 
             }}>{badge.count}</span>
           )}
         </div>
-        {sub && view !== id && (
+        {sub && !active && (
           <div style={{ fontSize: 10, color: 'var(--color-text-3)', marginTop: 1, lineHeight: 1.3 }}>{sub}</div>
         )}
       </div>
     </button>
-  )
+    )
+  }
+
+  // Render a personal-overlay nav item by id (or null if absent / gated off).
+  const pnav = (id, labelOverride, subOverride) => {
+    const it = personalNav.find(x => x.id === id)
+    if (!it) return null
+    if (id === 'membrane' && !membrane) return null
+    return nav(it.id, it.icon, labelOverride || it.label, subOverride || it.sub)
+  }
+  const hasPnav = (id) => personalNav.some(x => x.id === id)
 
   const section = (label) => (
     <div key={`sec-${label}`} style={{
@@ -137,34 +151,31 @@ export default function Sidebar({ view, onNav, escalations, reviews, vaultName, 
         flexDirection: 'column',
         paddingTop: 6,
       }}>
-        {/* Chat-first landing (T10) — flag-gated (G7). Default off → not rendered,
-            so the nav is byte-identical to today until David flips ui.chatHome. */}
-        {chatHome && section('Do')}
-        {chatHome && nav('chat', 'messages', 'Chat', 'Talk to the Brain')}
-
-        {section('Observe')}
-        {nav('dashboard', 'layout-dashboard', 'Overview', 'System state at a glance')}
-        {nav('agents', 'users', 'Agents', 'Who runs, how, and where')}
-        {nav('knowledge', 'books', 'Knowledge', 'Search all canon and docs')}
-        {/* General-use engine surfaces (flag-gated, 2026-07-14 sync) */}
-        {library && nav('library', 'files', 'Library', 'Durable artifacts and outputs')}
+        {/* WORK — task-first surfaces (audit IA: Chats · Projects · Library · …) */}
+        {section('Work')}
+        {nav('chat', 'messages', 'Chat', 'Talk to the Brain')}
         {projects && nav('projects', 'folders', 'Projects', 'Durable context boundaries')}
-
-        {visibility && section('System')}
-        {visibility && nav('visibility', 'eye', 'Visibility', 'Library, runs, projects')}
-
-        {section('Monitor')}
-        {runInspector && nav('runs', 'list-details', 'Runs', 'Council run traces')}
-        {nav('status', 'bell', 'Status Layer', 'Background agent activity', statusBadge)}
-        {nav('canon', 'git-branch', 'Canon State', 'What\'s inside and outside')}
-
-        {section('Act')}
-        {builder && nav('builder', 'wand', 'Builder', 'Build your first agentic system')}
+        {library && nav('library', 'files', 'Library', 'Durable artifacts and outputs')}
         {nav('invoke', 'terminal-2', 'Invoke', 'Send work to any agent or model')}
-        {renderPersonalNav()}
+        {/* Council (Sandbox) stays top-level per David 2026-07-14. */}
+        {pnav('sandbox', councilLabel ? 'Council' : undefined, councilLabel ? 'Many models, one council' : undefined)}
+
+        {/* Personal top-level surfaces: Domains + Signal keep their own entries. */}
+        {(hasPnav('domains') || hasPnav('signal')) && section('Domains')}
+        {pnav('domains')}
+        {pnav('signal')}
+
+        {/* SYSTEM — the whole observation layer under ONE Visibility workspace
+            (audit Finding 2). Membrane folds in here as a tab; Overview/Agents/
+            Knowledge/Runs/Canon/Status are its tabs, rendered in the main area. */}
+        {section('System')}
+        {nav('dashboard', 'eye', 'Visibility', 'Overview · Agents · Knowledge · Runs · Canon', statusBadge, visibilityActive)}
 
         <div style={{ flex: 1 }} />
 
+        {/* BOTTOM */}
+        {builder && nav('builder', 'wand', 'Builder', 'Build your first agentic system')}
+        {pnav('updates')}
         {nav('settings', 'settings', 'Settings', 'API keys and configuration')}
       </div>
 

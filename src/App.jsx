@@ -11,7 +11,6 @@ import Knowledge from './components/Knowledge.jsx'
 import Library from './components/Library.jsx'
 import RunInspector from './components/RunInspector.jsx'
 import Projects from './components/Projects.jsx'
-import Visibility from './components/Visibility.jsx'
 import Builder from './components/Builder.jsx'
 import Settings from './components/Settings.jsx'
 import Setup from './components/Setup.jsx'
@@ -110,6 +109,22 @@ export default function App() {
 
   const meta = VIEW_META[view] || VIEW_META.dashboard
 
+  // Visibility workspace (audit Finding 2): the whole observation layer is one
+  // workspace. These views render under a shared tab bar; the sidebar shows a
+  // single "Visibility" entry. Runs (ui.runInspector) + Membrane (ui.membrane)
+  // are tabs when enabled.
+  const VIS_TABS = [
+    { id: 'dashboard', label: 'Overview' },
+    { id: 'agents', label: 'Agents' },
+    { id: 'knowledge', label: 'Knowledge' },
+    ...(ui.runInspector ? [{ id: 'runs', label: 'Runs' }] : []),
+    { id: 'canon', label: 'Canon' },
+    { id: 'status', label: 'Status' },
+    ...(ui.membrane ? [{ id: 'membrane', label: 'Membrane' }] : []),
+  ]
+  const OBSERVATION_VIEWS = VIS_TABS.map(t => t.id)
+  const visibilityActive = OBSERVATION_VIEWS.includes(view)
+
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       <Sidebar
@@ -126,6 +141,7 @@ export default function App() {
         projects={!!ui.projects}
         visibility={!!ui.visibility}
         builder={!!ui.builder}
+        visibilityActive={visibilityActive}
       />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
@@ -211,6 +227,20 @@ export default function App() {
           display: 'flex',
           flexDirection: 'column',
         }}>
+          {/* Visibility workspace tab bar — shown above any observation view. */}
+          {visibilityActive && (
+            <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginBottom: 14, flexWrap: 'wrap' }}>
+              {VIS_TABS.map(t => (
+                <button key={t.id} onClick={() => setView(t.id)} style={{
+                  cursor: 'pointer', fontSize: 12, fontWeight: view === t.id ? 600 : 400,
+                  padding: '6px 14px', borderRadius: 'var(--radius-md)',
+                  border: `0.5px solid ${view === t.id ? 'var(--color-border-strong)' : 'var(--color-border)'}`,
+                  background: view === t.id ? 'var(--color-surface-2)' : 'transparent',
+                  color: view === t.id ? 'var(--color-text)' : 'var(--color-text-2)',
+                }}>{t.label}</button>
+              ))}
+            </div>
+          )}
           {view === 'dashboard' && (
             <Dashboard agents={agents} statusData={statusData} canonDocs={canonDocs} onNav={setView} compact={!!(ui.overviewCompact || ui.chatHome)} />
           )}
@@ -220,11 +250,11 @@ export default function App() {
           {view === 'canon' && <CanonState docs={canonDocs} />}
           {view === 'invoke' && <Invoke canonDocs={canonDocs} onNav={setView} />}
           {view === 'knowledge' && <Knowledge />}
-          {/* General-use engine views (flag-gated) */}
+          {/* General-use engine views — Library/Projects are top-level Work; Runs
+              is a Visibility tab. */}
           {view === 'library' && ui.library && <Library />}
           {view === 'runs' && ui.runInspector && <RunInspector />}
           {view === 'projects' && ui.projects && <Projects />}
-          {view === 'visibility' && ui.visibility && <Visibility />}
           {view === 'builder' && ui.builder && <Builder />}
           {view === 'settings' && <Settings />}
           {/* extension views (populated by the product overlay). Membrane (T14) is

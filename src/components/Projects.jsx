@@ -15,7 +15,9 @@ export default function Projects() {
   const [err, setErr] = useState(null)
 
   const load = () => fetch('/api/projects').then(r => r.json()).then(d => setProjects(d.projects || [])).catch(e => setErr(e.message))
-  useEffect(load, [])
+  // NOTE: wrap in a block so the effect returns undefined, not the fetch promise
+  // (React would call a returned promise as the cleanup fn → crash on unmount).
+  useEffect(() => { load() }, [])
 
   const open = (id) => {
     fetch(`/api/projects/${id}`).then(r => r.json()).then(setSelected).catch(e => setErr(e.message))

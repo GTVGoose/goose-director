@@ -20,7 +20,9 @@ export default function Builder() {
   const [err, setErr] = useState(null)
 
   const load = () => fetch('/api/builder').then(r => r.json()).then(setData).catch(e => setErr(e.message))
-  useEffect(load, [])
+  // Wrap so the effect returns undefined, not the fetch promise (React would
+  // call a returned promise as the cleanup fn → crash on unmount).
+  useEffect(() => { load() }, [])
 
   const post = (body) => fetch('/api/builder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json()).then(d => setData(x => ({ ...x, ...d }))).catch(e => setErr(e.message))
   const toggle = (stageId, done) => post({ stageId, done })
