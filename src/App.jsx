@@ -12,6 +12,7 @@ import Library from './components/Library.jsx'
 import RunInspector from './components/RunInspector.jsx'
 import Projects from './components/Projects.jsx'
 import Builder from './components/Builder.jsx'
+import TokenBank from './components/TokenBank.jsx'
 import Settings from './components/Settings.jsx'
 import Setup from './components/Setup.jsx'
 import Onboarding from './components/Onboarding.jsx'
@@ -94,6 +95,7 @@ export default function App() {
     runs:      { label: 'Runs',          sub: 'Council run traces — plan, workers, tools, synthesis' },
     projects:  { label: 'Projects',      sub: 'Durable context — instructions, routing, scoped work' },
     visibility:{ label: 'Visibility',    sub: 'Library, runs, and projects in one workspace' },
+    cost:      { label: 'Cost',          sub: 'Token bank — per-provider headroom and usage by model' },
     builder:   { label: 'Builder',       sub: 'Build your first agentic system, stage by stage' },
     status:    { label: 'Status Layer',  sub: 'Background activity' },
     canon:     { label: 'Canon State',   sub: 'Boundary map' },
@@ -118,6 +120,7 @@ export default function App() {
     { id: 'agents', label: 'Agents' },
     { id: 'knowledge', label: 'Knowledge' },
     ...(ui.runInspector ? [{ id: 'runs', label: 'Runs' }] : []),
+    { id: 'cost', label: 'Cost' },
     { id: 'canon', label: 'Canon' },
     { id: 'status', label: 'Status' },
     ...(ui.membrane ? [{ id: 'membrane', label: 'Membrane' }] : []),
@@ -254,6 +257,7 @@ export default function App() {
               is a Visibility tab. */}
           {view === 'library' && ui.library && <Library />}
           {view === 'runs' && ui.runInspector && <RunInspector />}
+          {view === 'cost' && <TokenBank />}
           {view === 'projects' && ui.projects && <Projects />}
           {view === 'builder' && ui.builder && <Builder />}
           {view === 'settings' && <Settings />}
