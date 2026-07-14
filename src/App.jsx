@@ -1,18 +1,21 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Sidebar from './components/Sidebar.jsx'
 import Dashboard from './components/Dashboard.jsx'
 import AgentMap from './components/AgentMap.jsx'
 import StatusLayer from './components/StatusLayer.jsx'
 import CanonState from './components/CanonState.jsx'
 import Invoke from './components/Invoke.jsx'
+import ChatHome from './components/ChatHome.jsx'
 import Knowledge from './components/Knowledge.jsx'
 import Settings from './components/Settings.jsx'
 import Setup from './components/Setup.jsx'
+import Onboarding from './components/Onboarding.jsx'
 import { applyAccent, applyTheme } from './theme.js'
 import { personalViews, personalViewMeta } from './personal-extensions.jsx'
 
 export default function App() {
   const [view, setView] = useState('dashboard')
+  const didInitView = useRef(false)   // flip the landing to Chat once, only if the flag is on (G7)
   const [agents, setAgents] = useState([])
   const [statusData, setStatusData] = useState({ entries: [] })
   const [canonDocs, setCanonDocs] = useState([])
@@ -37,11 +40,19 @@ export default function App() {
       setHealth(await healthRes.json())
       const cfg = await configRes.json()
       setUi(cfg.ui || {})
-      // Theme first (sets the full-token baseline), THEN accent so the user's
-      // explicit accent layers on top (option A). ui.theme absent ⇒ studio ⇒ today.
+      // Theme first (sets the full-token baseline, incl. any accent a theme
+      // suggests), THEN accent — so the user's explicit accent choice layers on
+      // top (theme-system.md §5, option A). ui.theme absent ⇒ studio ⇒ today.
       applyTheme(cfg.ui?.theme)
       applyAccent(cfg.ui?.accent)
       document.title = cfg.vaultName ? `Nexus — ${cfg.ui?.consoleName || cfg.vaultName}` : 'Nexus'
+      // Chat-first landing (T10) — flag-gated (G7). Boot into Chat once, on first
+      // load only, and only if the user hasn't already navigated. Default off →
+      // the landing stays Overview, byte-identical to today.
+      if (!didInitView.current) {
+        didInitView.current = true
+        if (cfg.ui?.chatHome) setView('chat')
+      }
       setLastRefresh(new Date())
     } catch (e) {
       console.error('API error:', e)
@@ -54,6 +65,16 @@ export default function App() {
   const escalations = statusData.entries.filter(e => e.status === 'ESCALATION_REQUIRED').length
   const reviews = statusData.entries.filter(e => e.status === 'REVIEW_WHEN_READY').length
 
+  // First-run onboarding (T18b) — the OUTERMOST gate. Shows once config has loaded
+  // (health non-null, set alongside ui in refresh()), iff onboarding isn't suppressed
+  // and hasn't been completed/skipped. `ui.onboarding` uniquely defaults ON-when-absent
+  // (fresh install greets the buyer); the C lineage / dev builds set it false. It grants
+  // nothing — every step writes intent only. Finishing/skipping sets ui.onboardingComplete
+  // and falls through to the <Setup> gate below if no repo is connected yet.
+  if (health && ui.onboarding !== false && ui.onboardingComplete !== true) {
+    return <Onboarding health={health} refresh={refresh} />
+  }
+
   // First run / broken harness: repo missing → walk through vault connection
   if (health && health.repoFound === false) {
     return <Setup onDone={refresh} />
@@ -61,13 +82,19 @@ export default function App() {
 
   const VIEW_META = {
     dashboard: { label: 'Overview',      sub: 'System state' },
+    chat:      { label: 'Chat',          sub: 'Talk to the Brain' },
     agents:    { label: 'Agents',        sub: 'Roster — click an agent for detail' },
     knowledge: { label: 'Knowledge',     sub: 'Canon index' },
     status:    { label: 'Status Layer',  sub: 'Background activity' },
     canon:     { label: 'Canon State',   sub: 'Boundary map' },
     invoke:    { label: 'Invoke',        sub: 'Send work to agents and models' },
     settings:  { label: 'Settings',     sub: 'API keys and configuration' },
-    ...personalViewMeta,   // personal-only views (empty in the product build)
+    ...personalViewMeta,   // extension views (populated by the product overlay)
+  }
+  // Flag-gated "Sandbox" → "Council" rename (T10 wiring; flip is part of G7). Default
+  // off → the label stays "Sandbox". Label-only; the view id / endpoint stay `sandbox`.
+  if (ui.councilLabel && VIEW_META.sandbox) {
+    VIEW_META.sandbox = { ...VIEW_META.sandbox, label: 'Council' }
   }
 
   const meta = VIEW_META[view] || VIEW_META.dashboard
@@ -80,6 +107,9 @@ export default function App() {
         escalations={escalations}
         reviews={reviews}
         vaultName={ui.consoleName || health?.vaultName}
+        chatHome={!!ui.chatHome}
+        councilLabel={!!ui.councilLabel}
+        membrane={!!ui.membrane}
       />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
@@ -161,21 +191,24 @@ export default function App() {
         <main style={{
           flex: 1,
           overflowY: 'auto',
-          padding: view === 'invoke' ? '16px 20px' : '20px',
+          padding: (view === 'invoke' || view === 'chat') ? '16px 20px' : '20px',
           display: 'flex',
           flexDirection: 'column',
         }}>
           {view === 'dashboard' && (
-            <Dashboard agents={agents} statusData={statusData} canonDocs={canonDocs} onNav={setView} />
+            <Dashboard agents={agents} statusData={statusData} canonDocs={canonDocs} onNav={setView} compact={!!(ui.overviewCompact || ui.chatHome)} />
           )}
+          {view === 'chat' && <ChatHome canonDocs={canonDocs} onNav={setView} />}
           {view === 'agents' && <AgentMap agents={agents} onInvoke={() => setView('invoke')} />}
           {view === 'status' && <StatusLayer entries={statusData.entries} />}
           {view === 'canon' && <CanonState docs={canonDocs} />}
           {view === 'invoke' && <Invoke canonDocs={canonDocs} onNav={setView} />}
           {view === 'knowledge' && <Knowledge />}
           {view === 'settings' && <Settings />}
-          {/* personal-only views (empty in the product build) */}
-          {personalViews[view] && personalViews[view]({ canonDocs, onNav: setView })}
+          {/* extension views (populated by the product overlay). Membrane (T14) is
+              gated behind ui.membrane — hidden in the shipped product, so even a stale
+              view:'membrane' renders nothing until the flag is set. */}
+          {personalViews[view] && !(view === 'membrane' && !ui.membrane) && personalViews[view]({ canonDocs, onNav: setView })}
         </main>
       </div>
     </div>

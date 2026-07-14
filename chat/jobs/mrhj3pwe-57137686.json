@@ -1,0 +1,169 @@
+{
+  "id": "mrhj3pwe-57137686",
+  "threadId": "director",
+  "channel": "pwa",
+  "text": "Hey, Nexus, this is, uh, or, you know, Umbra, this is David.",
+  "status": "done",
+  "via": "local",
+  "reply": "Based on the context file, I'm attuning to your Mind-dominant register. You sound a bit hesitant, like you're unsure how to start. Is that correct?",
+  "files": [],
+  "createdAt": "2026-07-12T08:25:44.414Z",
+  "doneAt": "2026-07-12T08:25:54.035Z",
+  "error": null,
+  "deltas": [
+    {
+      "type": "status",
+      "text": "Thinking…"
+    },
+    {
+      "type": "token",
+      "text": "Based"
+    },
+    {
+      "type": "token",
+      "text": " on"
+    },
+    {
+      "type": "token",
+      "text": " the"
+    },
+    {
+      "type": "token",
+      "text": " context"
+    },
+    {
+      "type": "token",
+      "text": " file"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " I"
+    },
+    {
+      "type": "token",
+      "text": "'m"
+    },
+    {
+      "type": "token",
+      "text": " att"
+    },
+    {
+      "type": "token",
+      "text": "uning"
+    },
+    {
+      "type": "token",
+      "text": " to"
+    },
+    {
+      "type": "token",
+      "text": " your"
+    },
+    {
+      "type": "token",
+      "text": " Mind"
+    },
+    {
+      "type": "token",
+      "text": "-d"
+    },
+    {
+      "type": "token",
+      "text": "omin"
+    },
+    {
+      "type": "token",
+      "text": "ant"
+    },
+    {
+      "type": "token",
+      "text": " register"
+    },
+    {
+      "type": "token",
+      "text": "."
+    },
+    {
+      "type": "token",
+      "text": " You"
+    },
+    {
+      "type": "token",
+      "text": " sound"
+    },
+    {
+      "type": "token",
+      "text": " a"
+    },
+    {
+      "type": "token",
+      "text": " bit"
+    },
+    {
+      "type": "token",
+      "text": " hesitant"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " like"
+    },
+    {
+      "type": "token",
+      "text": " you"
+    },
+    {
+      "type": "token",
+      "text": "'re"
+    },
+    {
+      "type": "token",
+      "text": " unsure"
+    },
+    {
+      "type": "token",
+      "text": " how"
+    },
+    {
+      "type": "token",
+      "text": " to"
+    },
+    {
+      "type": "token",
+      "text": " start"
+    },
+    {
+      "type": "token",
+      "text": "."
+    },
+    {
+      "type": "token",
+      "text": " Is"
+    },
+    {
+      "type": "token",
+      "text": " that"
+    },
+    {
+      "type": "token",
+      "text": " correct"
+    },
+    {
+      "type": "token",
+      "text": "?"
+    },
+    {
+      "type": "done",
+      "reply": "Based on the context file, I'm attuning to your Mind-dominant register. You sound a bit hesitant, like you're unsure how to start. Is that correct?",
+      "via": "local",
+      "files": []
+    }
+  ]
+}

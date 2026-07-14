@@ -15,6 +15,7 @@ export default function Invoke({ canonDocs, onNav }) {
   const [docSearch, setDocSearch] = useState('')
   const [showTOC, setShowTOC] = useState(false)
   const [saveNote, setSaveNote] = useState(null)
+  const [sessionLogEnabled, setSessionLogEnabled] = useState(false)
   const bottomRef = useRef(null)
   const msgRefs = useRef({})
 
@@ -36,6 +37,9 @@ export default function Invoke({ canonDocs, onNav }) {
       const first = (data.models || []).find(m => m.available)
       if (first) setSelectedModel(first.id)
     })
+    fetch('/api/config').then(r => r.json()).then(cfg => {
+      setSessionLogEnabled(!!cfg.sessionLog?.enabled)
+    }).catch(() => {})
   }, [])
 
   // Auto-attach defaultDocs when model changes
@@ -119,7 +123,7 @@ export default function Invoke({ canonDocs, onNav }) {
 
   const saveThread = async () => {
     const content = conversation.map(m =>
-      `**${m.role === 'user' ? 'Director' : currentModel?.name || 'Assistant'}:** ${m.content}`
+      `**${m.role === 'user' ? 'User' : currentModel?.name || 'Assistant'}:** ${m.content}`
     ).join('\n\n')
     const title = `Session — ${new Date().toLocaleDateString()}`
     await fetch('/api/threads', {
@@ -128,16 +132,16 @@ export default function Invoke({ canonDocs, onNav }) {
       body: JSON.stringify({ title, content, tags: [selectedRole, selectedModel] }),
     })
 
-    // Auto-log to umbruh-session-log.md when Umbruh is the active model
+    // Auto-log a session entry on save when a session log is configured
     let note = 'Saved to Knowledge → Saved threads'
-    if (selectedModel === 'umbruh') {
+    if (sessionLogEnabled) {
       try {
-        await fetch('/api/umbruh-log', {
+        const r = await fetch('/api/session-log', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversation }),
         })
-        note = 'Saved — session log updated'
+        note = r.ok ? 'Saved — session log updated' : 'Saved — session log skipped'
       } catch {
         note = 'Saved — session log skipped (is Ollama running?)'
       }
@@ -214,7 +218,7 @@ export default function Invoke({ canonDocs, onNav }) {
             {selectedDocs.map((d, i) => (
               <div key={i} style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '4px 6px', background: 'var(--color-border)', borderRadius: 4,
+                padding: '4px 6px', background: 'var(--color-border)', borderRadius: 'var(--radius)',
                 marginTop: 4,
               }}>
                 <span style={{ fontSize: 11, color: 'var(--color-text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{d.title}</span>
@@ -234,7 +238,7 @@ export default function Invoke({ canonDocs, onNav }) {
             className="btn-ghost"
             style={{
               background: 'none', border: '0.5px solid var(--color-border-strong)',
-              borderRadius: 6, padding: '7px 10px', fontSize: 12,
+              borderRadius: 'var(--radius-md)', padding: '7px 10px', fontSize: 12,
               color: saveNote ? 'var(--color-available)' : 'var(--color-text-2)', cursor: 'pointer',
               display: 'flex', alignItems: 'center', gap: 5,
             }}
@@ -329,7 +333,7 @@ export default function Invoke({ canonDocs, onNav }) {
                     <button onClick={() => onNav('settings')} className="btn-ghost" style={{
                       marginTop: 6, background: 'none',
                       border: '0.5px solid var(--color-border-strong)',
-                      borderRadius: 6, padding: '6px 14px', fontSize: 12,
+                      borderRadius: 'var(--radius-md)', padding: '6px 14px', fontSize: 12,
                       color: 'var(--color-text-2)',
                     }}>Open Settings</button>
                   )}
@@ -363,7 +367,7 @@ export default function Invoke({ canonDocs, onNav }) {
             padding: '8px 12px',
             background: 'var(--color-escalation-bg)',
             color: 'var(--color-escalation-text)',
-            borderRadius: 6, fontSize: 12,
+            borderRadius: 'var(--radius-md)', fontSize: 12,
           }}>
             <i className="ti ti-alert-triangle" style={{ marginRight: 5 }}></i>{error}
           </div>
@@ -462,7 +466,7 @@ function Message({ msg, models, onRoute }) {
               onClick={() => { onRoute(m.id); setShowRoute(false) }}
               style={{
                 background: 'var(--color-border)', border: 'none',
-                borderRadius: 4, padding: '2px 7px',
+                borderRadius: 'var(--radius)', padding: '2px 7px',
                 fontSize: 11, color: 'var(--color-text-2)', cursor: 'pointer',
               }}
             >{m.name}</button>
@@ -497,7 +501,7 @@ function ModelOption({ model, selected, onClick }) {
       onClick={onClick}
       style={{
         padding: '7px 9px',
-        borderRadius: 6,
+        borderRadius: 'var(--radius-md)',
         border: selected ? '1px solid var(--color-border-strong)' : '0.5px solid var(--color-border)',
         background: selected ? 'var(--color-border)' : 'none',
         cursor: model.available ? 'pointer' : 'not-allowed',

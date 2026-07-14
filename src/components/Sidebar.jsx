@@ -1,6 +1,6 @@
 import { personalNav } from '../personal-extensions.jsx'
 
-export default function Sidebar({ view, onNav, escalations, reviews, vaultName }) {
+export default function Sidebar({ view, onNav, escalations, reviews, vaultName, chatHome, councilLabel, membrane }) {
 
   const nav = (id, icon, label, sub, badge) => (
     <button
@@ -46,7 +46,7 @@ export default function Sidebar({ view, onNav, escalations, reviews, vaultName }
               fontSize: 10,
               fontWeight: 600,
               padding: '1px 5px',
-              borderRadius: 999,
+              borderRadius: 'var(--radius-pill)',
               minWidth: 18,
               textAlign: 'center',
             }}>{badge.count}</span>
@@ -80,9 +80,15 @@ export default function Sidebar({ view, onNav, escalations, reviews, vaultName }
   const renderPersonalNav = () => {
     const out = []
     let cur = 'Act'
-    for (const item of personalNav) {
+    // Membrane (T14) is hidden in the shipped product unless ui.membrane is set. Filter
+    // it out BEFORE the section walk so its 'Shared' header isn't emitted empty.
+    const items = personalNav.filter(it => it.id !== 'membrane' || membrane)
+    for (const item of items) {
       if (item.section !== cur) { out.push(section(item.section)); cur = item.section }
-      out.push(nav(item.id, item.icon, item.label, item.sub))
+      // Flag-gated "Sandbox" → "Council" rename (label-only; view id stays `sandbox`).
+      const label = (councilLabel && item.id === 'sandbox') ? 'Council' : item.label
+      const sub = (councilLabel && item.id === 'sandbox') ? 'Many models, one council' : item.sub
+      out.push(nav(item.id, item.icon, label, sub))
     }
     return out
   }
@@ -131,6 +137,11 @@ export default function Sidebar({ view, onNav, escalations, reviews, vaultName }
         flexDirection: 'column',
         paddingTop: 6,
       }}>
+        {/* Chat-first landing (T10) — flag-gated (G7). Default off → not rendered,
+            so the nav is byte-identical to today until David flips ui.chatHome. */}
+        {chatHome && section('Do')}
+        {chatHome && nav('chat', 'messages', 'Chat', 'Talk to the Brain')}
+
         {section('Observe')}
         {nav('dashboard', 'layout-dashboard', 'Overview', 'System state at a glance')}
         {nav('agents', 'users', 'Agents', 'Who runs, how, and where')}
