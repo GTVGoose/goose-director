@@ -34,7 +34,10 @@ function price(m) { return Number.isFinite(m?.pricePerMTokUsd) ? m.pricePerMTokU
 const PROVIDER_STRENGTH = { anthropic: 5, 'claude-code': 5, openai: 4, gemini: 4, mistral: 3, deepseek: 3, qwen: 3, ollama: 1 }
 function strength(m) {
   const base = PROVIDER_STRENGTH[m?.provider] ?? 2
-  const tierBonus = m?.tier === 'large' ? 1 : m?.tier === 'small' ? -1 : 0
+  // 'flagship' (e.g. GPT-5.6 Sol) outranks a normal 'large' cloud model; 'small'
+  // (budget/mini, e.g. Luna) ranks below. This keeps the deepest-reasoning tier
+  // on top for the "best" policy and pushes budget tiers down.
+  const tierBonus = m?.tier === 'flagship' ? 2 : m?.tier === 'large' ? 1 : m?.tier === 'small' ? -1 : 0
   return base + tierBonus
 }
 

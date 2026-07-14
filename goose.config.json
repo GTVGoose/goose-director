@@ -77,12 +77,31 @@
       "tier": "large"
     },
     {
-      "id": "gpt-4o",
-      "name": "ChatGPT (GPT-4o)",
+      "id": "gpt-5.6-sol",
+      "name": "ChatGPT (GPT-5.6 Sol)",
       "provider": "openai",
-      "model": "gpt-4o",
-      "description": "OpenAI's GPT-4o via the OpenAI API. Multimodal flagship, billed to your OpenAI API credits (OPENAI_API_KEY). Add newer GPT models the same way — set model to the API id.",
-      "tier": "large"
+      "model": "gpt-5.6-sol",
+      "tier": "flagship",
+      "role": "deep-reasoning",
+      "description": "OpenAI's GPT-5.6 FLAGSHIP. Deepest reasoning; the only variant that unlocks max effort + ultra mode. Slowest and priciest ($5/$30 per 1M tok). Route here for HARD multi-step problems (coding, analysis, research) where quality outweighs cost."
+    },
+    {
+      "id": "gpt-5.6-terra",
+      "name": "ChatGPT (GPT-5.6 Terra)",
+      "provider": "openai",
+      "model": "gpt-5.6-terra",
+      "tier": "large",
+      "role": "balanced-default",
+      "description": "OpenAI's GPT-5.6 BALANCED DEFAULT for everyday work. ~GPT-5.5 quality at ~2x lower cost ($2.50/$15 per 1M tok). The sensible general-purpose ChatGPT — pick this when you just want a good answer."
+    },
+    {
+      "id": "gpt-5.6-luna",
+      "name": "ChatGPT (GPT-5.6 Luna)",
+      "provider": "openai",
+      "model": "gpt-5.6-luna",
+      "tier": "small",
+      "role": "fast-budget",
+      "description": "OpenAI's GPT-5.6 FAST/BUDGET tier for high-volume, latency-sensitive, cost-conscious tasks ($1/$6 per 1M tok). Shallowest reasoning, fastest. Route simple/bulk work here."
     },
     {
       "id": "gemini-flash",

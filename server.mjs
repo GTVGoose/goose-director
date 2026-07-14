@@ -1231,10 +1231,16 @@ async function validateProvider(provider) {
         const model = probeModel?.model || 'gpt-4o'
         const ctrl = new AbortController()
         const t = setTimeout(() => ctrl.abort(), 8000)
+        // Real OpenAI's newer models (GPT-5 / o-series) reject `max_tokens` and
+        // require `max_completion_tokens`; the other OpenAI-compat clones
+        // (Gemini/DeepSeek/Mistral/Qwen) still expect `max_tokens`. A reasoning
+        // model can spend the whole budget on hidden reasoning, so give the probe
+        // a little headroom (a 200 with empty content still proves the key works).
+        const tokenCap = provider === 'openai' ? { max_completion_tokens: 16 } : { max_tokens: 1 }
         const r = await fetch(`${compat.base}/chat/completions`, {
           method: 'POST', signal: ctrl.signal,
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${compat.key}` },
-          body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+          body: JSON.stringify({ model, ...tokenCap, messages: [{ role: 'user', content: 'hi' }] }),
         })
         clearTimeout(t)
         if (r.ok) result.ok = true
@@ -1728,6 +1734,10 @@ const PRICE = {
   'claude-sonnet-4-6': [3, 15],
   'claude-haiku-4-5-20251001': [0.8, 4],
   'gpt-4o': [2.5, 10],
+  // GPT-5.6 family (2026-07): Sol flagship / Terra balanced / Luna budget.
+  'gpt-5.6-sol': [5, 30],
+  'gpt-5.6-terra': [2.5, 15],
+  'gpt-5.6-luna': [1, 6],
 }
 const usage = { calls: 0, inTok: 0, outTok: 0, costUSD: 0, byModel: {}, since: new Date().toISOString() }
 // Soft daily ceiling on *paid* spend (USD). 0 disables. Override via NEXUS_DAILY_BUDGET_USD.
