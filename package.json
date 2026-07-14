@@ -51,6 +51,8 @@
       "dist/**/*",
       "electron/**/*",
       "server.mjs",
+      "src/lib/**/*",
+      "src/generaluse-routes.mjs",
       "brain.mjs",
       "telegram.mjs",
       "signal.mjs",
