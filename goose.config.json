@@ -114,10 +114,10 @@
     },
     {
       "id": "gemini-flash",
-      "name": "Gemini Flash Lite",
+      "name": "Gemini Flash",
       "provider": "gemini",
-      "model": "gemini-flash-lite-latest",
-      "description": "Google's fast model via the Gemini API (OpenAI-compatible endpoint), 'flash-lite-latest' alias. Chosen over full Flash for free-tier keys: Flash's free bucket is ~20 requests/day (exhausted fast), Lite's is far larger. Swap model to 'gemini-flash-latest' if you enable billing on the key.",
+      "model": "gemini-flash-latest",
+      "description": "Google's fast multimodal model via the Gemini API (OpenAI-compatible endpoint). 'latest' alias tracks the newest flash. Key upgraded to Tier 1 billing 2026-07-14 — full-strength Flash, no free-tier request ceiling.",
       "tier": "small"
     },
     {
@@ -134,14 +134,6 @@
       "provider": "mistral",
       "model": "mistral-large-latest",
       "description": "Mistral's frontier model via La Plateforme. European provider.",
-      "tier": "large"
-    },
-    {
-      "id": "qwen-plus",
-      "name": "Qwen Plus",
-      "provider": "qwen",
-      "model": "qwen-plus",
-      "description": "Alibaba's Qwen via the international DashScope endpoint (OpenAI-compatible).",
       "tier": "large"
     }
   ],
