@@ -15,6 +15,8 @@ import { initBrain } from './brain.mjs'
 // general-use build): capability manifest, skills, routing policies, artifacts,
 // projects, memory, runs, Agentic System Builder. Self-contained module.
 import { registerGeneralUseRoutes, generalUseStores } from './src/generaluse-routes.mjs'
+import { roleForPhase } from './src/lib/run-roles.js'
+import { applyRoutingPolicy } from './src/lib/routing-policies.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -1835,21 +1837,55 @@ async function callModel(modelConfig, systemContent, messages) {
 // Modes: 'roundtable' (Mixture-of-Agents), 'debate', 'orchestrator'.
 // Local (Ollama) models are RAM-bound, so every call runs sequentially.
 app.post('/api/sandbox', async (req, res) => {
-  const {
+  let {
     task, participantIds = [], mode = 'roundtable',
     aggregatorId, rounds = 2, sourceDocs = [], roleAssignments = {},
     backendId, championFile, challengerFile,   // A/B (champion vs challenger) mode
     directorId, tools = true,                  // Umbruh-Director mode
+    // Phase B (2026-07-14 general-use sync):
+    routingPolicy = null, customSelection = null, skillId = null,
+    saveAsArtifact = null, projectId = null,
   } = req.body
   if (!task) return res.status(400).json({ error: 'task required' })
+
+  // Phase B: a routing policy (fast/best/private/low-cost) picks the models from
+  // the available list, overriding participants/director; explained below.
+  let routingChoice = null
+  if (!routingPolicy && projectId) { const pj = generalUseStores.loadProject(projectId); if (pj && pj.routing && pj.routing !== 'auto') routingPolicy = pj.routing }
+  if (routingPolicy) {
+    const avail = (config.models || []).map(m => ({ id: m.id, provider: m.provider, tier: m.tier, pricePerMTokUsd: m.provider === 'ollama' ? 0 : (PRICE[m.model] ? PRICE[m.model][0] : undefined) }))
+    routingChoice = applyRoutingPolicy(String(routingPolicy), avail, { customSelection })
+    if (routingChoice.selected.length) {
+      participantIds = routingChoice.selected
+      if (routingChoice.mode !== 'council' && routingChoice.mode !== 'custom') directorId = routingChoice.selected[0]
+    }
+  }
   if (mode !== 'ab' && !participantIds.length) {
-    return res.status(400).json({ error: 'task and participantIds required' })
+    return res.status(400).json({ error: routingChoice && !routingChoice.selected.length ? `routing policy "${routingPolicy}" selected no model (${routingChoice.reason})` : 'task and participantIds required' })
   }
 
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
-  const emit = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`)
+  // Phase B: durable run record + role-tagged trace. Every emitted event is
+  // captured so /api/runs + the Run Inspector populate, and phased events carry
+  // the runtime role (brain/worker/broker) for the trace.
+  const runRecord = {
+    id: `run_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`,
+    startedAt: new Date().toISOString(), mode, task,
+    projectId: projectId || null, participantIds,
+    directorId: directorId || null, aggregatorId: aggregatorId || null,
+    routingPolicy: routingChoice ? { policy: routingChoice.policy, selected: routingChoice.selected } : null,
+    events: [],
+  }
+  const emit = (obj) => {
+    if (obj && obj.phase && !obj.role) obj.role = roleForPhase(obj.phase)
+    if (runRecord.events.length < 1000) runRecord.events.push(obj)
+    res.write(`data: ${JSON.stringify(obj)}\n\n`)
+  }
+  if (routingChoice && routingChoice.policy) {
+    emit({ type: 'status', role: 'control-plane', message: `Routing policy "${routingChoice.policy}" — ${routingChoice.reason}`, routing: { policy: routingChoice.policy, selected: routingChoice.selected } })
+  }
 
   const participants = []
   for (const id of participantIds) {
@@ -2081,7 +2117,13 @@ ${task}`
         const compose = `You are Umbruh, the Director. Compose the ensemble's work below into one coherent, high-quality deliverable for the task. Keep the strongest reasoning, reconcile any conflicts, note anything still unresolved, and speak in your own voice.\n\nTASK:\n"""${task}"""\n\n${done.map(r => `### ${r.subtask}\n(by ${r.worker})\n${r.text}`).join('\n\n')}`
         try {
           const finalText = await callModel(director, docContext || undefined, [{ role: 'user', content: compose }])
-          emit({ type: 'final', model: director.name, modelId: director.id, text: finalText })
+          // Phase B: opt-in artifact minting from the run (Library populates).
+          let artifactId = null
+          if (saveAsArtifact && typeof saveAsArtifact === 'object') {
+            const art = generalUseStores.createArtifact({ id: `art_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`, type: saveAsArtifact.type || 'report', title: saveAsArtifact.title || (task || 'Untitled').slice(0, 120), content: finalText, now: new Date().toISOString(), provenance: { runId: runRecord.id, modelId: director.id, skillId: skillId || undefined } })
+            if (art) { if (projectId) art.projectId = projectId; if (generalUseStores.saveArtifact(art)) { artifactId = art.id; runRecord.artifactId = art.id } }
+          }
+          emit({ type: 'final', model: director.name, modelId: director.id, text: finalText, artifactId })
         } catch (e) {
           emit({ type: 'turn-error', model: director.name, phase: 'compose', error: e.message })
         }
@@ -2094,6 +2136,9 @@ ${task}`
   } catch (e) {
     emit({ type: 'error', error: e.message })
   }
+  // Phase B: persist the run record (feeds /api/runs + the Run Inspector).
+  runRecord.finishedAt = new Date().toISOString()
+  generalUseStores.saveRunRecord(runRecord)
   res.end()
 })
 
