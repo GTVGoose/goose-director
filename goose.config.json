@@ -114,10 +114,10 @@
     },
     {
       "id": "gemini-flash",
-      "name": "Gemini Flash (latest)",
+      "name": "Gemini Flash Lite",
       "provider": "gemini",
-      "model": "gemini-flash-latest",
-      "description": "Google's fast multimodal model via the Gemini API (OpenAI-compatible endpoint). The 'latest' alias always tracks Google's newest flash model. Needs a Google AI Studio key.",
+      "model": "gemini-flash-lite-latest",
+      "description": "Google's fast model via the Gemini API (OpenAI-compatible endpoint), 'flash-lite-latest' alias. Chosen over full Flash for free-tier keys: Flash's free bucket is ~20 requests/day (exhausted fast), Lite's is far larger. Swap model to 'gemini-flash-latest' if you enable billing on the key.",
       "tier": "small"
     },
     {

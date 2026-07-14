@@ -1218,6 +1218,18 @@ function compatFor(modelConfig) {
   return { base, keyEnv, key: process.env[keyEnv], label: preset?.label || modelConfig.provider }
 }
 
+// Pull the human message out of a provider error body (JSON, sometimes
+// array-wrapped like Gemini's) instead of dumping raw JSON at the user.
+function apiErrMessage(text) {
+  try {
+    let d = JSON.parse(text)
+    if (Array.isArray(d)) d = d[0]
+    const m = d?.error?.message || d?.message
+    if (m) return String(m).split('\n')[0]
+  } catch { /* not JSON — fall through */ }
+  return String(text).replace(/\s+/g, ' ')
+}
+
 // ─── Honest cloud-key validation ────────────────────────────────────────────
 // A green availability dot should mean "this will actually respond", not just
 // "a key string exists". We do a tiny (max_tokens:1) real call per provider and
@@ -1252,13 +1264,28 @@ async function validateProvider(provider) {
       const compat = compatFor(probeModel || { provider })
       if (!compat) { result.error = 'Unknown provider' }
       else if (!compat.key) { result.error = `No API key set (${compat.keyEnv})` }
-      else {
+      else if (provider === 'gemini') {
+        // Gemini keys are commonly FREE TIER with tiny request-per-day quotas —
+        // a real 1-token generation probe every 5 minutes EATS the user's quota
+        // (found live 2026-07-14: "free_tier_requests, limit: 20" exhausted by
+        // probes). Validate auth with GET /models instead: quota-free, still
+        // honest (bad key → 4xx). Generation-time quota errors surface cleanly
+        // from callModel when a real turn runs.
+        const ctrl = new AbortController()
+        const t = setTimeout(() => ctrl.abort(), 8000)
+        const r = await fetch(`${compat.base}/models`, {
+          signal: ctrl.signal, headers: { 'Authorization': `Bearer ${compat.key}` },
+        })
+        clearTimeout(t)
+        if (r.ok) result.ok = true
+        else result.error = `${r.status}: ${apiErrMessage(await r.text()).slice(0, 140)}`
+      } else {
         const model = probeModel?.model || 'gpt-4o'
         const ctrl = new AbortController()
         const t = setTimeout(() => ctrl.abort(), 8000)
         // Real OpenAI's newer models (GPT-5 / o-series) reject `max_tokens` and
         // require `max_completion_tokens`; the other OpenAI-compat clones
-        // (Gemini/DeepSeek/Mistral/Qwen) still expect `max_tokens`. A reasoning
+        // (DeepSeek/Mistral/Qwen) still expect `max_tokens`. A reasoning
         // model can spend the whole budget on hidden reasoning, so give the probe
         // a little headroom (a 200 with empty content still proves the key works).
         const tokenCap = provider === 'openai' ? { max_completion_tokens: 16 } : { max_tokens: 1 }
@@ -1269,7 +1296,7 @@ async function validateProvider(provider) {
         })
         clearTimeout(t)
         if (r.ok) result.ok = true
-        else result.error = `${r.status}: ${(await r.text()).slice(0, 140)}`
+        else result.error = `${r.status}: ${apiErrMessage(await r.text()).slice(0, 140)}`
       }
     } else if (provider === 'claude-code') {
       // Available iff the Claude Code CLI is installed (it uses the Max login).
@@ -1876,7 +1903,7 @@ async function callModel(modelConfig, systemContent, messages) {
     if (!r.ok) {
       // 429 / usage-limit → mark the provider tapped out so routing fails over.
       if (r.status === 429 && tokenBank.has(modelConfig.provider)) { tokenBank.markExhausted(modelConfig.provider, retryAfterMs(r)); persistTokenBank() }
-      throw new Error(`${compat.label} ${r.status}: ${(await r.text()).slice(0, 200)}`)
+      throw new Error(`${compat.label} ${r.status}: ${apiErrMessage(await r.text()).slice(0, 200)}`)
     }
     const data = await r.json()
     recordUsage(modelConfig, data.usage?.prompt_tokens, data.usage?.completion_tokens)
