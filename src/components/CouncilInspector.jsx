@@ -81,7 +81,7 @@ export default function CouncilInspector({ run, open, onToggle }) {
   const empty = members.length === 0 && !final && !runError
 
   return (
-    <div style={{ width: 330, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--color-surface)', border: '0.5px solid var(--color-border)', borderRadius: 10, overflow: 'hidden', minHeight: 0 }}>
+    <div style={{ width: 'clamp(240px, 26vw, 330px)', flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--color-surface)', border: '0.5px solid var(--color-border)', borderRadius: 10, overflow: 'hidden', minHeight: 0 }}>
       {/* Header */}
       <div style={{ padding: '9px 12px', borderBottom: '0.5px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
         <i className="ti ti-users-group" style={{ fontSize: 14, color: 'var(--color-recursive-text)' }} />

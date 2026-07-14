@@ -370,7 +370,7 @@ export default function ChatHome({ canonDocs = [], onNav }) {
     <div style={{ display: 'flex', height: '100%', gap: 14, position: 'relative', minWidth: 0 }}>
 
       {/* ── Left mini-rail: New chat + recent ── */}
-      <div style={{ width: 190, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+      <div style={{ width: 'clamp(150px, 15vw, 190px)', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
         <button
           onClick={newChat}
           disabled={streaming}
@@ -438,8 +438,14 @@ export default function ChatHome({ canonDocs = [], onNav }) {
         </div>
       )}
 
-      {/* ── Center: conversation + composer ── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, maxWidth: 900 }}>
+      {/* ── Center: conversation + composer ──
+            Wrapped in a flex:1 centering shell so (a) the readable-width column
+            floats CENTERED in the free space (3-zone shell: threads left, chat
+            column center) and (b) the Council rail — the next flex sibling —
+            lands hard against the RIGHT edge instead of trailing the 900px cap
+            mid-screen on wide windows (polish-review + David 2026-07-14). */}
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'center' }}>
+      <div style={{ width: '100%', maxWidth: 900, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
 
         {/* ── T17 live cost meter — always visible above the conversation (default
               placement; alt considered: under the brain node in the composer strip,
@@ -552,7 +558,9 @@ export default function ChatHome({ canonDocs = [], onNav }) {
                 working (pulse on the node, neuron traveling down the live path,
                 rotating status phrase) without opening the inspector. ── */}
           <style>{UNIT_CSS}</style>
-          <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 2, position: 'relative', minHeight: 66, width: '100%' }}>
+          {/* overflowX guard: at crushed widths the strip scrolls inside itself
+              instead of blowing the center column out of the flex row. */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 2, position: 'relative', minHeight: 66, width: '100%', minWidth: 0, overflowX: 'auto', overflowY: 'visible' }}>
 
             {/* Brain node */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, width: 104, minWidth: 44, flexShrink: 1 }}>
@@ -565,7 +573,7 @@ export default function ChatHome({ canonDocs = [], onNav }) {
                 <i className="ti ti-brain" style={{ fontSize: 22, color: 'var(--color-accent-text)' }} />
               </button>
               <div style={{ fontSize: 8, color: 'var(--color-text-3)', letterSpacing: '0.12em', fontWeight: 600 }}>BRAIN</div>
-              <div style={{ fontSize: 10, color: 'var(--color-text-2)', textAlign: 'center', lineHeight: 1.25, maxWidth: 104, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: -2 }}>
+              <div style={{ fontSize: 10, color: 'var(--color-text-2)', textAlign: 'center', lineHeight: 1.25, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: -2 }}>
                 {currentModel?.name || 'Select a model'}
               </div>
             </div>
@@ -586,7 +594,7 @@ export default function ChatHome({ canonDocs = [], onNav }) {
                 <i className="ti ti-cpu" style={{ fontSize: 20, color: localInUnit ? providerColor('ollama') : 'var(--color-text-3)' }} />
               </button>
               <div style={{ fontSize: 8, color: 'var(--color-text-3)', letterSpacing: '0.12em', fontWeight: 600 }}>LOCAL</div>
-              <div style={{ fontSize: 10, color: 'var(--color-text-2)', textAlign: 'center', lineHeight: 1.25, maxWidth: 104, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: -2 }}>
+              <div style={{ fontSize: 10, color: 'var(--color-text-2)', textAlign: 'center', lineHeight: 1.25, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: -2 }}>
                 {localModel ? localModel.name : 'none found'}
               </div>
             </div>
@@ -745,6 +753,7 @@ export default function ChatHome({ canonDocs = [], onNav }) {
           </div>
         </div>
       </div>
+      </div>{/* /centering shell */}
 
       {/* ── Right rail: Council inspector (T11) — docks open when a 2nd model joins ── */}
       <CouncilInspector run={councilRun} open={inspectorOpen} onToggle={() => setInspectorOpen(o => !o)} />
