@@ -1881,6 +1881,30 @@ function recordUsage(mc, inTok = 0, outTok = 0) {
 }
 const overBudget = () => budgetUSD > 0 && usage.costUSD >= budgetUSD
 
+// Async CLI runner for the subscription lanes. These calls previously used
+// execFileSync, which BLOCKS the whole event loop for the CLI's lifetime —
+// under concurrent sandbox load every other request starves ("fetch failed"
+// bursts), health checks time out, and a CLI child that never exits (e.g.
+// suspended across a Mac sleep) wedges the server permanently. Same contract
+// as execFileSync: resolves stdout, rejects with { status, stdout, stderr }.
+const CLI_TIMEOUT_MS = Number(process.env.NEXUS_CLI_TIMEOUT_MS) || 180000
+function execFileAsync(cmd, args, { timeout = CLI_TIMEOUT_MS, maxBuffer = 20 * 1024 * 1024, ...opts } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { ...opts, stdio: ['ignore', 'pipe', 'pipe'] })
+    let stdout = '', stderr = '', done = false
+    const finish = (fn, val) => { if (!done) { done = true; clearTimeout(timer); fn(val) } }
+    const fail = (msg, status) => {
+      const e = new Error(msg); e.status = status; e.stdout = stdout; e.stderr = stderr
+      finish(reject, e)
+    }
+    const timer = setTimeout(() => { child.kill('SIGKILL'); fail(`timed out after ${timeout}ms`, null) }, timeout)
+    child.stdout.on('data', d => { stdout += d; if (stdout.length > maxBuffer) { child.kill('SIGKILL'); fail('maxBuffer exceeded', null) } })
+    child.stderr.on('data', d => { stderr += d; if (stderr.length > maxBuffer) stderr = stderr.slice(-maxBuffer) })
+    child.on('error', e => fail(e.message, null))
+    child.on('close', code => code === 0 ? finish(resolve, stdout) : fail(`exit ${code}`, code))
+  })
+}
+
 async function callModel(modelConfig, systemContent, messages) {
   const provider = modelConfig.provider
   // Prepend the model's persona (if any) so cloud Umbruh carries its identity.
@@ -1949,13 +1973,13 @@ async function callModel(modelConfig, systemContent, messages) {
     // is piped on stdin. Metered as $0 by recordUsage (provider !== paid).
     const model = modelConfig.model || 'sonnet'
     const prompt = [systemContent, ...messages.map(m => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))].filter(Boolean).join('\n\n')
-    // Prompt is passed as an ARGUMENT (execFileSync — no shell, no escaping issues).
-    // No --bare: bare mode skips the OAuth/keychain read, i.e. it would NOT use the
-    // Max subscription. cwd=home for a stable, low-context run.
+    // Prompt is passed as an ARGUMENT (no shell, no escaping issues). No --bare:
+    // bare mode skips the OAuth/keychain read, i.e. it would NOT use the Max
+    // subscription. cwd=home for a stable, low-context run. Async — a sync call
+    // here blocks the whole server (see execFileAsync).
     let out
     try {
-      out = execFileSync('claude', ['-p', prompt, '--output-format', 'json', '--model', model], {
-        encoding: 'utf8', timeout: 180000, maxBuffer: 20 * 1024 * 1024,
+      out = await execFileAsync('claude', ['-p', prompt, '--output-format', 'json', '--model', model], {
         cwd: os.homedir(), env: cliEnv(),
       })
     } catch (e) {
@@ -1983,10 +2007,7 @@ async function callModel(modelConfig, systemContent, messages) {
     args.push(prompt)
     let out
     try {
-      out = execFileSync('codex', args, {
-        encoding: 'utf8', timeout: 180000, maxBuffer: 20 * 1024 * 1024,
-        cwd: os.homedir(), env: codexEnv(),
-      })
+      out = await execFileAsync('codex', args, { cwd: os.homedir(), env: codexEnv() })
     } catch (e) {
       const raw = String(e.stderr || e.stdout || e.message || '')
       // codex dumps its whole transcript on stderr; surface the actual ERROR
