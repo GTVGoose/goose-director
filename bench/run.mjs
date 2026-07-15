@@ -34,6 +34,16 @@ export const LANES = {
     kind: 'sandbox',
     cfg: { mode: 'roundtable', participantIds: ['ollama-local', 'umbruh-lite'], aggregatorId: 'ollama-local', rounds: 1 },
   },
+  // v1 aggregation A/B — same members, different combination policy. Needs a
+  // server with the aggregation param (run with NEXUS_URL=http://localhost:3002).
+  'nexus-council-vote': {
+    kind: 'sandbox',
+    cfg: { mode: 'roundtable', participantIds: COUNCIL, aggregatorId: 'claude-max', rounds: 1, aggregation: 'vote' },
+  },
+  'nexus-council-verify': {
+    kind: 'sandbox',
+    cfg: { mode: 'roundtable', participantIds: COUNCIL, aggregatorId: 'claude-max', rounds: 1, aggregation: 'verify' },
+  },
 }
 const DEFAULT_LANES = ['claude-max', 'chatgpt-sub', 'gpt-5.6-sol', 'gemini-flash', 'mistral-large', 'deepseek-chat', 'ollama-local', 'nexus-council']
 
@@ -57,7 +67,10 @@ fs.mkdirSync(outDir, { recursive: true })
 const outFile = path.join(outDir, `${suite}.jsonl`)
 const done = new Set(readJsonl(outFile).map(r => `${r.taskId}::${r.lane}`))
 
-const TIMEOUT = { relay: 240000, sandbox: 600000 }
+// Long-reasoning math regularly blows the 10-minute budget (v0: Claude lost
+// 10/30 AIME to timeouts while scoring 100% on what it finished) — give math
+// suites a wider window.
+const TIMEOUT = { relay: 240000, sandbox: suite === 'aime25' ? 1500000 : 600000 }
 
 async function askLane(lane, prompt) {
   if (lane.kind === 'relay') return relayAsk(lane.modelId, prompt, { timeoutMs: TIMEOUT.relay })
