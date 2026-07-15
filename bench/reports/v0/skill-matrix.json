@@ -1,0 +1,863 @@
+{
+  "generatedAt": "2026-07-15T14:18:58.979Z",
+  "runId": "v0",
+  "note": "accuracy per lane per domain; n is small per MMLU category (~10) — treat single-domain gaps <20pts as noise. attempted = accuracy among non-errored calls.",
+  "lanes": {
+    "claude-max": {
+      "math": {
+        "accuracy": 0.725,
+        "attempted": 0.967,
+        "n": 40,
+        "errors": 10,
+        "avgMs": 137119
+      },
+      "coding": {
+        "accuracy": 0.994,
+        "attempted": 0.994,
+        "n": 164,
+        "errors": 0,
+        "avgMs": 7587
+      },
+      "biology": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 22382
+      },
+      "business": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 14169
+      },
+      "chemistry": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 31334
+      },
+      "computer science": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 19146
+      },
+      "economics": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 16217
+      },
+      "engineering": {
+        "accuracy": 0.8,
+        "attempted": 0.889,
+        "n": 10,
+        "errors": 1,
+        "avgMs": 55480
+      },
+      "health": {
+        "accuracy": 0.8,
+        "attempted": 0.889,
+        "n": 10,
+        "errors": 1,
+        "avgMs": 18248
+      },
+      "history": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 18816
+      },
+      "law": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 43495
+      },
+      "other": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 24762
+      },
+      "philosophy": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 18678
+      },
+      "physics": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 14231
+      },
+      "psychology": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 17150
+      }
+    },
+    "chatgpt-sub": {
+      "math": {
+        "accuracy": 0.875,
+        "attempted": 0.946,
+        "n": 40,
+        "errors": 3,
+        "avgMs": 88093
+      },
+      "coding": {
+        "accuracy": 0.988,
+        "attempted": 0.988,
+        "n": 164,
+        "errors": 0,
+        "avgMs": 11671
+      },
+      "biology": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 17447
+      },
+      "business": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 22431
+      },
+      "chemistry": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 21234
+      },
+      "computer science": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 19818
+      },
+      "economics": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 19871
+      },
+      "engineering": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 25610
+      },
+      "health": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 23980
+      },
+      "history": {
+        "accuracy": 0.7,
+        "attempted": 0.7,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 27961
+      },
+      "law": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 30433
+      },
+      "other": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 19715
+      },
+      "philosophy": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 18735
+      },
+      "physics": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 19257
+      },
+      "psychology": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 22618
+      }
+    },
+    "gpt-5.6-sol": {
+      "math": {
+        "accuracy": 0.825,
+        "attempted": 0.943,
+        "n": 40,
+        "errors": 5,
+        "avgMs": 125283
+      },
+      "coding": {
+        "accuracy": 0.994,
+        "attempted": 0.994,
+        "n": 164,
+        "errors": 0,
+        "avgMs": 17759
+      },
+      "biology": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 24959
+      },
+      "business": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 25768
+      },
+      "chemistry": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 26863
+      },
+      "computer science": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 25345
+      },
+      "economics": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 25667
+      },
+      "engineering": {
+        "accuracy": 0.8,
+        "attempted": 0.889,
+        "n": 10,
+        "errors": 1,
+        "avgMs": 63517
+      },
+      "health": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 29843
+      },
+      "history": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 30921
+      },
+      "law": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 50260
+      },
+      "other": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 32899
+      },
+      "philosophy": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 36219
+      },
+      "physics": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 23572
+      },
+      "psychology": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 26357
+      }
+    },
+    "gemini-flash": {
+      "math": {
+        "accuracy": 0.9,
+        "attempted": 0.973,
+        "n": 40,
+        "errors": 3,
+        "avgMs": 104541
+      },
+      "coding": {
+        "accuracy": 0.957,
+        "attempted": 1,
+        "n": 164,
+        "errors": 7,
+        "avgMs": 31506
+      },
+      "biology": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 51130
+      },
+      "business": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 29979
+      },
+      "chemistry": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 54839
+      },
+      "computer science": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 33793
+      },
+      "economics": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 33758
+      },
+      "engineering": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 65206
+      },
+      "health": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 36504
+      },
+      "history": {
+        "accuracy": 0.7,
+        "attempted": 0.7,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 35598
+      },
+      "law": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 60775
+      },
+      "other": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 43192
+      },
+      "philosophy": {
+        "accuracy": 0.9,
+        "attempted": 1,
+        "n": 10,
+        "errors": 1,
+        "avgMs": 29547
+      },
+      "physics": {
+        "accuracy": 0.9,
+        "attempted": 1,
+        "n": 10,
+        "errors": 1,
+        "avgMs": 28557
+      },
+      "psychology": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 27172
+      }
+    },
+    "mistral-large": {
+      "math": {
+        "accuracy": 0.6,
+        "attempted": 0.615,
+        "n": 40,
+        "errors": 1,
+        "avgMs": 101947
+      },
+      "coding": {
+        "accuracy": 0.927,
+        "attempted": 0.927,
+        "n": 164,
+        "errors": 0,
+        "avgMs": 4075
+      },
+      "biology": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 5175
+      },
+      "business": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 4320
+      },
+      "chemistry": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 7316
+      },
+      "computer science": {
+        "accuracy": 0.6,
+        "attempted": 0.6,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 13053
+      },
+      "economics": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 5442
+      },
+      "engineering": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 25788
+      },
+      "health": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 5023
+      },
+      "history": {
+        "accuracy": 0.6,
+        "attempted": 0.6,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 6887
+      },
+      "law": {
+        "accuracy": 0.6,
+        "attempted": 0.6,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 32172
+      },
+      "other": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 5699
+      },
+      "philosophy": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 9809
+      },
+      "physics": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 11193
+      },
+      "psychology": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 17186
+      }
+    },
+    "deepseek-chat": {
+      "math": {
+        "accuracy": 0.6,
+        "attempted": 0.6,
+        "n": 40,
+        "errors": 0,
+        "avgMs": 37568
+      },
+      "coding": {
+        "accuracy": 0.915,
+        "attempted": 0.915,
+        "n": 164,
+        "errors": 0,
+        "avgMs": 2379
+      },
+      "biology": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 2079
+      },
+      "business": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 1772
+      },
+      "chemistry": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 4721
+      },
+      "computer science": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 2995
+      },
+      "economics": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 1599
+      },
+      "engineering": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 6429
+      },
+      "health": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 1978
+      },
+      "history": {
+        "accuracy": 0.7,
+        "attempted": 0.7,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 1501
+      },
+      "law": {
+        "accuracy": 0.3,
+        "attempted": 0.3,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 5607
+      },
+      "other": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 1766
+      },
+      "philosophy": {
+        "accuracy": 0.7,
+        "attempted": 0.7,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 2388
+      },
+      "physics": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 2132
+      },
+      "psychology": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 1797
+      }
+    },
+    "ollama-local": {
+      "math": {
+        "accuracy": 0.05,
+        "attempted": 0.05,
+        "n": 40,
+        "errors": 0,
+        "avgMs": 104260
+      },
+      "coding": {
+        "accuracy": 0.573,
+        "attempted": 0.573,
+        "n": 164,
+        "errors": 0,
+        "avgMs": 15262
+      },
+      "biology": {
+        "accuracy": 0.6,
+        "attempted": 0.6,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 42005
+      },
+      "business": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 24406
+      },
+      "chemistry": {
+        "accuracy": 0.4,
+        "attempted": 0.4,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 33421
+      },
+      "computer science": {
+        "accuracy": 0.3,
+        "attempted": 0.3,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 27959
+      },
+      "economics": {
+        "accuracy": 0.4,
+        "attempted": 0.4,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 26921
+      },
+      "engineering": {
+        "accuracy": 0.7,
+        "attempted": 0.7,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 55894
+      },
+      "health": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 31265
+      },
+      "history": {
+        "accuracy": 0.5,
+        "attempted": 0.5,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 25449
+      },
+      "law": {
+        "accuracy": 0.2,
+        "attempted": 0.2,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 23475
+      },
+      "other": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 26555
+      },
+      "philosophy": {
+        "accuracy": 0.2,
+        "attempted": 0.2,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 31266
+      },
+      "physics": {
+        "accuracy": 0.3,
+        "attempted": 0.3,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 35985
+      },
+      "psychology": {
+        "accuracy": 0.2,
+        "attempted": 0.2,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 29101
+      }
+    },
+    "nexus-council": {
+      "math": {
+        "accuracy": 0.85,
+        "attempted": 0.895,
+        "n": 40,
+        "errors": 2,
+        "avgMs": 246018
+      },
+      "coding": {
+        "accuracy": 0.994,
+        "attempted": 0.994,
+        "n": 164,
+        "errors": 0,
+        "avgMs": 46888
+      },
+      "biology": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 73995
+      },
+      "business": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 47076
+      },
+      "chemistry": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 58882
+      },
+      "computer science": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 58465
+      },
+      "economics": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 57856
+      },
+      "engineering": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 89709
+      },
+      "health": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 56119
+      },
+      "history": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 54811
+      },
+      "law": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 96457
+      },
+      "other": {
+        "accuracy": 0.9,
+        "attempted": 0.9,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 53749
+      },
+      "philosophy": {
+        "accuracy": 0.8,
+        "attempted": 0.8,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 62193
+      },
+      "physics": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 49855
+      },
+      "psychology": {
+        "accuracy": 1,
+        "attempted": 1,
+        "n": 10,
+        "errors": 0,
+        "avgMs": 62381
+      }
+    }
+  }
+}
