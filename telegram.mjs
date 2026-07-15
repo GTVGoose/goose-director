@@ -120,7 +120,7 @@ export function initTelegram(deps) {
       const form = new FormData()
       form.append('chat_id', String(chatId))
       form.append('voice', new Blob([fs.readFileSync(oggPath)], { type: 'audio/ogg' }), 'reply.ogg')
-      const r = await fetch(`${API}/sendVoice`, { method: 'POST', body: form })
+      const r = await fetch(`${API}/sendVoice`, { method: 'POST', body: form, signal: AbortSignal.timeout(120_000) })
       const data = await r.json()
       cleanup([wavPath, oggPath])
       return !!data.ok
@@ -141,7 +141,7 @@ export function initTelegram(deps) {
       const form = new FormData()
       form.append('chat_id', String(chatId))
       form.append('document', new Blob([fs.readFileSync(filePath)], { type: 'application/pdf' }), filename || path.basename(filePath))
-      const r = await fetch(`${API}/sendDocument`, { method: 'POST', body: form })
+      const r = await fetch(`${API}/sendDocument`, { method: 'POST', body: form, signal: AbortSignal.timeout(120_000) })
       const data = await r.json()
       if (!data.ok) console.error('[Telegram] sendDocument failed:', data.description)
       return !!data.ok
@@ -465,7 +465,7 @@ export function initTelegram(deps) {
       const info = await tgCall('getFile', { file_id: fileId })
       const filePath = info?.result?.file_path
       if (!filePath) return null
-      const r = await fetch(`${FILE_API}/${filePath}`)
+      const r = await fetch(`${FILE_API}/${filePath}`, { signal: AbortSignal.timeout(120_000) })
       const buf = Buffer.from(await r.arrayBuffer())
       const ext = path.extname(filePath) || '.oga'
       const tmp = `/tmp/tg-in-${Date.now()}${ext}`

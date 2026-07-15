@@ -36,6 +36,51 @@ const UMBRUH_MODEL = process.env.UMBRUH_MODEL || config.umbruhLocalModel || 'umb
 function sandboxEnabled() { return config.sandbox ? !!config.sandbox.enabled : true }
 function sandboxModel() { return config.sandbox?.model || config.sandboxModel || UMBRUH_MODEL }
 
+// ─── Provider-call hardening (wake-wedge fix, 2026-07-15) ────────────────────
+// After a lid-close/sleep/wake cycle, outbound sockets that were mid-flight
+// during suspend can die without ever erroring; a fetch with no AbortSignal
+// then pins its handler (and any long job driving it — benchmarks, routines,
+// the gate poller) forever. Every outbound provider call goes through
+// providerFetch(): a hard AbortSignal cap, plus registration in an in-flight
+// set so the Electron wake watchdog (electron/main.cjs) can abort everything
+// that was mid-flight when the machine suspended.
+const PROVIDER_TIMEOUT_MS = Number(process.env.NEXUS_PROVIDER_TIMEOUT_MS) || 180_000
+// Streaming completions legitimately run for minutes — cap them high, but cap them.
+const PROVIDER_STREAM_TIMEOUT_MS = Number(process.env.NEXUS_PROVIDER_STREAM_TIMEOUT_MS) || 900_000
+const inflightProviderCalls = new Set()
+
+function providerFetch(url, opts = {}, { timeoutMs = PROVIDER_TIMEOUT_MS } = {}) {
+  const ctrl = new AbortController()
+  const entry = { ctrl, url: String(url), startedAt: Date.now() }
+  inflightProviderCalls.add(entry)
+  // The timer deliberately stays armed after headers arrive: the same signal
+  // also kills response.body reads, so it is the hard cap for streaming too.
+  // If the call finished long ago, the late abort is a no-op.
+  const timer = setTimeout(() => {
+    inflightProviderCalls.delete(entry)
+    ctrl.abort(new Error(`provider call exceeded ${timeoutMs}ms: ${entry.url}`))
+  }, timeoutMs)
+  if (typeof timer.unref === 'function') timer.unref()
+  const p = fetch(url, { ...opts, signal: ctrl.signal })
+  // Rejected → nothing left to guard; drop out of the registry immediately.
+  p.catch(() => { clearTimeout(timer); inflightProviderCalls.delete(entry) })
+  return p
+}
+
+// Abort every provider call currently in flight. Called by the Electron wake
+// watchdog when the post-resume self-health-check fails: sockets that were
+// open across a suspend are almost certainly dead, and aborting them frees
+// every handler/job wedged on them.
+export function abortInflightProviderCalls(reason = 'aborted by watchdog') {
+  const entries = [...inflightProviderCalls]
+  inflightProviderCalls.clear()
+  for (const entry of entries) {
+    try { entry.ctrl.abort(new Error(`${reason} — in-flight since ${new Date(entry.startedAt).toISOString()}: ${entry.url}`)) } catch {}
+  }
+  if (entries.length) console.warn(`[watchdog] aborted ${entries.length} in-flight provider call(s): ${reason}`)
+  return entries.length
+}
+
 // Load .env — try multiple locations in order of priority
 try {
   const envCandidates = [
@@ -1430,7 +1475,7 @@ app.post('/api/relay', async (req, res) => {
     if (modelConfig.provider === 'anthropic') {
       if (!process.env.ANTHROPIC_API_KEY) return sendError('ANTHROPIC_API_KEY not set in .env')
 
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await providerFetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1444,7 +1489,7 @@ app.post('/api/relay', async (req, res) => {
           system: systemContent || undefined,
           messages: messages.map(m => ({ role: m.role, content: m.content })),
         }),
-      })
+      }, { timeoutMs: PROVIDER_STREAM_TIMEOUT_MS })
 
       if (!response.ok) {
         const err = await response.text()
@@ -1490,7 +1535,7 @@ app.post('/api/relay', async (req, res) => {
       oaiMessages.push(...messages.map(m => ({ role: m.role, content: m.content })))
 
       const baseBody = { model: modelConfig.model, stream: true, messages: oaiMessages }
-      const doFetch = (withUsage) => fetch(`${compat.base}/chat/completions`, {
+      const doFetch = (withUsage) => providerFetch(`${compat.base}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1500,7 +1545,7 @@ app.post('/api/relay', async (req, res) => {
         // spec) so the meter sees real tokens. Not every OpenAI-compat provider
         // accepts the extra field — a strict one (e.g. Mistral) may 400/422 it.
         body: JSON.stringify(withUsage ? { ...baseBody, stream_options: { include_usage: true } } : baseBody),
-      })
+      }, { timeoutMs: PROVIDER_STREAM_TIMEOUT_MS })
       // Best-effort: request usage, but if the provider rejects the field, retry
       // once WITHOUT it so streaming never regresses (usage simply stays 0).
       let response = await doFetch(true)
@@ -1544,7 +1589,7 @@ app.post('/api/relay', async (req, res) => {
       if (systemContent) ollamaMessages.push({ role: 'system', content: systemContent })
       ollamaMessages.push(...messages.map(m => ({ role: m.role, content: m.content })))
 
-      const response = await fetch(`${base}/api/chat`, {
+      const response = await providerFetch(`${base}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1552,7 +1597,7 @@ app.post('/api/relay', async (req, res) => {
           stream: true,
           messages: ollamaMessages,
         }),
-      })
+      }, { timeoutMs: PROVIDER_STREAM_TIMEOUT_MS })
 
       if (!response.ok) return sendError(`Ollama error: is Ollama running at ${base}?`)
 
@@ -1766,7 +1811,7 @@ async function callModel(modelConfig, systemContent, messages) {
   if (persona) systemContent = [persona, systemContent].filter(Boolean).join('\n\n')
   if (provider === 'anthropic') {
     if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not set')
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
+    const r = await providerFetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
@@ -1787,7 +1832,7 @@ async function callModel(modelConfig, systemContent, messages) {
     const msgs = []
     if (systemContent) msgs.push({ role: 'system', content: systemContent })
     msgs.push(...messages.map(m => ({ role: m.role, content: m.content })))
-    const r = await fetch(`${compat.base}/chat/completions`, {
+    const r = await providerFetch(`${compat.base}/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${compat.key}` },
       body: JSON.stringify({ model: modelConfig.model, messages: msgs }),
@@ -1802,7 +1847,7 @@ async function callModel(modelConfig, systemContent, messages) {
     const msgs = []
     if (systemContent) msgs.push({ role: 'system', content: systemContent })
     msgs.push(...messages.map(m => ({ role: m.role, content: m.content })))
-    const r = await fetch(`${base}/api/chat`, {
+    const r = await providerFetch(`${base}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       // keep_alive: 0 unloads the model from RAM immediately after responding.
@@ -2314,7 +2359,7 @@ Do not include raw conversation — only structured output.`
 
   try {
     const base = process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
-    const response = await fetch(`${base}/api/chat`, {
+    const response = await providerFetch(`${base}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2717,7 +2762,7 @@ app.post('/api/voice-memory', async (req, res) => {
   const convText = conversation.map(m => `${m.role === 'user' ? 'Director' : 'Umbruh'}: ${m.content}`).join('\n')
 
   try {
-    const response = await fetch(`${ollamaUrl}/api/chat`, {
+    const response = await providerFetch(`${ollamaUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2899,7 +2944,7 @@ async function executeTool(name, args) {
         return { success: true, message: `Written: ${p}` }
       }
       case 'fetch_url': {
-        const r = await fetch(args.url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+        const r = await providerFetch(args.url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, { timeoutMs: 30_000 })
         const html = await r.text()
         const text = html
           .replace(/<script[\s\S]*?<\/script>/gi, '')
@@ -2928,7 +2973,7 @@ async function runAgentLoop(messages, ollamaUrl, maxSteps = 8, useTools = true) 
   for (let i = 0; i < maxSteps; i++) {
     const body = { model: UMBRUH_MODEL, messages: msgs, stream: false }
     if (toolsAllowed) body.tools = UMBRUH_TOOLS
-    const response = await fetch(`${ollamaUrl}/api/chat`, {
+    const response = await providerFetch(`${ollamaUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -2972,7 +3017,7 @@ async function callModelAgentic(modelConfig, systemContent, task, onTool = () =>
     if (system) msgs.push({ role: 'system', content: system })
     msgs.push({ role: 'user', content: task })
     for (let i = 0; i < maxSteps; i++) {
-      const r = await fetch(`${base}/api/chat`, {
+      const r = await providerFetch(`${base}/api/chat`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: modelConfig.model, messages: msgs, stream: false, keep_alive: 0, tools: UMBRUH_TOOLS }),
       })
@@ -2994,7 +3039,7 @@ async function callModelAgentic(modelConfig, systemContent, task, onTool = () =>
     if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not set')
     const msgs = [{ role: 'user', content: task }]
     for (let i = 0; i < maxSteps; i++) {
-      const r = await fetch('https://api.anthropic.com/v1/messages', {
+      const r = await providerFetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
         body: JSON.stringify({ model: modelConfig.model, max_tokens: 4096, system, tools: ANTHROPIC_TOOLS, messages: msgs }),
@@ -3026,7 +3071,7 @@ async function callModelAgentic(modelConfig, systemContent, task, onTool = () =>
     if (system) msgs.push({ role: 'system', content: system })
     msgs.push({ role: 'user', content: task })
     for (let i = 0; i < maxSteps; i++) {
-      const r = await fetch(`${agenticCompat.base}/chat/completions`, {
+      const r = await providerFetch(`${agenticCompat.base}/chat/completions`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agenticCompat.key}` },
         body: JSON.stringify({ model: modelConfig.model, messages: msgs, tools: UMBRUH_TOOLS }),
       })
@@ -3162,11 +3207,11 @@ You are speaking aloud to the Director via a mobile voice interface. Different r
       }
     } else {
       // Conversational path: stream Ollama tokens, TTS each sentence on detection
-      const ollamaRes = await fetch(`${ollamaUrl}/api/chat`, {
+      const ollamaRes = await providerFetch(`${ollamaUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: UMBRUH_MODEL, messages: ollamaMessages, stream: true })
-      })
+      }, { timeoutMs: PROVIDER_STREAM_TIMEOUT_MS })
       if (!ollamaRes.ok) throw new Error(`Ollama ${ollamaRes.status}`)
 
       const reader = ollamaRes.body.getReader()
@@ -3310,8 +3355,44 @@ const PORT = Number(process.env.NEXUS_PORT) || 3001
 // Bind loopback-only by default so the API/UI is never exposed to the LAN.
 // Override with NEXUS_HOST only if you deliberately need remote access (+ firewall).
 const HOST = process.env.NEXUS_HOST || '127.0.0.1'
-app.listen(PORT, HOST, () => {
+let httpServer = app.listen(PORT, HOST, () => {
   console.log(`Nexus API on ${HOST}:${PORT}`)
   console.log('Goose Director API running on http://localhost:3001')
   console.log('Repo path:', REPO, fs.existsSync(REPO) ? '✓ found' : '✗ not found — using static data')
 })
+
+// Tear down and recreate the HTTP listener. Called by the Electron wake
+// watchdog when the server stops answering after a sleep/wake cycle — the
+// observed failure mode is the kernel still accepting TCP on 3001 while Node
+// never sees the connections, which only a fresh listen socket fixes.
+// Resolves true once the new listener is accepting, false if re-listen failed.
+export function recoverHttpServer() {
+  return new Promise((resolve) => {
+    const old = httpServer
+    let relistened = false
+    const relisten = () => {
+      if (relistened) return
+      relistened = true
+      try {
+        httpServer = app.listen(PORT, HOST, () => {
+          console.warn(`[watchdog] HTTP listener recreated on ${HOST}:${PORT}`)
+          resolve(true)
+        })
+        httpServer.on('error', (e) => {
+          console.error('[watchdog] re-listen failed:', e.message)
+          resolve(false)
+        })
+      } catch (e) {
+        console.error('[watchdog] re-listen threw:', e.message)
+        resolve(false)
+      }
+    }
+    if (!old) return relisten()
+    try { old.closeAllConnections?.() } catch {}
+    try { old.close(relisten) } catch { relisten() }
+    // close() waits for the 'close' event; a wedged server may never emit it,
+    // so force the re-listen after 3s regardless.
+    const fallback = setTimeout(relisten, 3000)
+    if (typeof fallback.unref === 'function') fallback.unref()
+  })
+}
