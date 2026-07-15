@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, ipcMain, Tray, Menu, nativeImage, dialog } = require('electron')
+const { app, BrowserWindow, shell, ipcMain, Tray, Menu, nativeImage, dialog, powerMonitor } = require('electron')
 const path = require('path')
 const http = require('http')
 const fs = require('fs')
@@ -12,6 +12,7 @@ const VITE_PORT = 5173
 let mainWindow = null
 let tray = null
 let isQuiting = false   // true only when Quit is explicitly chosen
+let serverModule = null // ESM namespace of server.mjs (packaged runs only) — watchdog hooks
 
 // ─── start the Express API server (in-process, not spawned) ──────────────────
 // We use dynamic import() to load server.mjs directly into the main process.
@@ -30,7 +31,7 @@ async function startApiServer() {
     console.log('[API] Loading server in-process from', serverPath)
     console.log('[API] Resources:', process.resourcesPath)
     console.log('[API] User data:', process.env.NEXUS_USER_DATA)
-    await import(serverPath)
+    serverModule = await import(serverPath)
     console.log('[API] server.mjs loaded successfully')
   } catch (err) {
     console.error('[API] Failed to load server module:', err)
@@ -45,9 +46,13 @@ function waitForPort(port, maxWait = 20000) {
     const start = Date.now()
     const check = () => {
       const req = http.get(`http://localhost:${port}/api/health`, (res) => {
+        res.resume()
         if (res.statusCode < 500) return resolve()
         else retry()
       })
+      // A server that accepts TCP but never answers (the post-wake wedge)
+      // would otherwise leave this request pending forever.
+      req.setTimeout(3000, () => req.destroy(new Error('health request timed out')))
       req.on('error', retry)
     }
     const retry = () => {
@@ -55,6 +60,61 @@ function waitForPort(port, maxWait = 20000) {
       setTimeout(check, 300)
     }
     check()
+  })
+}
+
+// ─── wake watchdog ────────────────────────────────────────────────────────────
+// Observed 2026-07-15: after a lid-close/sleep + wake cycle the in-process
+// server accepted TCP on 3001 but never answered any HTTP request (even
+// /api/health) until the app was fully restarted, silently stalling every
+// long-running job. On each resume we self-check /api/health with a hard
+// timeout; on failure we abort all in-flight provider fetches (sockets that
+// crossed a suspend are dead) and recreate the HTTP listener via the hooks
+// server.mjs exports.
+
+function httpHealthCheck(timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    const req = http.get(
+      { host: '127.0.0.1', port: API_PORT, path: '/api/health', timeout: timeoutMs },
+      (res) => { res.resume(); resolve(res.statusCode < 500) }
+    )
+    req.on('timeout', () => { req.destroy(new Error('health check timed out')) })
+    req.on('error', () => resolve(false))
+  })
+}
+
+let watchdogRunning = false
+async function runWakeWatchdog(trigger) {
+  if (DEV_MODE || watchdogRunning) return
+  watchdogRunning = true
+  try {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      if (await httpHealthCheck(5000)) {
+        console.log(`[watchdog] ${trigger}: server healthy${attempt > 1 ? ` (recovered, attempt ${attempt})` : ''}`)
+        return
+      }
+      console.warn(`[watchdog] ${trigger}: health check FAILED (attempt ${attempt}) — recovering server`)
+      try { serverModule?.abortInflightProviderCalls?.(`wake watchdog: server unresponsive after ${trigger}`) }
+      catch (e) { console.error('[watchdog] abort of in-flight calls failed:', e) }
+      try { await serverModule?.recoverHttpServer?.() }
+      catch (e) { console.error('[watchdog] HTTP listener recreation failed:', e) }
+      await new Promise((r) => setTimeout(r, 2000))
+    }
+    if (await httpHealthCheck(5000)) {
+      console.log(`[watchdog] ${trigger}: server healthy after recovery`)
+    } else {
+      console.error(`[watchdog] ${trigger}: server STILL unresponsive after recovery attempts — a manual Nexus restart is needed`)
+    }
+  } finally {
+    watchdogRunning = false
+  }
+}
+
+function setupWakeWatchdog() {
+  if (DEV_MODE) return  // dev: server is a separate process; no in-process hooks
+  powerMonitor.on('resume', () => {
+    // Short delay so the network stack and timers settle before we judge health.
+    setTimeout(() => runWakeWatchdog('resume'), 3000)
   })
 }
 
@@ -213,6 +273,7 @@ app.whenReady().then(async () => {
     try {
       await startApiServer()
       await waitForPort(API_PORT)
+      setupWakeWatchdog()
     } catch (err) {
       console.error('Server startup failed:', err)
       dialog.showErrorBox(
