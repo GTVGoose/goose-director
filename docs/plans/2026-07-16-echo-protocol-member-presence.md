@@ -1,109 +1,83 @@
-# Echo Protocol — member presence & attribution for the SFS Vault membrane
+# Echo Protocol → the membrane: what crosses into the SFS Vault, and when
 
-**Date:** 2026-07-16
-**Status:** DRAFT — written from the Director's problem statement (misattribution when
-one member works on another member's machine). The revised Echo Protocol spec lives
-outside this repo (sfs-vault); reconcile this draft against it before building.
+**Date:** 2026-07-16 (v2 — corrects the same-day v1 draft, which reconstructed the
+protocol from the problem statement before the goose-agent-system repo was attached.
+The real spec: `goose-agent-system/agents/echo/echo-capture-protocol.md` +
+`AGT-VOX-001_TheEcho_VaultGrade_v1.md`.)
 
-## Problem
+## What the Echo Protocol actually is
 
-The system infers *who is acting* from *where the action came from* — machine,
-chat ID, branch prefix, bound member. Those proxies break the moment members
-share hardware: Boris architecting on the Director's Mac is read as David, so
-follow-ups, fixes, and vault messages route to the wrong person. Identity of the
-**channel** and identity of the **member** are currently the same thing; the Echo
-Protocol separates them.
+The Echo (AGT-VOX-001) is the Goose voice-keeper: Capture · Corpus · Consolidation ·
+Gate. The **Echo Capture Protocol** governs how the corpus is allowed to grow:
 
-## The protocol in one line
+- **Explicit triggers only, never ambient** — "this is Goose" in a session, an Umbruh
+  voice-session flag, or the `bin/echo-capture` CLI. Three authenticated channels (D2).
+- **The shared-machine rule (revised 2026-07-03):** Boris also uses the Director's
+  machine, so **machine / user account is NOT proof of authorship**. Historical mining
+  is disabled; the corpus grows forward-only from explicit marks and Director-named
+  standing sources.
+- **Provenance on every entry** — `{ts, channel, modality, register, context, origin}`,
+  where `origin: director-explicit` is a poison lock writable only by the
+  authenticated channels (§5-F1).
 
-A member announces themselves (**echo-in**), the system repeats its belief back
-for confirmation (**echo-back**), and the confirmed presence **decays** unless
-refreshed — every artifact produced meanwhile is stamped with the live, confirmed
-identity instead of the machine default.
+This is the load-bearing insight for member tracking generally: **identity is never
+inferred from the machine; it is asserted through a channel bound to the member.**
 
-## The three legs
+## Hard boundary (charter, non-negotiable)
 
-### 1. Echo-in (assertion)
-Whoever starts working emits a presence claim:
+The raw corpus is Goose-personal, gitignored, and **never enters sfs-vault**. Studio
+agents may consume **gate verdicts and distilled voice-guide artifacts only**. Nothing
+below proposes moving the corpus; the Director has also directed that nothing crosses
+until the Echo is proven working.
 
-```json
-{
-  "member": "boris",
-  "host": "gooses-mac",
-  "context": "relay streaming / cost meter",
-  "started_at": "2026-07-16T14:02:00Z",
-  "ttl_sec": 7200
-}
-```
+## What can cross the membrane, in graduation order
 
-Cheap to emit, from any surface the member already uses:
-- Telegram bot command: `/echo boris` (chat ID already binds the sender)
-- Vault CLI: `echo-in boris --context "relay work"`
-- Git commit trailer: `Echoed-By: boris`
+### 1. The attribution discipline (pattern, not data) — available now
+Generalize the capture protocol's provenance rule to vault member tracking:
 
-### 2. Echo-back (reflection + confirmation)
-The system never silently trusts the claim. It reflects its belief back to the
-*claimed* member over a channel only that member holds — their own Telegram chat
-(`telegram.mjs` already keys `directorChatId` / `borisChatId` separately):
+- Vault messages, receipts, and merge-gate commits carry
+  `{member, channel, origin}`, where `origin: member-explicit` may only be written
+  by a channel authenticated to that member — their own Telegram chat ID
+  (`telegram.mjs` already keys `directorChatId` / `borisChatId`), a per-member CLI
+  on their own account, or an explicit in-session declaration ("this is Boris").
+- No channel may infer member identity from host or git user — the vault-side
+  mirror of the shared-machine rule. Unasserted actions are `unattributed`, never
+  defaulted to the machine owner. This is the direct fix for fixes routing to the
+  wrong member.
+- `delivery-log.jsonl` and `member-registry.json` already exist in
+  `_system/bridge/`; this adds an origin field and an assertion path, not new
+  infrastructure.
+- Symmetry: Boris can run the same protocol from his fleet ("this is Boris");
+  per-member corpora stay inside each organism, only attribution metadata is shared.
 
-> "Reading you as **Boris** on the **Director's Mac**, working on the relay.
-> Confirm?"
+### 2. Gate verdicts as a membrane service — after Phase 2/3 prove out
+The Gate's four legs (authorship verifier, style-embedding cosine, cross-family LLM
+judge, claims-ledger check) become a service studio flows can call: pass/fail + 
+confidence, served through the membrane. Raw corpus stays home; the verdict travels.
 
-A tap closes the loop. Because the confirmation arrives on Boris's personal
-channel, it doubles as lightweight authentication — David can't accidentally (or
-deliberately) confirm as Boris. The round trip — signal out, reflection back —
-is what makes it an *echo* protocol: identity is established by the reply, not
-the announcement.
+### 3. The claims ledger as a vault-wide breaker — separable, crosses early if wanted
+"Every factual claim in outbound copy must resolve to a verifiable data point; an
+unverifiable claim is a hard fail regardless of style" (§5-F8) has nothing
+Goose-specific in it. It could be adopted as a studio circuit breaker on any
+outbound surface independent of the voice work.
 
-### 3. Decay (TTL / heartbeat)
-Presence expires unless refreshed (activity on an echoed context auto-refreshes;
-the vault heartbeat's Sense stage nudges near expiry: "Still Boris on the
-Director's Mac?"). When an echo lapses, the system does **not** fall back to
-assuming the machine owner — it downgrades to `unattributed / low-confidence`
-and asks before routing anything consequential. Stale identity is worse than no
-identity.
+### 4. Edit-pair minting on member finalizes — with Phase 3
+Every T-A finalize mints an (agent draft, member final) pair. In the vault this
+doubles as attribution-correct training signal per member — but only once leg 1
+(attribution) is in place, or the pairs inherit the same misattribution bug.
 
-## Vault implementation sketch
+## Readiness bar before anything crosses
 
-New files in `_system/bridge/`, beside `member-registry.json`:
+Per the Director: not until it actually works. Concretely, borrow the charter's own
+graduation logic (§3): the Gate passes its monthly blind test on the relevant
+register, and the T-A zero-edit record holds (20 consecutive zero-edit finalizes,
+≥95% zero-edit over rolling 30 days) before any studio flow consumes verdicts.
+Leg 1 (the attribution pattern) has no corpus dependency and needs no such bar —
+it can be adopted vault-side as soon as the schema is agreed through the one PR door.
 
-| File | Role |
-|---|---|
-| `presence.json` | Current live echoes (member, host, context, confirmed, expiry) |
-| `echo-log.jsonl` | Append-only history — the attribution audit trail |
+## Name collision note
 
-Consumers, in rough build order:
-
-1. **Message stamping** — vault routines add `presence` (echo id + confidence)
-   next to `produced_by` on every outbound message; `delivery-log.jsonl`
-   receipts carry it through, so misattribution becomes visible in the log
-   instead of discovered downstream.
-2. **Routing** — `vault_bridge` routing and `gate.mjs`'s `isPersonalBound`
-   consult `presence.json`: "send the fix to whoever was working on X" resolves
-   via the echo log (who was echoed-in on that host/context at that time), never
-   via machine ownership. Studio traffic rules are unchanged — this only fixes
-   *which member* a member-bound message resolves to.
-3. **Heartbeat sensing** — the Vault Master Heartbeat treats expiring/unconfirmed
-   echoes as a sensed condition and fires the echo-back nudge.
-4. **Membrane UI** — a presence strip on the Membrane view (this repo,
-   `src/components/Membrane.jsx`): who is live, on which host, in which context,
-   and at what confidence. Read-only mirror of `presence.json`.
-5. **Commit attribution** — merge-gate reads the `Echoed-By:` trailer so vault
-   PR history reflects members, not machine git configs.
-
-## Non-goals
-
-- Not security/auth in the strong sense — echo-back over a member-bound channel
-  deters mistakes and casual impersonation, not a determined attacker.
-- Not surveillance — echoes are self-asserted and member-visible; the log
-  records claims and confirmations, not keystrokes.
-- No change to the membrane's contribution governance (one PR door, octagon
-  review, Boris holds vault admin).
-
-## Open questions for the revised spec
-
-- Auto-echo: should activity on a member's *own* machine create an implicit
-  confirmed echo, with explicit echo-in only required on foreign hardware?
-- TTL defaults: per-member, per-context, or global?
-- Conflict rule when two members are echoed-in on the same host/context
-  simultaneously (pairing sessions) — dual-stamp, or primary + witness?
+"The Echo" (AGT-VOX-001, voice-keeper) is distinct from the **Presence / Echo sigil**
+(SIG-PE-001, enforced by Antiphon): the sigil's "echo" is a hollow-agreement failure
+mode in engagement quality. Same word, orthogonal concepts; membrane docs should say
+"Echo Protocol (AGT-VOX-001 capture)" when precision matters.
