@@ -1,6 +1,8 @@
 # Nexus landing page — copy draft v0 (for the SFS Studio site)
 
 **Date:** 2026-07-16 · **Status:** draft for Goose/Boris review — nothing here is public yet.
+**⚠ Naming:** "Nexus" is a placeholder pending the rename decision (see `naming-candidates.md`,
+48h protocol). Do not publish the page until the name closes — every "Nexus" below gets swapped.
 **Page goal for v0:** one page, one CTA (join the waitlist). The page ships *before* the app.
 All claims below must stay true of the actual MVP build — cut any line the release gate can't back.
 
@@ -53,8 +55,10 @@ servers in the loop. Local models via Ollama sit at the same table as the cloud,
   key is free and takes minutes to get — the app walks you through it.
 - **Do you see my prompts or keys?** No. Nexus is a local app; keys are stored on your machine and
   requests go directly from your Mac to each provider.
-- **What does it cost?** The beta is free. You pay your AI providers directly for what you use —
-  Nexus shows you that spend in real time.
+- **What does it cost?** The core is free: full multi-model chat and council, forever. Pro — a
+  subscription unlocking projects, library, domains, and visibility — launches after beta, with a
+  7-day free trial. Either way, you pay your AI providers directly for what you use, and Nexus
+  shows you that spend in real time.
 - **Which models?** Claude, GPT-4o, Gemini, DeepSeek, Mistral, Qwen out of the box, plus anything
   you run locally with Ollama.
 - **Windows/Linux?** macOS first. Tell us what you're on when you join the waitlist.

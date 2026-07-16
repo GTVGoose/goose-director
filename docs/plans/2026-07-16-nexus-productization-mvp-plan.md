@@ -66,6 +66,32 @@ If we agree on BYOK, the MVP is *finishing and hardening what exists*, not build
 The product story in one line: **a native Mac console that convenes a council of AI models —
 cloud + local, side by side — with an honest meter showing what every run costs.**
 
+**Pricing split (decided 2026-07-16, per Goose/Boris):** the free tier is the chat surface with
+the full multi-model council — users can see the product's potential end-to-end. **Pro is a
+subscription** that unlocks the retention layers: projects, library, domains, visibility — with a
+**7-day free Pro trial** to hook users before the paywall. Consequence for scope: the beta ships
+the free tier only; the Pro features get productized from their personal-lineage ancestors during/
+after beta, plus license-entitlement plumbing to gate them (needed by v1.0, not by beta). This
+moves "Domains" from *cut* to *deferred-Pro*.
+
+## 3b. Competitive landscape (checked 2026-07-16)
+
+The name-collision sweep doubled as a market scan. The multi-model space is real and crowded —
+side-by-side comparison is a commodity (ChatHub, MultipleChat, ChatPlayground, Admix, GetMulti,
+OpenRouter's playground), and at least two products already sell *deliberation*:
+
+- **Conclave AI** (conclaveai.dev) — the closest competitor: Claude + GPT + Gemini analyze
+  independently, a moderator synthesizes; cross-platform, subscription, 7-day free trial.
+- **Parley AI** (tryparleyai.app) — "smarter answers through AI deliberation," plus a separate
+  Parley multi-agent debate app.
+- **Allgn** (allgn.io) — side-by-side plus agreement/difference summaries.
+
+Read: the council concept is validated — and no longer novel on its own. Nexus's defensible
+differences, which the landing page must lead with: **(1) native Mac + local Ollama models seated
+at the same table** (nobody else does local), **(2) BYOK with an honest live cost meter** (the
+competitors resell inference at a markup), **(3) the Pro depth layers** (projects/library/domains —
+a workspace, not just a chat toy).
+
 ---
 
 ## 4. Release gate — turn the A/B protocol into a written checklist
@@ -130,12 +156,18 @@ cold install, one recorded council demo, and a live waitlist page.
 - **Week 2:** public v1: DMG download from the landing page, launch posts. Beta feedback decides
   whether payment gating ships in v1.0 or fast-follows.
 
-## 7. Open decisions (answer today, record here)
+## 7. Decisions — frozen 2026-07-16 (Goose + Boris + Claude)
 
-1. **BYOK v1?** (recommended: yes) — decided: ______
-2. **Pricing:** free beta → paid v1? One-time license (Lemon Squeezy/Paddle handles Mac app
-   licensing + EU VAT with near-zero setup) vs subscription. (Recommended: free beta now, one-time
-   "founder license" at v1, subscription only when there's a hosted component.) — decided: ______
-3. **Beta channel:** direct DMG link to waitlist emails (recommended) vs TestFlight (needs App
-   Store plumbing; skip). — decided: ______
-4. **Product name confirmed as "Nexus"?** — decided: ______
+1. **BYOK v1?** — **DECIDED: yes.** Users bring their own provider keys; the Pro subscription
+   pays for features, not inference.
+2. **Pricing** — **DECIDED: freemium.** Free tier = chat + full multi-model council (see the
+   full spec in §3). Pro subscription = projects, library, domains, visibility; 7-day free Pro
+   trial. Beta = free tier only.
+3. **Beta channel** — **DECIDED: direct DMG to waitlist.** Signed + notarized DMG emailed to
+   hand-picked waitlist users. No TestFlight.
+4. **Product name** — **OPEN, actively renaming.** "Nexus" was never checked and "Healix"
+   (Goose/Boris candidate) is dead on arrival: multiple existing AI-health products already use
+   Healix/HealixAI, plus Healix Ltd (health-risk services) and Healx (AI drug discovery) — and it
+   mispositions a general-purpose console as a health product. Vetted candidates and the
+   recommended direction live in `docs/product/naming-candidates.md`. Landing page copy proceeds
+   with placeholder branding until this closes — target: decide within 48h so the page can ship.
