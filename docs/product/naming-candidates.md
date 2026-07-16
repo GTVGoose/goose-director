@@ -43,8 +43,15 @@ models moving as one, (b) essentially untouched in AI, and (c) turn the founder 
 brand instead of hiding it. Candidates, strongest first — **each needs one quick web/trademark
 check before use** (same 5-minute sweep as above):
 
-1. **Skein** — *a flock of geese in flight formation.* Short, sharp, ownable; the V-formation
-   visual is the council chain UI. Known uses: yarn term, a niche hash function. The pick to beat.
+1. **Second Skein** — Goose's riff (2026-07-16), now the front-runner. Plays on *second skin*
+   (an extension of yourself), *second brain* (the PKM concept — literally the Pro tier), and
+   *skein* (a goose flock in flight — your second flock of minds). **Exact phrase verified clean:
+   zero products, brands, or companies.** Caveats: skein is pronounced "skayn," so the skin pun
+   fully lands only in text; expect "skien" misspellings. Remaining diligence: secondskein.com,
+   App Store, USPTO, handles.
+2. **Skein** (solo) — *demoted 2026-07-16 after deeper check:* more contested than first thought —
+   Skein AI Systems (skeinai.com), Skein healthtech AI (skein.co), Skein Technologies (dev shop),
+   skein.dev, KoboldAI "Skein" story model. The compound form above is what makes it ownable.
 2. **Gander** — male goose + *"take a gander"* = take a look. Double meaning lands perfectly:
    "Take a gander — ask every AI at once." Known uses: defunct outdoor retailer (different world).
 3. **Murmuration** — a starling flock moving as one organism. The most beautiful metaphor of the
