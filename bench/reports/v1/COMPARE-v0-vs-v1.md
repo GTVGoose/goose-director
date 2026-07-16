@@ -19,11 +19,11 @@
 
 | Lane | v0 | v1 | Δ |
 |---|---|---|---|
-| claude-max | 66.7% (10e) | 100.0% | +33.3 |
 | gpt-5.6-sol | 80.0% (5e) | 100.0% | +20.0 |
 | chatgpt-sub | 90.0% (3e) | 96.7% | +6.7 |
 | nexus-council-vote | — | 96.7% | — |
 | nexus-council-verify | — | 93.3% | — |
+| claude-max | 66.7% (10e) | 90.0% (3e) | +23.3 |
 | gemini-flash | 90.0% (3e) | — | — |
 | nexus-council | 83.3% (2e) | — | — |
 | deepseek-chat | 53.3% | — | — |

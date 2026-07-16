@@ -4,11 +4,11 @@
 
 | Lane | Score | Score (clean) | n | Errors | Median latency |
 |---|---|---|---|---|---|
-| claude-max | 100.0% | **100.0%** | 27 | 0 | 87.9s |
 | gpt-5.6-sol | 100.0% | **100.0%** | 30 | 0 | 29.0s |
 | chatgpt-sub | 96.7% | **96.7%** | 30 | 0 | 27.7s |
 | nexus-council-vote | 96.7% | **96.7%** | 30 | 0 | 305.2s |
 | nexus-council-verify | 93.3% | **93.3%** | 30 | 0 | 399.2s |
+| claude-max | 90.0% | **90.0%** | 30 | 3 | 94.1s |
 
 ## mmlu-pro
 

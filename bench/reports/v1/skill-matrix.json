@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-16T11:27:52.254Z",
+  "generatedAt": "2026-07-16T14:17:56.930Z",
   "runId": "v1",
   "note": "accuracy per lane per domain; n is small per MMLU category (~10) — treat single-domain gaps <20pts as noise. attempted = accuracy among non-errored calls.",
   "lanes": {
@@ -205,11 +205,11 @@
     },
     "claude-max": {
       "math": {
-        "accuracy": 1,
+        "accuracy": 0.9,
         "attempted": 1,
-        "n": 27,
-        "errors": 0,
-        "avgMs": 150236
+        "n": 30,
+        "errors": 3,
+        "avgMs": 474658
       }
     },
     "gpt-5.6-sol": {
