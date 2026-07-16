@@ -2067,6 +2067,10 @@ app.post('/api/sandbox', async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
+  // Long-reasoning members can go many minutes between events; undici (Node
+  // fetch) kills a body idle >300s, so heartbeat comments keep clients alive.
+  const heartbeat = setInterval(() => { try { res.write(': ping\n\n') } catch { /* closed */ } }, 25000)
+  res.on('close', () => clearInterval(heartbeat))
   // Phase B: durable run record + role-tagged trace. Every emitted event is
   // captured so /api/runs + the Run Inspector populate, and phased events carry
   // the runtime role (brain/worker/broker) for the trace.
