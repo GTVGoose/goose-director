@@ -70,7 +70,10 @@ const done = new Set(readJsonl(outFile).map(r => `${r.taskId}::${r.lane}`))
 // Long-reasoning math regularly blows the 10-minute budget (v0: Claude lost
 // 10/30 AIME to timeouts while scoring 100% on what it finished) — give math
 // suites a wider window.
-const TIMEOUT = { relay: 240000, sandbox: suite === 'aime25' ? 1500000 : 600000 }
+const TIMEOUT = {
+  relay: 240000,
+  sandbox: Number(process.env.BENCH_SANDBOX_TIMEOUT_MS) || (suite === 'aime25' ? 1500000 : 600000),
+}
 
 async function askLane(lane, prompt) {
   if (lane.kind === 'relay') return relayAsk(lane.modelId, prompt, { timeoutMs: TIMEOUT.relay })
