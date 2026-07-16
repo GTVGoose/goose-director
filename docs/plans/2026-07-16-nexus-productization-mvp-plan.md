@@ -74,23 +74,22 @@ the free tier only; the Pro features get productized from their personal-lineage
 after beta, plus license-entitlement plumbing to gate them (needed by v1.0, not by beta). This
 moves "Domains" from *cut* to *deferred-Pro*.
 
-## 3b. Competitive landscape (checked 2026-07-16)
+## 3b. Competitive landscape (deep-dive completed 2026-07-16)
 
-The name-collision sweep doubled as a market scan. The multi-model space is real and crowded —
-side-by-side comparison is a commodity (ChatHub, MultipleChat, ChatPlayground, Admix, GetMulti,
-OpenRouter's playground), and at least two products already sell *deliberation*:
+Superseded by the full teardown in `docs/product/competitive-analysis.md` (three parallel research
+passes over ~30 products). Corrections to the first-pass sweep: Conclave AI is an app-*builder*
+using a council internally, not our closest competitor; the actual closest competitors are
+**Fluent** (fluentmac.app — native Mac BYOK app with a literal "Council" + chairman synthesis,
+$49–69 one-time) and **Perplexity Model Council** (Feb 2026, in their $200/mo Max tier), with
+Karpathy's open-source `llm-council` (Nov 2025) having commoditized the mechanic.
 
-- **Conclave AI** (conclaveai.dev) — the closest competitor: Claude + GPT + Gemini analyze
-  independently, a moderator synthesizes; cross-platform, subscription, 7-day free trial.
-- **Parley AI** (tryparleyai.app) — "smarter answers through AI deliberation," plus a separate
-  Parley multi-agent debate app.
-- **Allgn** (allgn.io) — side-by-side plus agreement/difference summaries.
-
-Read: the council concept is validated — and no longer novel on its own. Nexus's defensible
-differences, which the landing page must lead with: **(1) native Mac + local Ollama models seated
-at the same table** (nobody else does local), **(2) BYOK with an honest live cost meter** (the
-competitors resell inference at a markup), **(3) the Pro depth layers** (projects/library/domains —
-a workspace, not just a chat toy).
+Bottom line: we can't claim "first" or "only council." The unoccupied position is the
+*combination*: native desktop + BYOK + **cloud AND local models on one council** + default Brain
+synthesis + **live honest cost meter**. The sector's chronic complaints (opaque credit pricing,
+orchestration that silently fails) map exactly onto what Nexus already does honestly. One open
+pricing tension flagged in the analysis: desktop-BYOK category norms are one-time licenses, so the
+Pro subscription should be paired with a limited founder-lifetime tier at launch (recommendation,
+not yet decided).
 
 ---
 
