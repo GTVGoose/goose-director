@@ -81,8 +81,42 @@ async function fetchHumanEval() {
   writeJsonl('humaneval.jsonl', records)
 }
 
-const only = process.argv[2] // optional: mmlu-pro | aime25 | humaneval
-const jobs = { 'mmlu-pro': () => fetchMmluPro(10), aime25: fetchAime25, humaneval: fetchHumanEval }
+// ── LiveBench (contamination-limited; graders reimplemented in lib.mjs) ──────
+// Mechanically-gradable categories only. Rows currently served by HF are the
+// live (non-removed) question set; livebench_release_date is kept per record.
+async function fetchLiveBench() {
+  const cats = [
+    ['reasoning', 'lb-reasoning'],
+    ['math', 'lb-math'],
+    ['data_analysis', 'lb-data'],
+    ['coding', 'lb-coding'],
+  ]
+  for (const [cat, suite] of cats) {
+    const rows = []
+    const page = cat === 'coding' ? 10 : 100 // coding rows embed test blobs
+    for (let off = 0; off < 1000; off += page) {
+      const batch = await hfRows(`livebench/${cat}`, 'default', 'test', off, page)
+      rows.push(...batch)
+      if (batch.length < page) break
+    }
+    const records = rows.map(r => {
+      const base = {
+        id: `lb-${r.question_id.slice(0, 12)}`, suite, task: r.task,
+        question: r.turns[0], release: (r.livebench_release_date || '').slice(0, 10),
+      }
+      if (cat === 'coding') {
+        return { ...base, question_title: r.question_title, ground_truth: '',
+                 public_test_cases: r.public_test_cases, private_test_cases: r.private_test_cases,
+                 original_json: r.original_json ? { metadata: r.original_json.metadata } : undefined }
+      }
+      return { ...base, ground_truth: String(r.ground_truth ?? '') }
+    })
+    writeJsonl(`${suite}.jsonl`, records)
+  }
+}
+
+const only = process.argv[2] // optional: mmlu-pro | aime25 | humaneval | livebench
+const jobs = { 'mmlu-pro': () => fetchMmluPro(10), aime25: fetchAime25, humaneval: fetchHumanEval, livebench: fetchLiveBench }
 for (const [name, job] of Object.entries(jobs)) {
   if (only && only !== name) continue
   try { await job() } catch (e) { console.error(`✗ ${name}: ${e.message}`); process.exitCode = 1 }

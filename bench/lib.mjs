@@ -3,6 +3,8 @@ import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import zlib from 'node:zlib'
+const zlibInflate = (buf) => { try { return zlib.inflateSync(buf) } catch { return zlib.gunzipSync(buf) } }
 
 export const NEXUS = process.env.NEXUS_URL || 'http://localhost:3001'
 
@@ -75,6 +77,9 @@ export function buildPrompt(task) {
   if (task.suite === 'humaneval') {
     return `Complete the following Python function. Reply with ONE Python code block containing the complete, self-contained implementation (include the function signature and any imports; no example usage, no tests).\n\n\`\`\`python\n${task.prompt}\`\`\``
   }
+  // LiveBench questions carry their own task-specific format instructions —
+  // use them verbatim (matching the official harness).
+  if (task.suite.startsWith('lb-')) return task.question
   throw new Error(`unknown suite ${task.suite}`)
 }
 
@@ -95,9 +100,19 @@ export function extractAnswer(suite, text) {
     const tail = [...text.matchAll(/\b(\d{1,3})\b/g)].pop()
     return tail ? tail[1] : null
   }
-  if (suite === 'humaneval') {
+  if (suite === 'humaneval' || suite === 'lb-coding') {
     const blocks = [...text.matchAll(/```(?:python)?\n([\s\S]*?)```/g)].map(m => m[1])
     return blocks.length ? blocks[blocks.length - 1] : text
+  }
+  if (suite.startsWith('lb-')) {
+    // LiveBench tasks use several final-answer conventions; try them newest-last.
+    const sol = [...text.matchAll(/<solution>([\s\S]*?)<\/solution>/gi)].pop()
+    if (sol) return sol[1].trim()
+    const ans = [...text.matchAll(/^\s*(?:\*\*)?Answer(?:\*\*)?\s*[:=]\s*(.+)$/gim)].pop()
+    if (ans) return ans[1].trim()
+    const bold = [...text.matchAll(/\*\*([^*]{1,300}?)\*\*/g)].pop()
+    if (bold) return bold[1].trim()
+    return text.trim() // tablereformat etc. answer with the raw table/JSON
   }
   return null
 }
@@ -108,7 +123,106 @@ export function grade(task, extracted) {
   if (task.suite === 'mmlu-pro') return { correct: extracted === task.answer }
   if (task.suite === 'aime25') return { correct: Number(extracted) === Number(task.answer) }
   if (task.suite === 'humaneval') return gradeHumanEval(task, extracted)
+  if (task.suite === 'lb-coding') return gradeLbCoding(task, extracted)
+  if (task.suite.startsWith('lb-')) return gradeLbText(task, extracted)
   return { correct: false, detail: 'unknown-suite' }
+}
+
+// LiveBench text tasks. Reimplementation of the official scorers' spirit:
+// list-style answers compare element-wise after normalization; JSON tasks
+// deep-compare with numeric tolerance; everything else normalized equality.
+// Stricter than official for math (no sympy equivalence) — disclosed in report.
+const lbNorm = (s) => String(s).toLowerCase().replace(/[$\\{}]|\\left|\\right|\s+/g, '').replace(/\.$/, '')
+function deepEq(a, b) {
+  if (typeof a === 'number' || typeof b === 'number') {
+    const x = Number(a), y = Number(b)
+    if (Number.isFinite(x) && Number.isFinite(y)) return Math.abs(x - y) <= 1e-6 * Math.max(1, Math.abs(x), Math.abs(y))
+  }
+  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((v, i) => deepEq(v, b[i]))
+  if (a && b && typeof a === 'object' && typeof b === 'object') {
+    const ka = Object.keys(a).sort(), kb = Object.keys(b).sort()
+    return ka.length === kb.length && ka.every((k, i) => k === kb[i] && deepEq(a[k], b[k]))
+  }
+  return lbNorm(a) === lbNorm(b)
+}
+// Tables arrive in either orientation — records array [{row},...] or pandas
+// "index" object {"69":{row},...} (the official scorer normalizes via pandas).
+// Canonicalize both to an order-insensitive multiset of rows.
+function tableRows(x) {
+  if (Array.isArray(x) && x.every(v => v && typeof v === 'object')) return x
+  if (x && typeof x === 'object' && Object.values(x).length && Object.values(x).every(v => v && typeof v === 'object')) return Object.values(x)
+  return null
+}
+function canonRows(rows) {
+  return rows
+    .map(r => Object.fromEntries(Object.entries(r).sort(([a], [b]) => a.localeCompare(b))))
+    .map(r => JSON.stringify(r, (k, v) => (typeof v === 'number' ? Math.round(v * 1e6) / 1e6 : v)))
+    .sort()
+}
+function gradeLbText(task, extracted) {
+  const gt = task.ground_truth
+  if (gt.trim().startsWith('{') || gt.trim().startsWith('[')) {
+    try {
+      const want = JSON.parse(gt)
+      const m = String(extracted).match(/[{[][\s\S]*[}\]]/)
+      if (!m) return { correct: false, detail: 'no-json' }
+      const got = JSON.parse(m[0])
+      const wr = tableRows(want), gr = tableRows(got)
+      if (wr && gr) return { correct: wr.length === gr.length && canonRows(wr).every((r, i) => r === canonRows(gr)[i]) }
+      return { correct: deepEq(got, want) }
+    } catch { return { correct: false, detail: 'json-parse' } }
+  }
+  const wantList = gt.split(',').map(lbNorm)
+  const gotList = String(extracted).split(',').map(lbNorm)
+  if (wantList.length > 1) {
+    return { correct: gotList.length === wantList.length && wantList.every((w, i) => w === gotList[i]) }
+  }
+  return { correct: lbNorm(extracted) === lbNorm(gt) }
+}
+
+// LiveBench coding: LCB-style test cases (public + private; private may be
+// base64+zlib). stdin tests feed stdin and compare stdout; functional tests
+// call metadata.fn_name on a Solution instance.
+function lbTests(task) {
+  const parse = (raw) => {
+    if (!raw) return []
+    try { return JSON.parse(raw) } catch { /* compressed */ }
+    // LCB private tests: base64(zlib(pickle(json_str))) — decode via python.
+    const r = spawnSync('python3', ['-c',
+      'import pickle,zlib,base64,json,sys;d=pickle.loads(zlib.decompress(base64.b64decode(sys.stdin.read())));print(d if isinstance(d,str) else json.dumps(d))'],
+      { input: raw, encoding: 'utf8', timeout: 20000, maxBuffer: 64 * 1024 * 1024 })
+    if (r.status !== 0) throw new Error(`pickle-decode: ${(r.stderr || '').slice(0, 80)}`)
+    return JSON.parse(r.stdout)
+  }
+  return [...parse(task.public_test_cases), ...parse(task.private_test_cases)]
+}
+function gradeLbCoding(task, code) {
+  let tests
+  try { tests = lbTests(task) } catch (e) { return { correct: false, detail: `tests-undecodable: ${e.message.slice(0, 80)}` } }
+  if (!tests.length) return { correct: false, detail: 'no-tests' }
+  const meta = task.original_json?.metadata ? JSON.parse(task.original_json.metadata) : {}
+  for (const t of tests.slice(0, 24)) {
+    let program, input = ''
+    if ((t.testtype || 'stdin') === 'functional' && meta.fn_name) {
+      program = `${code}\nimport json,sys\n_args=json.loads(sys.stdin.read())\n_r=Solution().${meta.fn_name}(*_args)\nprint(json.dumps(_r))`
+      input = JSON.stringify(String(t.input).trim().split('\n').map(l => JSON.parse(l)))
+    } else {
+      program = code
+      input = t.input
+    }
+    const tmp = path.join(os.tmpdir(), `lb-${task.id}-${process.pid}.py`)
+    fs.writeFileSync(tmp, program)
+    try {
+      const r = spawnSync('python3', ['-I', tmp], { timeout: 20000, encoding: 'utf8', input })
+      if (r.status !== 0) return { correct: false, detail: (r.stderr || 'exit-nonzero').split('\n').filter(Boolean).pop()?.slice(0, 120) }
+      const got = (r.stdout || '').trim(), want = String(t.output ?? '').trim()
+      const ok = (t.testtype === 'functional' && meta.fn_name)
+        ? (() => { try { return deepEq(JSON.parse(got), JSON.parse(want)) } catch { return got === want } })()
+        : got === want
+      if (!ok) return { correct: false, detail: `wrong-output@${t.testtype || 'stdin'}` }
+    } finally { fs.unlinkSync(tmp) }
+  }
+  return { correct: true }
 }
 
 function gradeHumanEval(task, code) {
