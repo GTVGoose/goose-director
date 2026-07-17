@@ -169,7 +169,10 @@ export default function Sidebar({ view, onNav, escalations, reviews, vaultName, 
         {section('Act')}
         {/* GU10.2: Agentic System Builder — flag-gated (ui.builder, default off; flip is G7). */}
         {builder && nav('builder', 'wand', 'Builder', 'Build your first agentic system')}
-        {nav('invoke', 'terminal-2', 'Invoke', 'Send work to any agent or model')}
+        {/* Invoke + Council folded into Chat (owner directive 2026-07-17): the
+            chat landing conducts one-off work and convenes the council rail.
+            Recurring work gets its own surface: */}
+        {nav('automations', 'repeat', 'Automations', 'Scheduled prompts that run themselves')}
         {renderPersonalNav()}
 
         <div style={{ flex: 1 }} />

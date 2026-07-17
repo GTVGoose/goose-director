@@ -19,6 +19,7 @@ import { roleForPhase } from './src/lib/run-roles.js'
 import { applyRoutingPolicy, setSkillMatrix } from './src/lib/routing-policies.js'
 import { createTokenBank } from './src/lib/token-bank.js'
 import { initMeetings } from './meetings.mjs'
+import { initAutomations } from './automations.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -3822,6 +3823,13 @@ app.post('/api/transcribe', express.raw({ type: 'audio/*', limit: '25mb' }), (re
   rm([srcPath, wavPath])
   res.status(503).json({ error: 'no transcriber available — run install-telegram.command to set up whisper' })
 })
+// ─── Automations (scheduled prompts — tool-less, shared core) ────────────────
+try {
+  initAutomations({ app, config, callModel, resolveBrain })
+} catch (e) {
+  console.error('[Automations] init failed:', e.message)
+}
+
 // ─── Meetings (meeting → system-grade report appliance) ─────────────────────
 // Tool-less synthesis only — meeting content has no path into the sandbox.
 try {

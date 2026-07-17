@@ -5,6 +5,7 @@ import AgentMap from './components/AgentMap.jsx'
 import StatusLayer from './components/StatusLayer.jsx'
 import CanonState from './components/CanonState.jsx'
 import Invoke from './components/Invoke.jsx'
+import Automations from './components/Automations.jsx'
 import ChatHome from './components/ChatHome.jsx'
 import Knowledge from './components/Knowledge.jsx'
 import Library from './components/Library.jsx'
@@ -106,6 +107,7 @@ export default function App() {
     status:    { label: 'Status Layer',  sub: 'Background activity' },
     canon:     { label: 'Canon State',   sub: 'Boundary map' },
     invoke:    { label: 'Invoke',        sub: 'Send work to agents and models' },
+    automations: { label: 'Automations',  sub: 'Scheduled prompts that run themselves' },
     help:      { label: 'Help',          sub: 'Guides and glossary' },
     settings:  { label: 'Settings',     sub: 'API keys and configuration' },
     ...personalViewMeta,   // extension views (populated by the product overlay)
@@ -227,6 +229,7 @@ export default function App() {
           {view === 'status' && <StatusLayer entries={statusData.entries} />}
           {view === 'canon' && <CanonState docs={canonDocs} />}
           {view === 'invoke' && <Invoke canonDocs={canonDocs} onNav={navigate} />}
+          {view === 'automations' && <Automations />}
           {view === 'knowledge' && <Knowledge />}
           {view === 'library' && ui.library && <Library />}
           {view === 'runs' && ui.runInspector && <RunInspector />}

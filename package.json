@@ -52,6 +52,7 @@
       "electron/**/*",
       "server.mjs",
       "meetings.mjs",
+      "automations.mjs",
       "src/lib/**/*",
       "src/generaluse-routes.mjs",
       "brain.mjs",
