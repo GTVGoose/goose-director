@@ -84,8 +84,7 @@ function Explainer() {
         </div>
         <div style={{ fontSize: 12, color: 'var(--color-text-3)', lineHeight: 1.6, marginTop: 14 }}>
           <strong>How it works today:</strong> import a transcript your meeting platform already made
-          (Google Meet / Zoom export a <code>.vtt</code>, or paste "Name: line" text). Nexus synthesizes
-          the report — locally by default. Live audio capture arrives in a later phase.
+          (Google Meet / Zoom export a <code>.vtt</code>, or paste "Name: line" text). the local record is transcribed on-device, then your system's model processes it into the report.
           <br /><br />
           <strong>What Nexus never does:</strong> no bot joins your call, no audio or transcript ever
           leaves this machine, and no agents act on meeting content inside Nexus — reports hand off to
@@ -245,7 +244,7 @@ function RecordCard({ onRecordingDone }) {
     <div style={card}>
       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Record a meeting</div>
       <div style={{ fontSize: 12, color: 'var(--color-text-3)', marginBottom: 14, lineHeight: 1.5 }}>
-        One button. When you stop, the recording is transcribed on this machine and the report writes itself.
+        One button. Stop → the local record is transcribed on this machine, then handed to your system's model, which processes it into the report.
       </div>
       <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Meeting title (optional)" style={{ width: '100%', marginBottom: 12 }} />
       <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text-2)', marginBottom: 14, cursor: 'pointer' }}>
@@ -476,7 +475,7 @@ function Detail({ id, exportDestinations, synthesisMode, onBack, onDeleted }) {
               <select value={dest} onChange={e => setDest(e.target.value)} style={{ fontSize: 12, maxWidth: 260 }}>
                 {exportDestinations.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
-              <button style={btn} onClick={doExport}><i className="ti ti-share" /> Hand off report</button>
+              <button style={btn} onClick={doExport}><i className="ti ti-share" /> File report to your systems</button>
             </>
           )}
           {data.report && !exportDestinations.length && (
@@ -498,7 +497,7 @@ function Detail({ id, exportDestinations, synthesisMode, onBack, onDeleted }) {
             </label>
           ))}
           <div style={{ fontSize: 11, color: 'var(--color-text-3)', marginTop: 10 }}>
-            Derived from unverified speech — verify before acting. Execution belongs to your systems, via the handed-off report.
+            Derived from unverified speech — verify before acting. Execution belongs to your systems, via the filed report.
           </div>
         </div>
       )}
