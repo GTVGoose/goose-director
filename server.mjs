@@ -693,7 +693,7 @@ app.post('/api/config', (req, res) => {
     // General-use engine surface flags (2026-07-14 sync) + chat-first UX flags
     // (chatHome/councilLabel/overviewCompact — App.jsx reads them; they were
     // missing from this allow-list so saves silently dropped them). Bool-coerced.
-    for (const f of ['library', 'runInspector', 'projects', 'visibility', 'builder', 'chatHome', 'councilLabel', 'overviewCompact']) {
+    for (const f of ['library', 'runInspector', 'projects', 'visibility', 'builder', 'chatHome', 'councilLabel', 'overviewCompact', 'domainsInVisibility']) {
       if (ui[f] !== undefined) config.ui[f] = !!ui[f]
     }
   }

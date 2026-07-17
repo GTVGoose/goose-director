@@ -7,6 +7,11 @@ import CanonState from './components/CanonState.jsx'
 import Invoke from './components/Invoke.jsx'
 import ChatHome from './components/ChatHome.jsx'
 import Knowledge from './components/Knowledge.jsx'
+import Library from './components/Library.jsx'
+import RunInspector from './components/RunInspector.jsx'
+import Projects from './components/Projects.jsx'
+import Visibility from './components/Visibility.jsx'
+import Builder from './components/Builder.jsx'
 import Settings from './components/Settings.jsx'
 import Help from './components/Help.jsx'
 import Setup from './components/Setup.jsx'
@@ -93,6 +98,11 @@ export default function App() {
     chat:      { label: 'Chat',          sub: 'Talk to the Brain' },
     agents:    { label: 'Agents',        sub: 'Roster — click an agent for detail' },
     knowledge: { label: 'Knowledge',     sub: 'Canon index' },
+    library:   { label: 'Library',       sub: 'Durable artifacts — versions, provenance, export' },
+    runs:      { label: 'Runs',          sub: 'Council run traces — plan, workers, tools, synthesis' },
+    projects:  { label: 'Projects',      sub: 'Durable context — instructions, routing, scoped work' },
+    visibility:{ label: 'Visibility',    sub: 'Library, runs, and projects in one workspace' },
+    builder:   { label: 'Builder',       sub: 'Build your first agentic system, stage by stage' },
     status:    { label: 'Status Layer',  sub: 'Background activity' },
     canon:     { label: 'Canon State',   sub: 'Boundary map' },
     invoke:    { label: 'Invoke',        sub: 'Send work to agents and models' },
@@ -119,6 +129,11 @@ export default function App() {
         chatHome={!!ui.chatHome}
         councilLabel={!!ui.councilLabel}
         membrane={!!ui.membrane}
+        library={!!ui.library}
+        runInspector={!!ui.runInspector}
+        projects={!!ui.projects}
+        visibility={!!ui.visibility}
+        builder={!!ui.builder}
       />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
@@ -213,6 +228,11 @@ export default function App() {
           {view === 'canon' && <CanonState docs={canonDocs} />}
           {view === 'invoke' && <Invoke canonDocs={canonDocs} onNav={navigate} />}
           {view === 'knowledge' && <Knowledge />}
+          {view === 'library' && ui.library && <Library />}
+          {view === 'runs' && ui.runInspector && <RunInspector />}
+          {view === 'projects' && ui.projects && <Projects />}
+          {view === 'visibility' && ui.visibility && <Visibility agents={agents} statusData={statusData} canonDocs={canonDocs} onNav={navigate} domainsTab={!!ui.domainsInVisibility} />}
+          {view === 'builder' && ui.builder && <Builder />}
           {view === 'help' && <Help />}
           {view === 'settings' && <Settings />}
           {/* extension views (populated by the product overlay). Membrane (T14) is

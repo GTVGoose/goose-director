@@ -189,15 +189,16 @@
   ],
   "umbruhLocalModel": "umbruh-lite",
   "ui": {
-    "library": true,
-    "runInspector": true,
-    "projects": true,
+    "library": false,
+    "runInspector": false,
+    "projects": false,
     "visibility": true,
     "builder": true,
     "onboardingComplete": true,
     "chatHome": true,
     "councilLabel": true,
-    "overviewCompact": true
+    "overviewCompact": true,
+    "domainsInVisibility": false
   },
   "tokenBank": {
     "providers": {
