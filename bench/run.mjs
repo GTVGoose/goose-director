@@ -7,44 +7,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { relayAsk, sandboxAsk, buildPrompt, extractAnswer, grade, readJsonl } from './lib.mjs'
+import { relayAsk, sandboxAsk, buildPrompt, extractAnswer, grade, readJsonl, LANES } from './lib.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 
-// ── Lane definitions ─────────────────────────────────────────────────────────
-// Solo lanes run as single-participant, aggregator-less roundtables so every
-// provider goes through the same code path (callModel), which — unlike
-// /api/relay — also supports the claude-code and codex subscription CLIs.
-const solo = (modelId) => ({ kind: 'sandbox', cfg: { mode: 'roundtable', participantIds: [modelId], rounds: 1 } })
-const COUNCIL = ['claude-max', 'chatgpt-sub', 'gemini-flash', 'mistral-large', 'deepseek-chat']
-export const LANES = {
-  'claude-max':    solo('claude-max'),
-  'chatgpt-sub':   solo('chatgpt-sub'),
-  'gpt-5.6-sol':   solo('gpt-5.6-sol'),
-  'gemini-flash':  solo('gemini-flash'),
-  'mistral-large': solo('mistral-large'),
-  'deepseek-chat': solo('deepseek-chat'),
-  'ollama-local':  solo('ollama-local'),
-  // Orchestrated lanes (via /api/sandbox)
-  'nexus-council': {
-    kind: 'sandbox',
-    cfg: { mode: 'roundtable', participantIds: COUNCIL, aggregatorId: 'claude-max', rounds: 1 },
-  },
-  'nexus-local-council': {
-    kind: 'sandbox',
-    cfg: { mode: 'roundtable', participantIds: ['ollama-local', 'umbruh-lite'], aggregatorId: 'ollama-local', rounds: 1 },
-  },
-  // v1 aggregation A/B — same members, different combination policy. Needs a
-  // server with the aggregation param (run with NEXUS_URL=http://localhost:3002).
-  'nexus-council-vote': {
-    kind: 'sandbox',
-    cfg: { mode: 'roundtable', participantIds: COUNCIL, aggregatorId: 'claude-max', rounds: 1, aggregation: 'vote' },
-  },
-  'nexus-council-verify': {
-    kind: 'sandbox',
-    cfg: { mode: 'roundtable', participantIds: COUNCIL, aggregatorId: 'claude-max', rounds: 1, aggregation: 'verify' },
-  },
-}
 const DEFAULT_LANES = ['claude-max', 'chatgpt-sub', 'gpt-5.6-sol', 'gemini-flash', 'mistral-large', 'deepseek-chat', 'ollama-local', 'nexus-council']
 
 // ── CLI args ─────────────────────────────────────────────────────────────────

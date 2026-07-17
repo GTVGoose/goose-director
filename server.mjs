@@ -2108,8 +2108,11 @@ app.post('/api/sandbox', async (req, res) => {
   // the aggregator "reconciled" math answers into numbers no member proposed).
   // vote/verify never let the aggregator author an answer — they only pick one.
   const answerKeyOf = (text) => {
-    const m = [...String(text).matchAll(/ANSWER\s*[:=]\s*(.+)/gi)].pop()
-    return (m ? m[1] : String(text)).trim().toLowerCase()
+    const s = String(text)
+    const m = [...s.matchAll(/ANSWER\s*[:=]\s*(.+)/gi)].pop()      // ANSWER: 42
+      || [...s.matchAll(/<solution>([\s\S]*?)<\/solution>/gi)].pop() // <solution>…</solution>
+      || [...s.matchAll(/\*\*([^*]{1,300}?)\*\*/g)].pop()            // last **bold**
+    return (m ? m[1] : s).trim().toLowerCase()
       .replace(/[*_`$.()[\]{}]/g, '').replace(/\s+/g, ' ').slice(0, 120)
   }
   // Aggregator checks each candidate and picks one verbatim — no blending.
