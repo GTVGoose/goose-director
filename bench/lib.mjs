@@ -83,6 +83,19 @@ export function buildPrompt(task) {
   throw new Error(`unknown suite ${task.suite}`)
 }
 
+// Last \boxed{...} with balanced braces (regex can't nest).
+export function lastBoxed(text) {
+  const s = String(text)
+  let idx = s.lastIndexOf('\\boxed{')
+  if (idx < 0) return null
+  let depth = 0
+  for (let i = idx + 7; i < s.length; i++) {
+    if (s[i] === '{') depth++
+    else if (s[i] === '}') { if (depth === 0) return s.slice(idx + 7, i).trim(); depth-- }
+  }
+  return null
+}
+
 // ── Answer extraction ────────────────────────────────────────────────────────
 export function extractAnswer(suite, text) {
   if (!text) return null
@@ -110,6 +123,8 @@ export function extractAnswer(suite, text) {
     if (sol) return sol[1].trim()
     const ans = [...text.matchAll(/^\s*(?:\*\*)?Answer(?:\*\*)?\s*[:=]\s*(.+)$/gim)].pop()
     if (ans) return ans[1].trim()
+    const boxed = lastBoxed(text) // AMPS-style final answers: \boxed{…}
+    if (boxed) return boxed
     const bold = [...text.matchAll(/\*\*([^*]{1,300}?)\*\*/g)].pop()
     if (bold) return bold[1].trim()
     return text.trim() // tablereformat etc. answer with the raw table/JSON
@@ -177,7 +192,29 @@ function gradeLbText(task, extracted) {
   if (wantList.length > 1) {
     return { correct: gotList.length === wantList.length && wantList.every((w, i) => w === gotList[i]) }
   }
-  return { correct: lbNorm(extracted) === lbNorm(gt) }
+  if (lbNorm(extracted) === lbNorm(gt)) return { correct: true }
+  // Symbolic math (AMPS_Hard etc.): string equality is far too strict for
+  // LaTeX expressions — fall back to sympy equivalence like the official scorer.
+  if (task.suite === 'lb-math') return { correct: sympyEq(extracted, gt) }
+  return { correct: false }
+}
+export function sympyEq(a, b) {
+  const r = spawnSync('python3', ['-c', `
+import sys
+from sympy.parsing.latex import parse_latex
+from sympy import simplify, sympify, Eq
+a, b = sys.argv[1], sys.argv[2]
+def parse(s):
+    s = s.strip().strip('$').replace('\\\\\\\\dfrac','\\\\\\\\frac').replace('\\\\\\\\left','').replace('\\\\\\\\right','')
+    try: return parse_latex(s)
+    except Exception: return sympify(s.replace('^','**'), evaluate=True)
+try:
+    ea, eb = parse(a), parse(b)
+    print('EQ' if simplify(ea - eb) == 0 else 'NE')
+except Exception:
+    print('ERR')
+`, String(a).slice(0, 500), String(b).slice(0, 500)], { encoding: 'utf8', timeout: 15000 })
+  return (r.stdout || '').trim() === 'EQ'
 }
 
 // LiveBench coding: LCB-style test cases (public + private; private may be

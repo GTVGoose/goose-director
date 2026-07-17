@@ -2111,6 +2111,7 @@ app.post('/api/sandbox', async (req, res) => {
     const s = String(text)
     const m = [...s.matchAll(/ANSWER\s*[:=]\s*(.+)/gi)].pop()      // ANSWER: 42
       || [...s.matchAll(/<solution>([\s\S]*?)<\/solution>/gi)].pop() // <solution>…</solution>
+      || [...s.matchAll(/\\boxed\{([^{}]{1,200})\}/g)].pop()         // \boxed{…} (simple)
       || [...s.matchAll(/\*\*([^*]{1,300}?)\*\*/g)].pop()            // last **bold**
     return (m ? m[1] : s).trim().toLowerCase()
       .replace(/[*_`$.()[\]{}]/g, '').replace(/\s+/g, ' ').slice(0, 120)
