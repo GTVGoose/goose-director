@@ -690,8 +690,10 @@ app.post('/api/config', (req, res) => {
     // Full-UI theme (T23) — string key into THEMES; absent ⇒ 'studio' ⇒ today's
     // look. String-coerced + undefined-guarded so an unrelated save can't drop it.
     if (ui.theme !== undefined) config.ui.theme = String(ui.theme).slice(0, 40)
-    // General-use engine surface flags (2026-07-14 sync). Bool-coerced, undefined-guarded.
-    for (const f of ['library', 'runInspector', 'projects', 'visibility', 'builder']) {
+    // General-use engine surface flags (2026-07-14 sync) + chat-first UX flags
+    // (chatHome/councilLabel/overviewCompact — App.jsx reads them; they were
+    // missing from this allow-list so saves silently dropped them). Bool-coerced.
+    for (const f of ['library', 'runInspector', 'projects', 'visibility', 'builder', 'chatHome', 'councilLabel', 'overviewCompact']) {
       if (ui[f] !== undefined) config.ui[f] = !!ui[f]
     }
   }
