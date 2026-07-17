@@ -20,3 +20,6 @@ threads/
 
 # Meetings dev-mode store (userData in packaged builds) — transcripts never enter git
 meetings-local/
+
+# per-install config overlay (userData in packaged builds; local in dev)
+goose.overrides.json

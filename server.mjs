@@ -23,16 +23,62 @@ import { initAutomations } from './automations.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-// Config file location — in packaged app it lives in Contents/Resources/
-// (set by main.cjs via NEXUS_RESOURCES). Fall back to local dir for dev.
-const configCandidates = [
+// ─── Layered config (one base, one overlay) ──────────────────────────────────
+// ONE shared base config across every Nexus lineage (the template shipped in
+// the bundle / repo), plus a per-install OVERLAY of the user's deltas —
+// goose.overrides.json in userData. The running config = deepMerge(base,
+// overlay); every runtime write persists ONLY the diff against base. The
+// Goose "shell" IS this overlay (+ personal-extensions.jsx for components):
+// same base as the product, personal preferences layered on top. Also ends
+// the old in-bundle write behavior that wiped settings on every reinstall.
+const USER_DATA_DIR = process.env.NEXUS_USER_DATA || null
+
+const isPlainObject = (v) => v && typeof v === 'object' && !Array.isArray(v)
+function deepMerge(base, over) {
+  if (!isPlainObject(base) || !isPlainObject(over)) return over === undefined ? base : over
+  const out = { ...base }
+  for (const [k, v] of Object.entries(over)) {
+    out[k] = isPlainObject(base[k]) && isPlainObject(v) ? deepMerge(base[k], v) : v
+  }
+  return out
+}
+function deepDiff(base, cur) {
+  const out = {}
+  for (const [k, v] of Object.entries(cur || {})) {
+    if (isPlainObject(v) && isPlainObject(base?.[k])) {
+      const d = deepDiff(base[k], v)
+      if (Object.keys(d).length) out[k] = d
+    } else if (JSON.stringify(v) !== JSON.stringify(base?.[k])) {
+      out[k] = v
+    }
+  }
+  return out
+}
+
+const baseCandidates = [
   process.env.NEXUS_RESOURCES && path.join(process.env.NEXUS_RESOURCES, 'goose.config.json'),
   path.join(__dirname, 'goose.config.json'),
   path.join(__dirname, '..', 'goose.config.json'),
 ].filter(Boolean)
-const configPath = configCandidates.find(p => fs.existsSync(p))
-if (!configPath) throw new Error(`goose.config.json not found. Searched:\n  ${configCandidates.join('\n  ')}`)
-const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+const basePath = baseCandidates.find(p => fs.existsSync(p))
+if (!basePath) throw new Error(`goose.config.json not found. Searched:\n  ${baseCandidates.join('\n  ')}`)
+const baseConfig = JSON.parse(fs.readFileSync(basePath, 'utf8'))
+
+const overridesPath = path.join(USER_DATA_DIR || __dirname, 'goose.overrides.json')
+let overrides = {}
+try {
+  if (fs.existsSync(overridesPath)) overrides = JSON.parse(fs.readFileSync(overridesPath, 'utf8'))
+} catch (e) {
+  console.error('[config] overrides unreadable — running on base config:', e.message)
+}
+const config = deepMerge(baseConfig, overrides)
+const configPath = basePath // legacy alias (read-only uses)
+
+function saveConfig() {
+  const diff = deepDiff(baseConfig, config)
+  fs.mkdirSync(path.dirname(overridesPath), { recursive: true })
+  fs.writeFileSync(overridesPath, JSON.stringify(diff, null, 2) + '\n')
+}
 let REPO = config.repoPath
 
 // Local Umbruh model resolution (fix 2026-07-03): the old hardcoded 'umbruh'
@@ -754,7 +800,7 @@ app.post('/api/config', (req, res) => {
   }
 
   try {
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n')
+    saveConfig()
   } catch (e) {
     return res.status(500).json({ ok: false, error: `Could not save config: ${e.message}` })
   }
@@ -820,7 +866,7 @@ app.post('/api/repos', (req, res) => {
     return res.status(400).json({ ok: false, error: 'action must be add | remove | update' })
   }
 
-  try { fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n') }
+  try { saveConfig() }
   catch (e) { return res.status(500).json({ ok: false, error: `Could not save config: ${e.message}` }) }
   res.json({ ok: true, repos: mountedRepos() })
 })
