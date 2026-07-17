@@ -212,7 +212,7 @@ function DocRow({ doc, selected, onClick, showRepo }) {
       {...clickable(onClick)}
       style={{
         display: 'flex', alignItems: 'flex-start', gap: 10,
-        padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+        padding: '8px 10px', borderRadius: 'var(--radius-8)', cursor: 'pointer',
         background: selected ? 'var(--color-border)' : 'var(--color-surface)',
         border: `0.5px solid ${selected ? 'var(--color-border-strong)' : 'var(--color-border)'}`,
       }}
@@ -251,7 +251,7 @@ function ThreadRow({ thread, selected, onClick, onDelete }) {
       {...clickable(onClick)}
       style={{
         display: 'flex', alignItems: 'center', gap: 10,
-        padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+        padding: '8px 10px', borderRadius: 'var(--radius-8)', cursor: 'pointer',
         background: selected ? 'var(--color-border)' : 'var(--color-surface)',
         border: `0.5px solid ${selected ? 'var(--color-border-strong)' : 'var(--color-border)'}`,
       }}
@@ -301,7 +301,7 @@ function FilterSelect({ label, value, onChange, options }) {
     <select
       value={value}
       onChange={e => onChange(e.target.value)}
-      style={{ fontSize: 12, padding: '4px 8px', borderRadius: 5, border: '0.5px solid var(--color-border-strong)', background: 'var(--color-surface)', color: 'var(--color-text)' }}
+      style={{ fontSize: 12, padding: '4px 8px', borderRadius: 'var(--radius-5)', border: '0.5px solid var(--color-border-strong)', background: 'var(--color-surface)', color: 'var(--color-text)' }}
     >
       {options.map(o => (
         <option key={o} value={o}>{o === 'all' ? `All ${label.toLowerCase()}s` : o}</option>

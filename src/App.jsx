@@ -7,21 +7,20 @@ import CanonState from './components/CanonState.jsx'
 import Invoke from './components/Invoke.jsx'
 import ChatHome from './components/ChatHome.jsx'
 import Knowledge from './components/Knowledge.jsx'
-// General-use engine views (2026-07-14 lineage sync)
-import Library from './components/Library.jsx'
-import RunInspector from './components/RunInspector.jsx'
-import Projects from './components/Projects.jsx'
-import Builder from './components/Builder.jsx'
-import TokenBank from './components/TokenBank.jsx'
 import Settings from './components/Settings.jsx'
+import Help from './components/Help.jsx'
 import Setup from './components/Setup.jsx'
 import Onboarding from './components/Onboarding.jsx'
-import { applyAccent, applyTheme } from './theme.js'
+import { applyAccent, applyTheme, sanitizeCustomTheme } from './theme.js'
 import { personalViews, personalViewMeta } from './personal-extensions.jsx'
 
 export default function App() {
   const [view, setView] = useState('dashboard')
   const didInitView = useRef(false)   // flip the landing to Chat once, only if the flag is on (G7)
+  const userNavigated = useRef(false) // set once the user picks a view — the boot flip must not override it
+  // All user-initiated navigation goes through this so a sidebar click that lands
+  // before /api/config resolves can't be yanked to Chat by the boot flip below.
+  const navigate = (v) => { userNavigated.current = true; setView(v) }
   const [agents, setAgents] = useState([])
   const [statusData, setStatusData] = useState({ entries: [] })
   const [canonDocs, setCanonDocs] = useState([])
@@ -29,10 +28,6 @@ export default function App() {
   const [ui, setUi] = useState({})
   const [loading, setLoading] = useState(true)
   const [lastRefresh, setLastRefresh] = useState(new Date())
-  // Project-as-workspace (B, 2026-07-14): the project Chat is currently working
-  // in. Set from the Projects view ("Work in this project") or Chat's own
-  // selector; scopes instructions, run records, and minted artifacts.
-  const [chatProject, setChatProject] = useState(null)
 
   const refresh = async () => {
     setLoading(true)
@@ -53,7 +48,10 @@ export default function App() {
       // Theme first (sets the full-token baseline, incl. any accent a theme
       // suggests), THEN accent — so the user's explicit accent choice layers on
       // top (theme-system.md §5, option A). ui.theme absent ⇒ studio ⇒ today.
-      applyTheme(cfg.ui?.theme)
+      // Preset first (full-token baseline), THEN the user's custom theme layered
+      // on top (T25 — absent ⇒ sanitize returns null ⇒ identical to today), THEN
+      // accent (line below) so the explicit accent choice always wins (option A).
+      applyTheme(cfg.ui?.theme, sanitizeCustomTheme(cfg.ui?.customTheme))
       applyAccent(cfg.ui?.accent)
       document.title = cfg.vaultName ? `Nexus — ${cfg.ui?.consoleName || cfg.vaultName}` : 'Nexus'
       // Chat-first landing (T10) — flag-gated (G7). Boot into Chat once, on first
@@ -61,7 +59,7 @@ export default function App() {
       // the landing stays Overview, byte-identical to today.
       if (!didInitView.current) {
         didInitView.current = true
-        if (cfg.ui?.chatHome) setView('chat')
+        if (cfg.ui?.chatHome && !userNavigated.current) setView('chat')
       }
       setLastRefresh(new Date())
     } catch (e) {
@@ -95,15 +93,10 @@ export default function App() {
     chat:      { label: 'Chat',          sub: 'Talk to the Brain' },
     agents:    { label: 'Agents',        sub: 'Roster — click an agent for detail' },
     knowledge: { label: 'Knowledge',     sub: 'Canon index' },
-    library:   { label: 'Library',       sub: 'Durable artifacts — versions, provenance, export' },
-    runs:      { label: 'Runs',          sub: 'Council run traces — plan, workers, tools, synthesis' },
-    projects:  { label: 'Projects',      sub: 'Durable context — instructions, routing, scoped work' },
-    visibility:{ label: 'Visibility',    sub: 'Library, runs, and projects in one workspace' },
-    cost:      { label: 'Cost',          sub: 'Token bank — per-provider headroom and usage by model' },
-    builder:   { label: 'Builder',       sub: 'Build your first agentic system, stage by stage' },
     status:    { label: 'Status Layer',  sub: 'Background activity' },
     canon:     { label: 'Canon State',   sub: 'Boundary map' },
     invoke:    { label: 'Invoke',        sub: 'Send work to agents and models' },
+    help:      { label: 'Help',          sub: 'Guides and glossary' },
     settings:  { label: 'Settings',     sub: 'API keys and configuration' },
     ...personalViewMeta,   // extension views (populated by the product overlay)
   }
@@ -115,40 +108,17 @@ export default function App() {
 
   const meta = VIEW_META[view] || VIEW_META.dashboard
 
-  // Visibility workspace (audit Finding 2): the whole observation layer is one
-  // workspace. These views render under a shared tab bar; the sidebar shows a
-  // single "Visibility" entry. Runs (ui.runInspector) + Membrane (ui.membrane)
-  // are tabs when enabled.
-  const VIS_TABS = [
-    { id: 'dashboard', label: 'Overview' },
-    { id: 'agents', label: 'Agents' },
-    { id: 'knowledge', label: 'Knowledge' },
-    ...(ui.runInspector ? [{ id: 'runs', label: 'Runs' }] : []),
-    { id: 'cost', label: 'Cost' },
-    { id: 'canon', label: 'Canon' },
-    { id: 'status', label: 'Status' },
-    ...(ui.membrane ? [{ id: 'membrane', label: 'Membrane' }] : []),
-  ]
-  const OBSERVATION_VIEWS = VIS_TABS.map(t => t.id)
-  const visibilityActive = OBSERVATION_VIEWS.includes(view)
-
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       <Sidebar
         view={view}
-        onNav={setView}
+        onNav={navigate}
         escalations={escalations}
         reviews={reviews}
         vaultName={ui.consoleName || health?.vaultName}
         chatHome={!!ui.chatHome}
         councilLabel={!!ui.councilLabel}
         membrane={!!ui.membrane}
-        library={!!ui.library}
-        runInspector={!!ui.runInspector}
-        projects={!!ui.projects}
-        visibility={!!ui.visibility}
-        builder={!!ui.builder}
-        visibilityActive={visibilityActive}
       />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
@@ -177,7 +147,7 @@ export default function App() {
           {/* Escalation pill */}
           {escalations > 0 && (
             <button
-              onClick={() => setView('status')}
+              onClick={() => navigate('status')}
               style={{
                 background: 'var(--color-escalation-bg)',
                 border: '0.5px solid var(--color-escalation-border)',
@@ -234,41 +204,21 @@ export default function App() {
           display: 'flex',
           flexDirection: 'column',
         }}>
-          {/* Visibility workspace tab bar — shown above any observation view. */}
-          {visibilityActive && (
-            <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginBottom: 14, flexWrap: 'wrap' }}>
-              {VIS_TABS.map(t => (
-                <button key={t.id} onClick={() => setView(t.id)} style={{
-                  cursor: 'pointer', fontSize: 12, fontWeight: view === t.id ? 600 : 400,
-                  padding: '6px 14px', borderRadius: 'var(--radius-md)',
-                  border: `0.5px solid ${view === t.id ? 'var(--color-border-strong)' : 'var(--color-border)'}`,
-                  background: view === t.id ? 'var(--color-surface-2)' : 'transparent',
-                  color: view === t.id ? 'var(--color-text)' : 'var(--color-text-2)',
-                }}>{t.label}</button>
-              ))}
-            </div>
-          )}
           {view === 'dashboard' && (
-            <Dashboard agents={agents} statusData={statusData} canonDocs={canonDocs} onNav={setView} compact={!!(ui.overviewCompact || ui.chatHome)} />
+            <Dashboard agents={agents} statusData={statusData} canonDocs={canonDocs} onNav={navigate} compact={!!(ui.overviewCompact || ui.chatHome)} />
           )}
-          {view === 'chat' && <ChatHome canonDocs={canonDocs} onNav={setView} project={chatProject} onProjectChange={setChatProject} />}
-          {view === 'agents' && <AgentMap agents={agents} onInvoke={() => setView('invoke')} />}
+          {view === 'chat' && <ChatHome canonDocs={canonDocs} onNav={navigate} />}
+          {view === 'agents' && <AgentMap agents={agents} onInvoke={() => navigate('invoke')} />}
           {view === 'status' && <StatusLayer entries={statusData.entries} />}
           {view === 'canon' && <CanonState docs={canonDocs} />}
-          {view === 'invoke' && <Invoke canonDocs={canonDocs} onNav={setView} />}
+          {view === 'invoke' && <Invoke canonDocs={canonDocs} onNav={navigate} />}
           {view === 'knowledge' && <Knowledge />}
-          {/* General-use engine views — Library/Projects are top-level Work; Runs
-              is a Visibility tab. */}
-          {view === 'library' && ui.library && <Library />}
-          {view === 'runs' && ui.runInspector && <RunInspector />}
-          {view === 'cost' && <TokenBank />}
-          {view === 'projects' && ui.projects && <Projects onOpenInChat={(p) => { setChatProject(p); setView('chat') }} />}
-          {view === 'builder' && ui.builder && <Builder />}
+          {view === 'help' && <Help />}
           {view === 'settings' && <Settings />}
           {/* extension views (populated by the product overlay). Membrane (T14) is
               gated behind ui.membrane — hidden in the shipped product, so even a stale
               view:'membrane' renders nothing until the flag is set. */}
-          {personalViews[view] && !(view === 'membrane' && !ui.membrane) && personalViews[view]({ canonDocs, onNav: setView })}
+          {personalViews[view] && !(view === 'membrane' && !ui.membrane) && personalViews[view]({ canonDocs, onNav: navigate })}
         </main>
       </div>
     </div>

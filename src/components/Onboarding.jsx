@@ -13,10 +13,14 @@ import { providerSupports, bulkCloudCapabilityIntents } from '../lib/capabilitie
 // lineage / dev builds set it false. Finish OR skip sets `ui.onboardingComplete:true` so it
 // never reappears. All writes go through the EXISTING /api/config normalizers — no new path.
 
+// Buyer-facing detection labels shown INSIDE onboarding (VaultConnect success state). Kept
+// neutral/generic on purpose — onboarding copy must never surface an internal project name.
+// (Setup.jsx/Settings.jsx carry their own copies of this map; neutralizing those is a flagged
+// follow-up, out of this slide-copy task's scope.)
 const VAULT_LABELS = {
-  goose: 'Registry-style agent repo',
-  sfs: 'SFS-style studio vault',
-  generic: 'Generic vault',
+  goose: 'Agent-repo layout',
+  sfs: 'Studio-style vault',
+  generic: 'Generic folder',
 }
 
 // Feature tour (Path A) and learning track (Path B) share the capability step + recap.
@@ -133,12 +137,17 @@ export default function Onboarding({ health, refresh }) {
         <button style={skipCorner} onClick={() => setPage('skipConfirm')}>Skip</button>
         <div style={card}>
           <div style={{ fontSize: 12, letterSpacing: '0.14em', color: 'var(--color-text-3)', fontWeight: 600 }}>NEXUS</div>
-          <div style={{ fontSize: 30, fontWeight: 700, letterSpacing: '-0.02em', marginTop: 14 }}>Welcome to Nexus.</div>
+          <div style={{ fontSize: 30, fontWeight: 700, letterSpacing: '-0.02em', marginTop: 14 }}>Welcome to Nexus</div>
           <div style={{ fontSize: 14, color: 'var(--color-text-2)', marginTop: 14, lineHeight: 1.7, maxWidth: 480 }}>
-            One brain, many minds — point Nexus at your vault and direct a council of AI models to
-            actually get work done.
+            Nexus is a console for working with many AI models at once — and for building your own
+            team of AI agents around a project you care about. You bring the models (your own API
+            keys) and a folder of work; Nexus gives you the room to direct them.
           </div>
-          <div style={{ marginTop: 30 }}>
+          <div style={{ fontSize: 12.5, color: 'var(--color-text-3)', marginTop: 14, lineHeight: 1.6, maxWidth: 480 }}>
+            This takes about three minutes. You can skip anytime, and everything is changeable later
+            in Settings.
+          </div>
+          <div style={{ marginTop: 28 }}>
             <button style={primaryBtn(false)} onClick={() => setPage('paths')}>Get started →</button>
           </div>
         </div>
@@ -163,14 +172,17 @@ export default function Onboarding({ health, refresh }) {
       <div style={overlay}>
         <button style={skipCorner} onClick={() => setPage('skipConfirm')}>Skip</button>
         <div style={card}>
-          <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em' }}>How would you like to start?</div>
-          <div style={{ display: 'flex', gap: 14, marginTop: 22, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em' }}>How do you want to start?</div>
+          <div style={{ fontSize: 12.5, color: 'var(--color-text-3)', marginTop: 10, lineHeight: 1.6 }}>
+            Pick a path — there's no wrong answer, and you can revisit this later from Settings.
+          </div>
+          <div style={{ display: 'flex', gap: 14, marginTop: 20, flexWrap: 'wrap' }}>
             {pathCard(() => startTrack('tour'),
-              'Run me through Nexus’s features & capabilities.',
-              'A short guided tour of what Nexus does — the vault, the council of models, cost, and how to set up advanced capabilities.')}
+              'Take the tour',
+              'A short guided walk through what Nexus does — connecting your work, the Brain and the Council of models, what things cost, and how advanced capabilities work.')}
             {pathCard(() => startTrack('learn'),
-              'I’m new to this — teach me to build an agentic system.',
-              'A concept-first track: the memory layer, the vault/repo, the agent registry, and directing a council — using Nexus as the worked example.')}
+              'Teach me the ideas',
+              'A concept-first track for anyone new to AI agents: the memory layer, using a repository as a workspace, an agent registry, and directing a council — with Nexus as the worked example.')}
           </div>
           <div style={{ marginTop: 20, textAlign: 'center' }}>
             <button style={{ ...ghostBtn, border: 'none', color: 'var(--color-text-3)' }} onClick={() => setPage('skipConfirm')}>
@@ -187,14 +199,14 @@ export default function Onboarding({ health, refresh }) {
     return (
       <div style={overlay}>
         <div style={card}>
-          <div style={{ fontSize: 18, fontWeight: 600 }}>Skip onboarding?</div>
+          <div style={{ fontSize: 18, fontWeight: 600 }}>Skip the intro?</div>
           <div style={{ fontSize: 12.5, color: 'var(--color-text-2)', marginTop: 12, lineHeight: 1.7 }}>
-            You can revisit this anytime from <strong style={{ color: 'var(--color-text)' }}>Settings → Onboarding</strong>.
-            Nothing was enabled — advanced capabilities stay off until you turn them on in Settings.
+            No problem. You can reopen the tour and the learning track anytime from <strong style={{ color: 'var(--color-text)' }}>Settings → Onboarding</strong>.
+            If you haven't connected a folder yet, we'll take you there next. Nothing was enabled — advanced capabilities stay off until you turn them on.
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
             <button style={primaryBtn(busy)} disabled={busy} onClick={markComplete}>
-              {busy ? 'Skipping…' : 'Skip to Nexus →'}
+              {busy ? 'Skipping…' : 'Skip anyway →'}
             </button>
             <button style={ghostBtn} onClick={() => setPage('paths')}>Back</button>
           </div>
@@ -250,28 +262,33 @@ function StepBody({ stepKey, health, refresh, models, bulkCaps, setBulkCaps, san
 
   switch (stepKey) {
     case 'vault':
-      return (<><H>Your vault</H>
-        <P>Nexus works over a <strong>vault</strong> — a folder on disk (a Git repo or any directory)
-          holding your agents, canon, and status. It reads that structure and adapts to it. Connect
-          one now, or skip and do it later.</P>
+      return (<><H>Connect a folder of work</H>
+        <P>Nexus works <em>on</em> something — a folder on your computer (often a Git repository)
+          that holds your project, notes, or knowledge base. Point Nexus at it and it can read that
+          material, keep a running status log, and let your models act with real context instead of a
+          blank slate.</P>
+        <Note>New to this? A "repository" is just a tracked folder. The learning track explains repos
+          and Git from scratch — for now, any folder you choose works, and you can change it later in
+          Settings.</Note>
         <VaultConnect health={health} refresh={refresh} /></>)
 
     case 'brain':
-      return (<><H>The Brain & the Council</H>
-        <P>You talk to a local <strong>Brain</strong> — a companion model that can answer directly or
-          convene a <strong>Council</strong>: several cloud models that deliberate and hand back a
-          synthesized result. Open <strong>Chat</strong> to talk to the Brain and add council members
-          when a question deserves more than one mind.</P>
-        <Note>Roundtable, Debate, and Orchestrator are the Council's operating modes — pick how the
-          models work together per question.</Note></>)
+      return (<><H>One Brain, a Council of models</H>
+        <P>You talk to the <strong>Brain</strong> — the model that runs the conversation and directs
+          the work. When a question is worth more than one opinion, the Brain can convene a
+          <strong> Council</strong>: several models answer in parallel, and the Brain reads them all
+          and synthesizes one grounded reply. You see each member's turn, so nothing is a black box.</P>
+        <Note>Roundtable, debate, or orchestrator — the Council has a few modes for how the members
+          work together. Start with the default; explore the rest when you're comfortable.</Note></>)
 
     case 'models':
-      return (<><H>Models & cost</H>
-        <P>Nexus speaks to six clouds (Anthropic, OpenAI, Gemini, Mistral, DeepSeek, Qwen) plus a local
-          <strong> Ollama</strong> runtime. It probes which are reachable and shows a live availability
-          state, so you always know what you can call.</P>
-        <Note>A cost meter tracks estimated spend per session and per model — you always see what
-          you're spending. Local Ollama models are free.</Note></>)
+      return (<><H>Bring your own models</H>
+        <P>Nexus doesn't sell you tokens. You connect the providers you already use with your own API
+          keys, and you can run a local model too — keeping a conversation entirely on your machine
+          when you want. Any model can be the Brain or a Council member.</P>
+        <Note>A built-in cost meter estimates spend per session and per model in real time, so you
+          always see what a conversation costs. Prices are estimates you can confirm in Settings; a
+          local model is free.</Note></>)
 
     case 'capability':
       return <CapabilityStep models={models} bulkCaps={bulkCaps} setBulkCaps={setBulkCaps}
@@ -282,31 +299,44 @@ function StepBody({ stepKey, health, refresh, models, bulkCaps, setBulkCaps, san
 
     // ── learning track ──
     case 'l_concept':
-      return (<><H>What an agentic system is</H>
-        <P>An agentic system is a <strong>director</strong> coordinating specialized models and tools,
-          with a shared place to <strong>remember</strong> and stay in sync. Nexus is the console over
-          that system — it doesn't replace your models, it conducts them.</P></>)
+      return (<><H>What is an "agentic system"?</H>
+        <P>A plain AI chat answers a question and forgets it. An <strong>agentic system</strong> gives
+          a model three things a chat lacks: a <strong>memory</strong> it can keep, a
+          <strong> workspace</strong> it can act in, and a <strong>goal</strong> it works toward across
+          many steps. Nexus is a place to assemble those pieces around your own project.</P>
+        <Note>You don't need to be a programmer. You need a goal, a folder to work in, and a
+          willingness to direct.</Note></>)
     case 'l_memory':
-      return (<><H>The memory layer comes first</H>
-        <P>Durable memory is the <strong>foundation</strong>, not an afterthought. In Nexus the
-          <strong> vault is the memory layer</strong>: agents read and write it, so context survives
-          across runs and models. Get the memory layer right and everything above it gets simpler.</P></>)
+      return (<><H>Memory is the first building block</H>
+        <P>Models forget everything between sessions unless you give them somewhere to write things
+          down. A <strong>memory layer</strong> is simply durable notes — decisions, facts, and context
+          saved as files your agents read next time. Treating memory as a first-class part of your
+          system, not an afterthought, is what lets it improve instead of resetting every day.</P>
+        <Note>In practice this is just text files in your folder. Simple, inspectable, yours.</Note></>)
     case 'l_repo':
-      return (<><H>The repo / vault</H>
-        <P>The vault is usually a Git repo — versioned, diffable, portable. Nexus detects the layout it
-          finds: a <strong>registry-style</strong> agent repo, an <strong>SFS-style</strong> studio vault,
-          or a <strong>generic</strong> folder, and adapts what it reads to each.</P></>)
+      return (<><H>Your workspace is a repository</H>
+        <P>A <strong>repository</strong> (repo) is a folder whose history is tracked, usually with
+          <strong> Git</strong>. That tracked history is what makes agent work safe: every change is
+          recorded, you can review it, and you can undo it. Hosting the repo on a service like
+          <strong> GitHub</strong> adds a backup and a place to collaborate.</P>
+        <Note>New to Git and GitHub? Start with a plain local folder and add Git later — any folder
+          you choose works today.</Note></>)
     case 'l_registry':
-      return (<><H>The agent registry</H>
-        <P>A <strong>registry</strong> is where your agents are declared — their identities, roles, and
-          posture. Nexus reads it into the <strong>Agents</strong> view so the roster of who's in your
-          system is always visible and canonical.</P></>)
+      return (<><H>Keep a registry of your agents</H>
+        <P>As your system grows you'll have more than one agent — a researcher, a writer, a reviewer.
+          An <strong>agent registry</strong> is a simple list that says who each agent is, what it's
+          allowed to do, and who it answers to. It keeps a growing team organized and makes each
+          agent's role explicit instead of implied.</P>
+        <Note>Start with one agent and a one-line description. The structure earns its keep as you add
+          more.</Note></>)
     case 'l_directing':
-      return (<><H>Directing the council</H>
-        <P>You direct through the <strong>Brain</strong>, which can convene the cloud unit. The
-          <strong> modes</strong> — Roundtable (each answers), Debate (they challenge each other),
-          Orchestrator (one plans, others execute) — let you choose how much deliberation a task
-          deserves before the Brain synthesizes an answer.</P></>)
+      return (<><H>You are the director</H>
+        <P>The skill that makes agentic systems work is <strong>direction</strong>: stating the goal
+          clearly, choosing which models weigh in, and judging their output. The Brain helps, but you
+          set the objective and the standard. Convening a Council of models for a hard call — and
+          reading their disagreement — is often how you get an answer you can trust.</P>
+        <Note>Good direction beats a bigger model. Start small, watch what each model does well, and
+          delegate from there.</Note></>)
 
     default:
       return null
@@ -355,7 +385,7 @@ function VaultConnect({ health, refresh }) {
       <div className="glyph-label" style={{ marginBottom: 6 }}>Vault path</div>
       <input value={path} onChange={e => setPath(e.target.value)}
         onKeyDown={e => e.key === 'Enter' && connect()}
-        placeholder="/Users/you/Documents/sfs-vault" autoFocus
+        placeholder="/Users/you/Documents/my-project" autoFocus
         style={{ width: '100%', fontFamily: 'SF Mono, Menlo, monospace', fontSize: 12 }} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
         <button onClick={connect} disabled={busy || !path.trim()} style={{
@@ -392,17 +422,19 @@ function CapabilityStep({ models, bulkCaps, setBulkCaps, sandboxOptIn, onSandbox
 
   return (
     <>
-      <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em' }}>Capabilities & consent</div>
+      <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em' }}>Advanced capabilities — set the intent, stay in control</div>
       <div style={{ fontSize: 12.5, color: 'var(--color-text-2)', marginTop: 12, lineHeight: 1.7 }}>
-        Set your advanced-capability posture. Everything here records a <strong>preference</strong> —
-        nothing is turned on. You enable capabilities later, in Settings, as a reviewed step.
+        Beyond chatting, models can be granted <strong>tools</strong> (run commands, read/write files)
+        and <strong>connectors</strong> (MCP). These are powerful, so Nexus ships them <strong>off</strong>.
+        Below, mark which cloud models you'd <em>like</em> to grant them to — it records your intent
+        only and turns nothing on.
       </div>
 
       {/* §4.1 bulk capability intent → G8 */}
       <Row>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>Enable advanced capabilities (tools + MCP) for cloud models</div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>Prepare tools + connectors for your cloud models (records intent only)</div>
             <div style={{ fontSize: 12, color: 'var(--color-text-3)', marginTop: 6, lineHeight: 1.6 }}>
               Records the intent for {cloudCount || 'all'} cloud model{cloudCount === 1 ? '' : 's'} to use tools
               {mcpCount ? `, and MCP for the ${mcpCount} that support it` : ''}. <strong style={{ color: 'var(--color-text-2)' }}>Not
@@ -428,7 +460,7 @@ function CapabilityStep({ models, bulkCaps, setBulkCaps, sandboxOptIn, onSandbox
       <Row>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>Sandbox — allow models to run tools</div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>Turn on the sandbox to let models run tools (recommended off until you need it)</div>
             <div style={{ fontSize: 12, color: 'var(--color-text-3)', marginTop: 6, lineHeight: 1.6 }}>
               With the sandbox <strong>off</strong> (the default), no model can run any tool, capability
               preferences notwithstanding. You may opt in now; tool calls still require per-command
@@ -440,8 +472,9 @@ function CapabilityStep({ models, bulkCaps, setBulkCaps, sandboxOptIn, onSandbox
       </Row>
 
       <div style={{ fontSize: 11.5, color: 'var(--color-text-3)', marginTop: 14, lineHeight: 1.6 }}>
-        🔒 Computer-use (a model controlling your screen) is off and stays off until a future,
-        separately-reviewed release — Anthropic models first, with per-action approval.
+        Nothing here acts on its own. When you actually enable a capability, Nexus adds a separate
+        confirmation — with per-command approval for anything a model runs. 🔒 Screen control
+        ("computer use") stays off until a dedicated consent screen ships.
       </div>
       {applyMsg && !applyMsg.ok && (
         <div style={{ fontSize: 12, color: 'var(--color-unavailable)', marginTop: 10 }}>{applyMsg.text}</div>
@@ -459,9 +492,11 @@ function Recap({ bulkCaps, sandboxOptIn, health, refresh }) {
   )
   return (
     <>
-      <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em' }}>You're set</div>
-      <div style={{ fontSize: 12.5, color: 'var(--color-text-3)', marginTop: 12, lineHeight: 1.7 }}>
-        Here's exactly what was recorded versus what's live. Nothing dangerous is silently on.
+      <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em' }}>You're ready</div>
+      <div style={{ fontSize: 12.5, color: 'var(--color-text-2)', marginTop: 12, lineHeight: 1.7 }}>
+        Connect your work, talk to the Brain, convene the Council when you want more minds, and grant
+        capabilities deliberately. Nothing advanced is switched on — you're in a safe, read-and-chat
+        state until you choose otherwise. Here's exactly what was recorded versus what's live:
       </div>
       <div style={{ marginTop: 8 }}>
         <Line icon="✅">Capability preferences {bulkCaps ? 'recorded' : 'unchanged'} — {bulkCaps ? 'not yet enforced; enable in Settings (gate G8).' : 'none set.'}</Line>

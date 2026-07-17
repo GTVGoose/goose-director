@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import ThreadTOC from './ThreadTOC.jsx'
+import { readSSE } from '../lib/sse.js'
 
 export default function Invoke({ canonDocs, onNav }) {
   const [models, setModels] = useState([])
@@ -18,6 +19,12 @@ export default function Invoke({ canonDocs, onNav }) {
   const [sessionLogEnabled, setSessionLogEnabled] = useState(false)
   const bottomRef = useRef(null)
   const msgRefs = useRef({})
+  const abortRef = useRef(null)          // aborts the in-flight /api/relay stream
+  const autoDocModel = useRef(null)      // last model we auto-attached docs for
+
+  // Abort any in-flight stream on unmount so the server stops generating (and we
+  // stop set-state-ing an unmounted component) when the user navigates away.
+  useEffect(() => () => { abortRef.current?.abort() }, [])
 
   const scrollToMsg = useCallback((indexOrAction) => {
     if (indexOrAction === 'bibliographer') {
@@ -42,9 +49,16 @@ export default function Invoke({ canonDocs, onNav }) {
     }).catch(() => {})
   }, [])
 
-  // Auto-attach defaultDocs when model changes
+  // Auto-attach defaultDocs when the model changes — NOT when canonDocs merely
+  // gets a new identity (a top-bar Refresh re-fetches /api/canon). Guarding on the
+  // model id keeps a Refresh mid-session from silently clobbering the user's
+  // manually curated doc set. We only mark a model "consumed" once canonDocs is
+  // actually present, so the first-load race (model set before canon arrives) still
+  // attaches once canon loads.
   useEffect(() => {
     if (!selectedModel || !models.length || !canonDocs.length) return
+    if (autoDocModel.current === selectedModel) return
+    autoDocModel.current = selectedModel
     const model = models.find(m => m.id === selectedModel)
     if (!model?.defaultDocs?.length) return
     const docsToAttach = model.defaultDocs
@@ -78,6 +92,12 @@ export default function Invoke({ canonDocs, onNav }) {
     const assistantMsg = { role: 'assistant', content: '', streaming: true }
     setConversation([...newConv, assistantMsg])
 
+    // A new turn cancels any prior in-flight stream; keep the controller so
+    // unmount / a later send can abort this one.
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     try {
       const res = await fetch('/api/relay', {
         method: 'POST',
@@ -88,32 +108,35 @@ export default function Invoke({ canonDocs, onNav }) {
           messages: newConv,
           sourceDocs: selectedDocs.map(d => ({ title: d.title, path: d.path })),
         }),
+        signal: controller.signal,
       })
 
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const lines = decoder.decode(value).split('\n').filter(l => l.startsWith('data: '))
-        for (const line of lines) {
-          try {
-            const data = JSON.parse(line.slice(6))
-            if (data.text) {
-              assistantText += data.text
-              setConversation([...newConv, { role: 'assistant', content: assistantText, streaming: true }])
-            }
-            if (data.error) setError(data.error)
-            if (data.done) {
-              setConversation([...newConv, { role: 'assistant', content: assistantText, streaming: false, model: data.model }])
-            }
-          } catch {}
+      // A1: buffered SSE reader (shared helper) — no lost frames / mojibake.
+      await readSSE(res, (data) => {
+        if (data.text) {
+          assistantText += data.text
+          setConversation([...newConv, { role: 'assistant', content: assistantText, streaming: true }])
         }
-      }
+        if (data.error) setError(data.error)
+        if (data.done) {
+          setConversation([...newConv, { role: 'assistant', content: assistantText, streaming: false, model: data.model }])
+        }
+      })
+      // Settle: if the stream closed without a `done` frame, keep what streamed.
+      setConversation(prev => {
+        const last = prev[prev.length - 1]
+        if (last && last.role === 'assistant' && last.streaming) {
+          return [...prev.slice(0, -1), { ...last, streaming: false }]
+        }
+        return prev
+      })
     } catch (e) {
-      setError(e.message)
+      if (e.name !== 'AbortError') setError(e.message)
+    } finally {
+      // Only the latest turn's controller settles the streaming flag (a superseding
+      // send already set it true again; an unmount abort shouldn't touch state).
+      if (abortRef.current === controller) setStreaming(false)
     }
-    setStreaming(false)
   }
 
   const routeToModel = (targetModelId, messageContent) => {
@@ -206,7 +229,7 @@ export default function Invoke({ canonDocs, onNav }) {
             style={{
               width: '100%', background: 'none',
               border: '0.5px solid var(--color-border-strong)',
-              borderRadius: 5, padding: '5px 8px',
+              borderRadius: 'var(--radius-5)', padding: '5px 8px',
               fontSize: 12, color: 'var(--color-text-2)',
               display: 'flex', alignItems: 'center', gap: 4,
             }}
@@ -255,8 +278,8 @@ export default function Invoke({ canonDocs, onNav }) {
           position: 'absolute', left: 270, top: 60, width: 320, zIndex: 100,
           background: 'var(--color-surface-2)',
           border: '0.5px solid var(--color-border-strong)',
-          borderRadius: 10,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.5), 0 1px 2px rgba(0,0,0,0.4)',
+          borderRadius: 'var(--radius-10)',
+          boxShadow: 'var(--shadow-popover-2)',
           overflow: 'hidden',
           animation: 'fade-in var(--dur-fast) var(--ease-out)',
         }}>
@@ -390,7 +413,7 @@ export default function Invoke({ canonDocs, onNav }) {
               flex: 1, resize: 'none', fontSize: 13, lineHeight: 1.5,
               padding: '8px 10px',
               border: '0.5px solid var(--color-border-strong)',
-              borderRadius: 8,
+              borderRadius: 'var(--radius-8)',
               background: 'var(--color-surface)',
               color: 'var(--color-text)',
               fontFamily: 'inherit',
@@ -404,7 +427,7 @@ export default function Invoke({ canonDocs, onNav }) {
               background: streaming ? 'var(--color-surface-2)' : 'var(--color-active-bg)',
               color: streaming ? 'var(--color-text-3)' : 'var(--color-active-text)',
               border: streaming ? '0.5px solid var(--color-border)' : '0.5px solid var(--color-active-border)',
-              borderRadius: 8, fontSize: 13,
+              borderRadius: 'var(--radius-8)', fontSize: 13,
               cursor: (!input.trim() || !selectedModel || streaming) ? 'default' : 'pointer',
               opacity: (!input.trim() || !selectedModel) && !streaming ? 0.55 : 1,
               display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,

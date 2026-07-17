@@ -46,7 +46,7 @@ export default function CouncilInspector({ run, open, onToggle }) {
           width: 40, flexShrink: 0, display: 'flex', flexDirection: 'column',
           alignItems: 'center', gap: 9, paddingTop: 11,
           background: 'var(--color-surface)', border: '0.5px solid var(--color-border)',
-          borderRadius: 10, cursor: 'pointer', color: 'var(--color-text-3)',
+          borderRadius: 'var(--radius-10)', cursor: 'pointer', color: 'var(--color-text-3)',
         }}
       >
         <i className="ti ti-chevron-left" style={{ fontSize: 15 }} />
@@ -81,7 +81,7 @@ export default function CouncilInspector({ run, open, onToggle }) {
   const empty = members.length === 0 && !final && !runError
 
   return (
-    <div style={{ width: 'clamp(240px, 26vw, 330px)', flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--color-surface)', border: '0.5px solid var(--color-border)', borderRadius: 10, overflow: 'hidden', minHeight: 0 }}>
+    <div style={{ width: 330, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--color-surface)', border: '0.5px solid var(--color-border)', borderRadius: 'var(--radius-10)', overflow: 'hidden', minHeight: 0 }}>
       {/* Header */}
       <div style={{ padding: '9px 12px', borderBottom: '0.5px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
         <i className="ti ti-users-group" style={{ fontSize: 14, color: 'var(--color-recursive-text)' }} />
@@ -115,7 +115,7 @@ export default function CouncilInspector({ run, open, onToggle }) {
                 const mine = turns.filter(t => t.model === m.name)
                 const st = memberState(m.name)
                 return (
-                  <div key={m.name} ref={el => { laneRefs.current[m.name] = el }} style={{ border: '0.5px solid var(--color-border)', borderRadius: 7, overflow: 'hidden' }}>
+                  <div key={m.name} ref={el => { laneRefs.current[m.name] = el }} style={{ border: '0.5px solid var(--color-border)', borderRadius: 'var(--radius-7)', overflow: 'hidden' }}>
                     <button onClick={() => scrollToLane(m.name)} style={{ width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', background: 'var(--color-surface-2)', border: 'none', cursor: 'pointer' }}>
                       <StateDot state={st} />
                       <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--color-text-2)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}{m.role ? ` · ${m.role}` : ''}</span>
@@ -143,7 +143,7 @@ export default function CouncilInspector({ run, open, onToggle }) {
           {/* 3 · Synthesis (final + qualitative provenance) */}
           <Section title="Synthesis">
             {final ? (
-              <div style={{ border: '1px solid var(--color-recursive-border)', background: 'var(--color-recursive-bg)', borderRadius: 7, padding: '9px 11px' }}>
+              <div style={{ border: '1px solid var(--color-recursive-border)', background: 'var(--color-recursive-bg)', borderRadius: 'var(--radius-7)', padding: '9px 11px' }}>
                 <div style={{ fontSize: 10, color: 'var(--color-text-3)', marginBottom: 5, lineHeight: 1.5 }}>
                   Synthesized by <b style={{ color: 'var(--color-recursive-text)' }}>{final.model}</b>
                   {contributors.length > 0 && <> from {contributors.length} member{contributors.length > 1 ? 's' : ''}: {contributors.map((c, i) => (
@@ -186,7 +186,7 @@ function RouteNode({ label, state, synth }) {
   const activeNode = state === 'active'
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 8, padding: '4px 6px', borderRadius: 5,
+      display: 'flex', alignItems: 'center', gap: 8, padding: '4px 6px', borderRadius: 'var(--radius-5)',
       background: activeNode ? 'var(--color-recursive-bg)' : 'none',
       border: activeNode ? '0.5px solid var(--color-recursive-border)' : '0.5px solid transparent',
     }}>
