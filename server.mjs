@@ -3825,7 +3825,9 @@ app.post('/api/transcribe', express.raw({ type: 'audio/*', limit: '25mb' }), (re
 try {
   initMeetings({
     app, config, callModel, resolveBrain,
-    localModel: LOCAL_MODEL,
+    // C lineage has no LOCAL_MODEL const (Umbruh persona model is separate and
+    // wrong for report synthesis) — fall back to the sandbox's general model.
+    localModel: config.sandbox?.model || 'llama3.1:8b',
     getPrice: (mc) => (mc.provider === 'ollama' || mc.provider === 'claude-code')
       ? [0, 0]
       : (PRICE[mc.model] || PROVIDER_PRICE[mc.provider] || [0, 0]),
