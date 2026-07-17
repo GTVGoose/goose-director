@@ -28,6 +28,16 @@
     "briefHour": "08:30",
     "_note": "Signal fleet delivery (signal.mjs): campaignsDir is relative to repoPath (goose-agent-system). Urgent forks in campaigns/*/forks/*.md push to Director Telegram immediately; routine forks ride the daily Signal Brief sent at briefHour (local). Fork format contract: campaigns/_forks-contract.md in the repo."
   },
+  "meetings": {
+    "enabled": false,
+    "synthesisMode": "local",
+    "exportDestinations": [],
+    "retention": {
+      "audioDeleteAfterNote": true,
+      "transcriptTtlDays": null
+    },
+    "_note": "Meetings: transcripts in, system-grade reports out. Configure entirely from Settings → Meetings (a human-only step — onboarding never enables this). Transcripts live in local app data and never leave; only reports export, to the listed folders. synthesisMode 'local' pins an Ollama model and hard-fails rather than silently using cloud."
+  },
   "telegram": {
     "enabled": true,
     "directorChatId": "8737054190",

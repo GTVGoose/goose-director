@@ -17,3 +17,6 @@ threads/
 
 # --- OS cruft ---
 .DS_Store
+
+# Meetings dev-mode store (userData in packaged builds) — transcripts never enter git
+meetings-local/

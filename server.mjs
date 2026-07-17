@@ -18,6 +18,7 @@ import { registerGeneralUseRoutes, generalUseStores } from './src/generaluse-rou
 import { roleForPhase } from './src/lib/run-roles.js'
 import { applyRoutingPolicy, setSkillMatrix } from './src/lib/routing-policies.js'
 import { createTokenBank } from './src/lib/token-bank.js'
+import { initMeetings } from './meetings.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -649,6 +650,15 @@ app.get('/api/config', (req, res) => {
     },
     // Per-provider auth preference (subscription CLI vs API key).
     providers: config.providers || {},
+    meetings: {
+      enabled: !!(config.meetings && config.meetings.enabled === true),
+      synthesisMode: config.meetings?.synthesisMode === 'cloud-assisted' ? 'cloud-assisted' : 'local',
+      exportDestinations: Array.isArray(config.meetings?.exportDestinations) ? config.meetings.exportDestinations : [],
+      retention: {
+        audioDeleteAfterNote: config.meetings?.retention?.audioDeleteAfterNote !== false,
+        transcriptTtlDays: config.meetings?.retention?.transcriptTtlDays ?? null,
+      },
+    },
   })
 })
 
@@ -656,7 +666,7 @@ app.get('/api/config', (req, res) => {
 // telegram wiring. All persist to goose.config.json; the bot token itself
 // goes through /api/settings into .env, never into config.
 app.post('/api/config', (req, res) => {
-  let { repoPath, ui, telegram, sandbox } = req.body
+  let { repoPath, ui, telegram, sandbox, meetings } = req.body
 
   if (repoPath !== undefined) {
     if (!repoPath || typeof repoPath !== 'string') {
@@ -704,6 +714,33 @@ app.post('/api/config', (req, res) => {
       if (!cfg || typeof cfg !== 'object') continue
       config.providers[fam] = { ...(config.providers[fam] || {}) }
       if (cfg.prefer !== undefined) config.providers[fam].prefer = cfg.prefer === 'api' ? 'api' : 'subscription'
+    }
+  }
+
+  // Meetings (meeting → report appliance). Settings-only human action per the
+  // onboarding manifest; export destinations are the ONLY paths a report may be
+  // written to (report-only handoff — transcripts/audio never leave userData).
+  if (meetings && typeof meetings === 'object') {
+    const prior = config.meetings || {}
+    config.meetings = {
+      ...prior,
+      enabled: meetings.enabled !== undefined ? !!meetings.enabled : prior.enabled === true,
+      synthesisMode: meetings.synthesisMode !== undefined
+        ? (meetings.synthesisMode === 'cloud-assisted' ? 'cloud-assisted' : 'local')
+        : (prior.synthesisMode === 'cloud-assisted' ? 'cloud-assisted' : 'local'),
+      exportDestinations: meetings.exportDestinations !== undefined
+        ? (Array.isArray(meetings.exportDestinations) ? meetings.exportDestinations : [])
+            .map(d => String(d).trim()).filter(Boolean).slice(0, 20)
+        : (Array.isArray(prior.exportDestinations) ? prior.exportDestinations : []),
+      retention: {
+        audioDeleteAfterNote: meetings.retention?.audioDeleteAfterNote !== undefined
+          ? !!meetings.retention.audioDeleteAfterNote
+          : prior.retention?.audioDeleteAfterNote !== false,
+        transcriptTtlDays: meetings.retention?.transcriptTtlDays !== undefined
+          ? (Number.isInteger(meetings.retention.transcriptTtlDays) && meetings.retention.transcriptTtlDays > 0
+              ? meetings.retention.transcriptTtlDays : null)
+          : (prior.retention?.transcriptTtlDays ?? null),
+      },
     }
   }
 
@@ -1168,7 +1205,10 @@ app.post('/api/settings', (req, res) => {
     if (!lines.find(l => l.startsWith('OLLAMA_BASE_URL=')))
       lines.push('OLLAMA_BASE_URL=http://localhost:11434')
 
-    fs.writeFileSync(envPath, lines.join('\n') + '\n')
+    // Secrets file: owner-only. mode applies on create; chmod repairs any
+    // pre-existing world-readable .env from earlier builds (council major 10).
+    fs.writeFileSync(envPath, lines.join('\n') + '\n', { mode: 0o600 })
+    try { fs.chmodSync(envPath, 0o600) } catch {}
     res.json({
       ok: true,
       keyStatus: {
@@ -3774,6 +3814,19 @@ app.post('/api/transcribe', express.raw({ type: 'audio/*', limit: '25mb' }), (re
   rm([srcPath, wavPath])
   res.status(503).json({ error: 'no transcriber available — run install-telegram.command to set up whisper' })
 })
+// ─── Meetings (meeting → system-grade report appliance) ─────────────────────
+// Tool-less synthesis only — meeting content has no path into the sandbox.
+try {
+  initMeetings({
+    app, config, callModel, resolveBrain,
+    localModel: LOCAL_MODEL,
+    getPrice: (mc) => (mc.provider === 'ollama' || mc.provider === 'claude-code')
+      ? [0, 0]
+      : (PRICE[mc.model] || PROVIDER_PRICE[mc.provider] || [0, 0]),
+  })
+} catch (e) {
+  console.error('[Meetings] init failed:', e.message)
+}
 
 // ─── Signal fleet delivery (fork watcher + daily brief + Signal Desk API) ────
 // Personal (C lineage). Boots before Telegram so its endpoints exist even when
