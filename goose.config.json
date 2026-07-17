@@ -30,13 +30,16 @@
   },
   "meetings": {
     "enabled": false,
-    "synthesisMode": "local",
+    "synthesisMode": "cloud-assisted",
+    "autoSynthesize": true,
+    "asrBinaryPath": "",
+    "asrModelPath": "",
     "exportDestinations": [],
     "retention": {
       "audioDeleteAfterNote": true,
       "transcriptTtlDays": null
     },
-    "_note": "Meetings: transcripts in, system-grade reports out. Configure entirely from Settings → Meetings (a human-only step — onboarding never enables this). Transcripts live in local app data and never leave; only reports export, to the listed folders. synthesisMode 'local' pins an Ollama model and hard-fails rather than silently using cloud."
+    "_note": "Meetings: press Record (in-person mic, or a call with the platform's audio) → local whisper transcription → system-grade report, synthesized automatically (cloud by default; 'local' pins Ollama and hard-fails rather than silently using cloud). Audio + transcripts stay in local app data; only reports export, to the listed folders. Configure from Settings → Meetings (human-only step — onboarding never enables this). asr paths blank = auto-probe brew whisper-cli + <app data>/models/ggml-base.en.bin."
   },
   "telegram": {
     "enabled": true,

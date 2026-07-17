@@ -99,6 +99,179 @@ function Explainer() {
   )
 }
 
+// Client-side capture: streams → AudioContext(16k) → Int16 PCM chunks POSTed
+// per channel every ~3 s. In-person = mic only ('room'); call = mic ('me') +
+// a screen-share of the meeting tab/window with audio ('them') — that channel
+// split is what gives real Me/Them attribution.
+function useRecorder() {
+  const [state, setState] = useState('idle') // idle | recording | uploading
+  const [elapsed, setElapsed] = useState(0)
+  const [error, setError] = useState(null)
+  const rig = useRef(null)
+
+  const cleanup = () => {
+    const r = rig.current
+    if (!r) return
+    for (const s of r.streams) for (const t of s.getTracks()) t.stop()
+    for (const c of r.ctxs) c.close().catch(() => {})
+    clearInterval(r.timer)
+    rig.current = null
+  }
+
+  const start = async (mode, id) => {
+    setError(null)
+    const streams = [], ctxs = [], pumps = []
+    try {
+      const mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
+      streams.push(mic)
+      const channels = [[mic, mode === 'call' ? 'me' : 'room']]
+      if (mode === 'call') {
+        const disp = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+        if (!disp.getAudioTracks().length) {
+          for (const t of disp.getTracks()) t.stop()
+          throw new Error('No audio in the share — pick the meeting TAB (or window) and tick "Share audio".')
+        }
+        for (const t of disp.getVideoTracks()) t.stop() // audio only
+        streams.push(disp)
+        channels.push([disp, 'them'])
+      }
+      for (const [stream, ch] of channels) {
+        const ctx = new AudioContext({ sampleRate: 16000 })
+        ctxs.push(ctx)
+        const src = ctx.createMediaStreamSource(stream)
+        const node = ctx.createScriptProcessor(4096, 1, 1)
+        let buf = []
+        node.onaudioprocess = (e) => {
+          const f = e.inputBuffer.getChannelData(0)
+          const i16 = new Int16Array(f.length)
+          for (let i = 0; i < f.length; i++) i16[i] = Math.max(-32768, Math.min(32767, Math.round(f[i] * 32767)))
+          buf.push(i16)
+        }
+        src.connect(node); node.connect(ctx.destination)
+        const flush = async () => {
+          if (!buf.length) return
+          const parts = buf; buf = []
+          const total = parts.reduce((n, p) => n + p.length, 0)
+          const joined = new Int16Array(total)
+          let o = 0; for (const p of parts) { joined.set(p, o); o += p.length }
+          await fetch(`/api/meetings/${id}/audio?ch=${ch}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: joined.buffer,
+          }).catch(() => {})
+        }
+        pumps.push({ flush, iv: setInterval(flush, 3000) })
+      }
+      const t0 = Date.now()
+      rig.current = { streams, ctxs, pumps, timer: setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 1000) }
+      setElapsed(0)
+      setState('recording')
+      return true
+    } catch (e) {
+      for (const s of streams) for (const t of s.getTracks()) t.stop()
+      for (const c of ctxs) c.close().catch(() => {})
+      setError(e.message)
+      return false
+    }
+  }
+
+  const stop = async (id) => {
+    const r = rig.current
+    setState('uploading')
+    if (r) { for (const p of r.pumps) { clearInterval(p.iv); await p.flush() } }
+    cleanup()
+    await fetch(`/api/meetings/${id}/session/stop`, { method: 'POST' }).catch(() => {})
+    setState('idle')
+  }
+
+  useEffect(() => cleanup, [])
+  return { state, elapsed, error, start, stop }
+}
+
+const fmtTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+
+function RecordCard({ onRecordingDone }) {
+  const rec = useRecorder()
+  const [title, setTitle] = useState('')
+  const [attested, setAttested] = useState(false)
+  const [meetingId, setMeetingId] = useState(null)
+  const [mode, setMode] = useState(null)
+  const [asr, setAsr] = useState(null)
+  const [err, setErr] = useState(null)
+
+  useEffect(() => { fetch('/api/meetings/asr-status').then(r => r.json()).then(setAsr).catch(() => {}) }, [])
+
+  const begin = async (m) => {
+    setErr(null)
+    try {
+      const r = await fetch('/api/meetings/session/start', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: m, title, attested }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Could not start')
+      const ok = await rec.start(m, d.id)
+      if (!ok) { await fetch(`/api/meetings/${d.id}`, { method: 'DELETE' }).catch(() => {}); return }
+      setMeetingId(d.id); setMode(m)
+    } catch (e) { setErr(e.message) }
+  }
+
+  const end = async () => {
+    const id = meetingId
+    setMeetingId(null); setMode(null); setTitle(''); setAttested(false)
+    await rec.stop(id)
+    onRecordingDone(id)
+  }
+
+  if (rec.state !== 'idle' && meetingId) {
+    return (
+      <div style={{ ...card, border: '0.5px solid rgba(216,80,80,0.5)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#d85050', animation: 'pulse 1.2s ease-in-out infinite' }} />
+          <div style={{ fontSize: 14, fontWeight: 600 }}>Recording{mode === 'call' ? ' call' : ''} — {fmtTime(rec.elapsed)}</div>
+          <div style={{ flex: 1 }} />
+          <button style={{ ...btn, borderColor: 'rgba(216,80,80,0.5)' }} onClick={end}>
+            {rec.state === 'uploading' ? 'Finishing…' : '■ Stop'}
+          </button>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--color-text-3)', marginTop: 8 }}>
+          Audio is buffered locally and transcribed on this machine when you stop.
+          {mode === 'call' && ' Your mic is "Me"; the shared tab’s audio is "Them".'}
+        </div>
+        <style>{'@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}'}</style>
+      </div>
+    )
+  }
+
+  return (
+    <div style={card}>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Record a meeting</div>
+      <div style={{ fontSize: 12, color: 'var(--color-text-3)', marginBottom: 14, lineHeight: 1.5 }}>
+        One button. When you stop, the recording is transcribed on this machine and the report writes itself.
+      </div>
+      <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Meeting title (optional)" style={{ width: '100%', marginBottom: 12 }} />
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text-2)', marginBottom: 14, cursor: 'pointer' }}>
+        <input type="checkbox" checked={attested} onChange={e => setAttested(e.target.checked)} style={{ width: 'auto' }} />
+        I've told everyone in this conversation that it's being recorded
+      </label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <button style={{ ...btn, opacity: attested && asr?.ok ? 1 : 0.45 }} disabled={!attested || !asr?.ok} onClick={() => begin('in-person')}>
+          <i className="ti ti-microphone" /> Record in-person
+        </button>
+        <button style={{ ...btn, opacity: attested && asr?.ok ? 1 : 0.45 }} disabled={!attested || !asr?.ok} onClick={() => begin('call')}>
+          <i className="ti ti-device-laptop" /> Record a call
+        </button>
+        <span style={{ fontSize: 11, color: 'var(--color-text-3)' }}>
+          {asr === null ? '' : asr.ok ? `transcription: ${asr.model} (local)` : asr.error}
+        </span>
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--color-text-3)', marginTop: 10, lineHeight: 1.5 }}>
+        "Record a call": your browser asks what to share — pick the meeting tab/window and tick <strong>Share audio</strong>.
+        That audio becomes "Them", your mic is "Me". Everything is transcribed locally; audio never leaves this machine.
+      </div>
+      {(rec.error || err) && <div style={{ marginTop: 10, fontSize: 12, color: 'var(--color-unavailable)' }}>{rec.error || err}</div>}
+    </div>
+  )
+}
+
 function ImportCard({ onImported }) {
   const [title, setTitle] = useState('')
   const [text, setText] = useState('')
@@ -152,14 +325,21 @@ function ImportCard({ onImported }) {
   )
 }
 
-function Landing({ meetings, onOpen, onImported }) {
+const STATUS_LABEL = { recording: '● REC', processing: '◌ TRANSCRIBING', synthesizing: '◌ SYNTHESIZING', error: '✕ ERROR' }
+
+function Landing({ meetings, onOpen, onImported, onRecordingDone }) {
+  const [showImport, setShowImport] = useState(false)
   return (
     <div style={{ maxWidth: 860, margin: '0 auto' }}>
-      <ImportCard onImported={onImported} />
+      <RecordCard onRecordingDone={onRecordingDone} />
+      <div style={{ fontSize: 11, color: 'var(--color-text-3)', margin: '0 0 16px 4px', cursor: 'pointer' }} onClick={() => setShowImport(s => !s)}>
+        <i className={`ti ti-chevron-${showImport ? 'up' : 'right'}`} /> Or import a transcript your platform already made
+      </div>
+      {showImport && <ImportCard onImported={onImported} />}
       <div style={card}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Meetings</div>
         {!meetings.length && (
-          <div style={{ fontSize: 12, color: 'var(--color-text-3)' }}>Nothing yet — import your first transcript above.</div>
+          <div style={{ fontSize: 12, color: 'var(--color-text-3)' }}>Nothing yet — record your first meeting above.</div>
         )}
         {meetings.map(m => (
           <div key={m.id} onClick={() => onOpen(m.id)}
@@ -173,7 +353,7 @@ function Landing({ meetings, onOpen, onImported }) {
             </div>
             {m.actionStats && <span style={{ fontSize: 11, color: 'var(--color-text-3)' }}>{m.actionStats.done}/{m.actionStats.total} actions</span>}
             {m.exports > 0 && <i className="ti ti-share" title="Exported" style={{ color: 'var(--color-available)', fontSize: 14 }} />}
-            <span style={pill(m.hasReport)}>{m.hasReport ? '● REPORT' : '○ TRANSCRIPT'}</span>
+            <span style={pill(m.hasReport)}>{STATUS_LABEL[m.status] || (m.hasReport ? '● REPORT' : '○ TRANSCRIPT')}</span>
           </div>
         ))}
       </div>
@@ -184,8 +364,7 @@ function Landing({ meetings, onOpen, onImported }) {
 function Detail({ id, exportDestinations, synthesisMode, onBack, onDeleted }) {
   const [data, setData] = useState(null)
   const [busy, setBusy] = useState(false)
-  const [confirmInfo, setConfirmInfo] = useState(null)
-  const [mode, setMode] = useState(synthesisMode || 'local')
+  const [mode, setMode] = useState(synthesisMode || 'cloud-assisted')
   const [dest, setDest] = useState(exportDestinations[0] || '')
   const [msg, setMsg] = useState(null)
   const [showTranscript, setShowTranscript] = useState(false)
@@ -201,16 +380,24 @@ function Detail({ id, exportDestinations, synthesisMode, onBack, onDeleted }) {
   }, [id])
   useEffect(() => { load() }, [load])
 
-  const generate = async (confirm = false) => {
-    setBusy(true); setMsg(null); setConfirmInfo(null)
+  // While a recording is being transcribed/synthesized in the background,
+  // poll until it lands.
+  const working = data?.meta?.status === 'processing' || data?.meta?.status === 'synthesizing'
+  useEffect(() => {
+    if (!working) return
+    const iv = setInterval(load, 2500)
+    return () => clearInterval(iv)
+  }, [working, load])
+
+  const generate = async () => {
+    setBusy(true); setMsg(null)
     try {
       const r = await fetch(`/api/meetings/${id}/report`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode, confirm }),
+        body: JSON.stringify({ mode }),
       })
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || 'Failed')
-      if (d.needsConfirm) { setConfirmInfo(d); setBusy(false); return }
       setMsg({ ok: true, text: 'Report generated.' })
       load()
     } catch (e) { setMsg({ ok: false, text: e.message }) }
@@ -266,12 +453,22 @@ function Detail({ id, exportDestinations, synthesisMode, onBack, onDeleted }) {
           {fm?.provenance && <> · synthesized by <code>{fm.provenance.model}</code> ({fm.provenance.processingMode})</>}
         </div>
 
+        {working && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text-2)', marginBottom: 6 }}>
+            <i className="ti ti-loader-2" style={{ animation: 'spin 1s linear infinite' }} />
+            {data.meta.status === 'processing' ? 'Transcribing locally…' : 'Writing the report…'}
+            <style>{'@keyframes spin{to{transform:rotate(360deg)}}'}</style>
+          </div>
+        )}
+        {data.meta?.status === 'error' && (
+          <div style={{ fontSize: 12, color: 'var(--color-unavailable)', marginBottom: 6 }}>Processing failed: {data.meta.error}</div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <select value={mode} onChange={e => setMode(e.target.value)} style={{ fontSize: 12 }}>
-            <option value="local">Synthesize locally (private, needs Ollama)</option>
-            <option value="cloud-assisted">Synthesize with cloud model (labeled)</option>
+            <option value="cloud-assisted">Synthesize with cloud model</option>
+            <option value="local">Synthesize locally (needs Ollama)</option>
           </select>
-          <button style={btn} disabled={busy} onClick={() => generate(false)}>
+          <button style={btn} disabled={busy || working || !data.transcript.length} onClick={generate}>
             {busy ? 'Synthesizing…' : data.report ? 'Regenerate report' : 'Generate report'}
           </button>
           {data.report && exportDestinations.length > 0 && (
@@ -286,15 +483,6 @@ function Detail({ id, exportDestinations, synthesisMode, onBack, onDeleted }) {
             <span style={{ fontSize: 11, color: 'var(--color-text-3)' }}>Add export destinations in Settings → Meetings to hand reports off.</span>
           )}
         </div>
-        {confirmInfo && (
-          <div style={{ marginTop: 12, padding: 12, border: '0.5px solid var(--color-border-strong)', borderRadius: 6, fontSize: 12, color: 'var(--color-text-2)' }}>
-            Cloud pass via <code>{confirmInfo.model}</code> — estimated ≈ ${confirmInfo.estUSD}. The transcript leaves this machine for this one labeled pass.
-            <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-              <button style={btn} onClick={() => generate(true)}>Confirm — run cloud pass</button>
-              <button style={btnGhost} onClick={() => setConfirmInfo(null)}>Cancel</button>
-            </div>
-          </div>
-        )}
         {msg && <div style={{ marginTop: 10, fontSize: 12, color: msg.ok ? 'var(--color-available)' : 'var(--color-unavailable)' }}>{msg.text}</div>}
       </div>
 
@@ -361,5 +549,7 @@ export default function Meetings() {
   if (!enabled) return <Explainer />
   if (openId) return <Detail id={openId} exportDestinations={exportDestinations} synthesisMode={synthesisMode}
     onBack={() => { setOpenId(null); refresh() }} onDeleted={() => { setOpenId(null); refresh() }} />
-  return <Landing meetings={meetings} onOpen={setOpenId} onImported={(id) => { refresh(); setOpenId(id) }} />
+  return <Landing meetings={meetings} onOpen={setOpenId}
+    onImported={(id) => { refresh(); setOpenId(id) }}
+    onRecordingDone={(id) => { refresh(); setOpenId(id) }} />
 }

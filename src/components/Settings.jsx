@@ -522,16 +522,24 @@ function TelegramCard() {
 
 function MeetingsCard() {
   const [enabled, setEnabled] = useState(false)
-  const [synthesisMode, setSynthesisMode] = useState('local')
+  const [synthesisMode, setSynthesisMode] = useState('cloud-assisted')
+  const [autoSynthesize, setAutoSynthesize] = useState(true)
+  const [asrBin, setAsrBin] = useState('')
+  const [asrModel, setAsrModel] = useState('')
   const [destinations, setDestinations] = useState('')
+  const [asrStatus, setAsrStatus] = useState(null)
   const [msg, setMsg] = useState(null)
 
   useEffect(() => {
     fetch('/api/config').then(r => r.json()).then(cfg => {
       setEnabled(!!cfg.meetings?.enabled)
-      setSynthesisMode(cfg.meetings?.synthesisMode || 'local')
+      setSynthesisMode(cfg.meetings?.synthesisMode || 'cloud-assisted')
+      setAutoSynthesize(cfg.meetings?.autoSynthesize !== false)
+      setAsrBin(cfg.meetings?.asrBinaryPath || '')
+      setAsrModel(cfg.meetings?.asrModelPath || '')
       setDestinations((cfg.meetings?.exportDestinations || []).join('\n'))
     }).catch(() => {})
+    fetch('/api/meetings/asr-status').then(r => r.json()).then(setAsrStatus).catch(() => {})
   }, [])
 
   const save = async () => {
@@ -543,6 +551,9 @@ function MeetingsCard() {
         body: JSON.stringify({ meetings: {
           enabled,
           synthesisMode,
+          autoSynthesize,
+          asrBinaryPath: asrBin.trim(),
+          asrModelPath: asrModel.trim(),
           exportDestinations: destinations.split('\n').map(s => s.trim()).filter(Boolean),
         } }),
       })
@@ -564,22 +575,43 @@ function MeetingsCard() {
         }}>{enabled ? '● ON' : '○ OFF'}</span>
       </div>
       <div style={{ fontSize: 12, color: 'var(--color-text-3)', marginBottom: 16, lineHeight: 1.5 }}>
-        Meeting transcripts in, system-grade reports out. Transcripts stay in local app data and are
-        never exported; only the report leaves, to destinations you list here. Synthesis runs locally
-        by default (needs Ollama) — cloud passes are per-meeting, labeled, and confirmed with a cost estimate.
+        Press Record — in-person or on a call — and get a system-grade report when you stop.
+        Audio is transcribed locally (whisper) and never leaves this machine; the transcript text goes
+        to your synthesis model (cloud by default), and only the finished report exports, to the folders below.
       </div>
 
-      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text-2)', marginBottom: 14, cursor: 'pointer' }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text-2)', marginBottom: 10, cursor: 'pointer' }}>
         <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} style={{ width: 'auto' }} />
         Enable Meetings
       </label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text-2)', marginBottom: 14, cursor: 'pointer' }}>
+        <input type="checkbox" checked={autoSynthesize} onChange={e => setAutoSynthesize(e.target.checked)} style={{ width: 'auto' }} />
+        Write the report automatically when a recording stops
+      </label>
 
       <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-2)', marginBottom: 6 }}>Default synthesis</div>
+        <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-2)', marginBottom: 6 }}>Synthesis model</div>
         <select value={synthesisMode} onChange={e => setSynthesisMode(e.target.value)} style={{ fontSize: 12 }}>
-          <option value="local">Local (private — needs Ollama)</option>
-          <option value="cloud-assisted">Cloud-assisted (labeled, confirmed per meeting)</option>
+          <option value="cloud-assisted">Cloud (best reports — default)</option>
+          <option value="local">Local only (needs Ollama; nothing leaves the machine)</option>
         </select>
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-2)' }}>Transcription engine (local)</span>
+          {asrStatus && (
+            <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, fontWeight: 600,
+              background: asrStatus.ok ? 'rgba(72,152,96,0.15)' : 'rgba(216,80,80,0.12)',
+              color: asrStatus.ok ? 'var(--color-available)' : 'var(--color-unavailable)',
+              border: `0.5px solid ${asrStatus.ok ? 'rgba(72,152,96,0.3)' : 'rgba(216,80,80,0.25)'}` }}>
+              {asrStatus.ok ? `● ${asrStatus.model}` : '○ NOT FOUND'}
+            </span>
+          )}
+        </div>
+        <input value={asrBin} onChange={e => setAsrBin(e.target.value)} placeholder="whisper binary — blank = auto-detect (brew whisper-cli)" style={{ width: '100%', marginBottom: 6, fontFamily: 'var(--font-mono)', fontSize: 11 }} />
+        <input value={asrModel} onChange={e => setAsrModel(e.target.value)} placeholder="ggml model path — blank = auto-detect (<app data>/models/ggml-base.en.bin)" style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: 11 }} />
+        {asrStatus && !asrStatus.ok && <div style={{ fontSize: 11, color: 'var(--color-unavailable)', marginTop: 4 }}>{asrStatus.error}</div>}
       </div>
 
       <div style={{ marginBottom: 18 }}>

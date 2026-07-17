@@ -15,7 +15,6 @@ import Updates from './components/Updates.jsx'
 import SignalDesk from './components/SignalDesk.jsx'
 import Domains from './components/Domains.jsx'
 import Meetings from './components/Meetings.jsx'
-import Meetings from './components/Meetings.jsx'
 
 // Nav entries appended after the shared "Act" section. `section` starts a new
 // sidebar group when it differs from the running section (which begins at 'Act').

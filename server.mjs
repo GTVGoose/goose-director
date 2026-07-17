@@ -652,7 +652,10 @@ app.get('/api/config', (req, res) => {
     providers: config.providers || {},
     meetings: {
       enabled: !!(config.meetings && config.meetings.enabled === true),
-      synthesisMode: config.meetings?.synthesisMode === 'cloud-assisted' ? 'cloud-assisted' : 'local',
+      synthesisMode: config.meetings?.synthesisMode === 'local' ? 'local' : 'cloud-assisted',
+      autoSynthesize: config.meetings?.autoSynthesize !== false,
+      asrBinaryPath: config.meetings?.asrBinaryPath || '',
+      asrModelPath: config.meetings?.asrModelPath || '',
       exportDestinations: Array.isArray(config.meetings?.exportDestinations) ? config.meetings.exportDestinations : [],
       retention: {
         audioDeleteAfterNote: config.meetings?.retention?.audioDeleteAfterNote !== false,
@@ -726,8 +729,11 @@ app.post('/api/config', (req, res) => {
       ...prior,
       enabled: meetings.enabled !== undefined ? !!meetings.enabled : prior.enabled === true,
       synthesisMode: meetings.synthesisMode !== undefined
-        ? (meetings.synthesisMode === 'cloud-assisted' ? 'cloud-assisted' : 'local')
-        : (prior.synthesisMode === 'cloud-assisted' ? 'cloud-assisted' : 'local'),
+        ? (meetings.synthesisMode === 'local' ? 'local' : 'cloud-assisted')
+        : (prior.synthesisMode === 'local' ? 'local' : 'cloud-assisted'),
+      autoSynthesize: meetings.autoSynthesize !== undefined ? !!meetings.autoSynthesize : prior.autoSynthesize !== false,
+      asrBinaryPath: meetings.asrBinaryPath !== undefined ? String(meetings.asrBinaryPath).trim() : (prior.asrBinaryPath || ''),
+      asrModelPath: meetings.asrModelPath !== undefined ? String(meetings.asrModelPath).trim() : (prior.asrModelPath || ''),
       exportDestinations: meetings.exportDestinations !== undefined
         ? (Array.isArray(meetings.exportDestinations) ? meetings.exportDestinations : [])
             .map(d => String(d).trim()).filter(Boolean).slice(0, 20)
