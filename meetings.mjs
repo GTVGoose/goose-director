@@ -182,10 +182,11 @@ export function initMeetings({ app, config, callModel, resolveBrain, localModel,
     return { bin, model, tdrzModel }
   }
 
-  function transcribeWav(wavPath, outBase, { diarize = false } = {}) {
+  function transcribeWav(wavPath, outBase, { diarize = false, tokenLevel = false } = {}) {
+    const opts2 = { tokenLevel }
     const { bin, model, tdrzModel } = resolveAsr()
     const useTdrz = diarize && tdrzModel
-    const args = ['-m', useTdrz ? tdrzModel : model, '-f', wavPath, '-oj', '-of', outBase, '-np', ...(useTdrz ? ['-tdrz'] : [])]
+    const args = ['-m', useTdrz ? tdrzModel : model, '-f', wavPath, '-oj', '-of', outBase, '-np', ...(useTdrz ? ['-tdrz'] : []), ...(opts2.tokenLevel ? ['-ml', '1'] : [])]
     return new Promise((resolve, reject) => {
       const p = spawn(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] })
       let err = ''
@@ -195,7 +196,7 @@ export function initMeetings({ app, config, callModel, resolveBrain, localModel,
         if (code !== 0) return reject(new Error(`whisper exited ${code}: ${err.slice(-300)}`))
         try {
           const j = JSON.parse(fs.readFileSync(`${outBase}.json`, 'utf8'))
-          resolve((j.transcription || []).map(s => ({ from: s.offsets?.from ?? 0, to: s.offsets?.to ?? 0, text: String(s.text || '').replace(/\[SPEAKER_TURN\]/g, '').trim(), turnNext: !!s.speaker_turn_next })).filter(s => s.text))
+          resolve((j.transcription || []).map(s => { const raw = String(s.text || '').replace(/\[SPEAKER_TURN\]/g, ''); return { from: s.offsets?.from ?? 0, to: s.offsets?.to ?? 0, text: raw.trim(), raw, turnNext: !!s.speaker_turn_next } }).filter(s => s.text))
         } catch (e) { reject(new Error(`whisper output unreadable: ${e.message}`)) }
       })
     })
@@ -246,16 +247,40 @@ export function initMeetings({ app, config, callModel, resolveBrain, localModel,
         if (ch === 'room') {
           const intervals = await runDiarizer(wav, meta?.expectedSpeakers)
           if (intervals) {
-            const segs = await transcribeWav(wav, path.join(audioDir, ch))
-            for (const s of segs) {
-              // assign the diarization speaker with maximum time overlap
-              let best = null, bestOv = 0
+            // WORD-level attribution (verified best practice — WhisperX method):
+            // token timestamps via whisper -ml 1, each token assigned to the
+            // diarization interval containing its midpoint (nearest interval
+            // when in a gap), then consecutive same-speaker tokens merge back
+            // into readable lines. Fixes segment-spans-two-speakers errors that
+            // whole-segment assignment cannot express.
+            const toks = await transcribeWav(wav, path.join(audioDir, ch), { tokenLevel: true })
+            const speakerAt = (ms) => {
+              const mid = ms / 1000
+              const hit = intervals.find(iv => mid >= iv.start && mid <= iv.end)
+              if (hit) return hit.speaker
+              let sp = intervals[0]?.speaker ?? 0, bd = Infinity
               for (const iv of intervals) {
-                const ov = Math.min(s.to / 1000, iv.end) - Math.max(s.from / 1000, iv.start)
-                if (ov > bestOv) { bestOv = ov; best = iv.speaker }
+                const d = mid < iv.start ? iv.start - mid : mid - iv.end
+                if (d < bd) { bd = d; sp = iv.speaker }
               }
-              events.push({ t: s.from, speaker: best === null ? 'Speaker 1' : `Speaker ${best + 1}`, text: s.text })
+              return sp
             }
+            let cur = null
+            for (const tk of toks) {
+              // Punctuation realignment (whisper-diarization practice): sentence
+              // punctuation emitted during the silence gap belongs to the
+              // PREVIOUS word's speaker, not whichever interval the gap abuts.
+              const punctOnly = /^[.,!?;:'"()\u2014-]+$/.test(tk.text)
+              const label = (punctOnly && cur) ? cur.speaker : `Speaker ${speakerAt((tk.from + tk.to) / 2) + 1}`
+              if (cur && cur.speaker === label && tk.from - cur.toMs < 2000) {
+                cur.text += tk.raw
+                cur.toMs = tk.to
+              } else {
+                if (cur && cur.text.trim()) events.push({ t: cur.t, speaker: cur.speaker, text: cur.text.trim() })
+                cur = { t: tk.from, toMs: tk.to, speaker: label, text: tk.raw }
+              }
+            }
+            if (cur && cur.text.trim()) events.push({ t: cur.t, speaker: cur.speaker, text: cur.text.trim() })
             continue
           }
           const tdrz = !!resolveAsr().tdrzModel

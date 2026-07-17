@@ -37,8 +37,11 @@ def main():
         # wide margin; when auto, a high threshold biases toward FEWER clusters —
         # real meetings were over-splitting one voice into several (2026-07-17).
         clustering=sherpa_onnx.FastClusteringConfig(num_clusters=num_speakers, threshold=0.9),
-        min_duration_on=0.3,
-        min_duration_off=0.4,
+        # Verified tuning (2026-07-17 research): min_duration_off=0.0 is the
+        # maintainer-endorsed default — gap-filling can bridge ACROSS speaker
+        # turns; boundary misses are the dominant diarization failure mode.
+        min_duration_on=0.2,
+        min_duration_off=0.0,
     )
     sd = sherpa_onnx.OfflineSpeakerDiarization(config)
     if not sd.sample_rate == 16000:
