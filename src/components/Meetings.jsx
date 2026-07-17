@@ -190,6 +190,7 @@ const fmtTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}
 function RecordCard({ onRecordingDone }) {
   const rec = useRecorder()
   const [title, setTitle] = useState('')
+  const [speakers, setSpeakers] = useState('')
   const [attested, setAttested] = useState(false)
   const [meetingId, setMeetingId] = useState(null)
   const [mode, setMode] = useState(null)
@@ -203,7 +204,7 @@ function RecordCard({ onRecordingDone }) {
     try {
       const r = await fetch('/api/meetings/session/start', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: m, title, attested }),
+        body: JSON.stringify({ mode: m, title, attested, expectedSpeakers: Number(speakers) || undefined }),
       })
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || 'Could not start')
@@ -246,7 +247,10 @@ function RecordCard({ onRecordingDone }) {
       <div style={{ fontSize: 12, color: 'var(--color-text-3)', marginBottom: 14, lineHeight: 1.5 }}>
         One button. Stop → the local record is transcribed on this machine, then handed to your system's model, which processes it into the report.
       </div>
-      <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Meeting title (optional)" style={{ width: '100%', marginBottom: 12 }} />
+      <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Meeting title (optional)" style={{ flex: 1 }} />
+        <input value={speakers} onChange={e => setSpeakers(e.target.value.replace(/[^0-9]/g, ''))} placeholder="How many people? (optional — sharpens speaker ID)" style={{ width: 300 }} />
+      </div>
       <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text-2)', marginBottom: 14, cursor: 'pointer' }}>
         <input type="checkbox" checked={attested} onChange={e => setAttested(e.target.checked)} style={{ width: 'auto' }} />
         I've told everyone in this conversation that it's being recorded

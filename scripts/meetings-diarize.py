@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Acoustic speaker diarization for Nexus Meetings (BYO runtime, like whisper).
 
-Usage: python3 meetings-diarize.py <wav 16k mono> <models-dir>
+Usage: python3 meetings-diarize.py <wav 16k mono> <models-dir> [num-speakers]
 Prints JSON: [{"start": sec, "end": sec, "speaker": int}, ...]
 Requires: pip install sherpa-onnx; <models-dir>/{segmentation,embedding}.onnx
 (pyannote segmentation 3.0 + NeMo titanet-small — see docs/meetings-artifacts.md).
@@ -18,6 +18,7 @@ import sherpa_onnx
 
 def main():
     wav_path, models_dir = sys.argv[1], sys.argv[2]
+    num_speakers = int(sys.argv[3]) if len(sys.argv) > 3 and int(sys.argv[3]) > 0 else -1
     with wave.open(wav_path) as w:
         assert w.getframerate() == 16000 and w.getnchannels() == 1, 'expect 16k mono'
         samples = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16)
@@ -32,7 +33,10 @@ def main():
         embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(
             model=f'{models_dir}/embedding.onnx'
         ),
-        clustering=sherpa_onnx.FastClusteringConfig(num_clusters=-1, threshold=0.6),
+        # Known speaker count (the record UI asks) beats auto-clustering by a
+        # wide margin; when auto, a high threshold biases toward FEWER clusters —
+        # real meetings were over-splitting one voice into several (2026-07-17).
+        clustering=sherpa_onnx.FastClusteringConfig(num_clusters=num_speakers, threshold=0.9),
         min_duration_on=0.3,
         min_duration_off=0.4,
     )
