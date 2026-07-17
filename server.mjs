@@ -16,7 +16,7 @@ import { initBrain } from './brain.mjs'
 // projects, memory, runs, Agentic System Builder. Self-contained module.
 import { registerGeneralUseRoutes, generalUseStores } from './src/generaluse-routes.mjs'
 import { roleForPhase } from './src/lib/run-roles.js'
-import { applyRoutingPolicy } from './src/lib/routing-policies.js'
+import { applyRoutingPolicy, setSkillMatrix } from './src/lib/routing-policies.js'
 import { createTokenBank } from './src/lib/token-bank.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -1880,6 +1880,21 @@ const bankCfg = { ...DEFAULT_BANK_CFG }
 for (const [id, c] of Object.entries(config.tokenBank?.providers || {})) bankCfg[id] = { ...(bankCfg[id] || {}), ...c }
 const tokenBank = createTokenBank(bankCfg)
 try { if (fs.existsSync(TOKEN_BANK_FILE)) tokenBank.hydrate(JSON.parse(fs.readFileSync(TOKEN_BANK_FILE, 'utf8'))) } catch { /* fresh bank */ }
+// Measured per-domain model skill (Nexus Bench). A user-supplied matrix in
+// userData wins; the shipped bench/reports snapshot is the default. Absent
+// both, routing falls back to the static strength table.
+for (const smPath of [
+  path.join(process.env.NEXUS_USER_DATA || __dirname, 'skill-matrix.json'),
+  path.join(__dirname, 'bench/reports/v0/skill-matrix.json'),
+]) {
+  try {
+    if (fs.existsSync(smPath) && setSkillMatrix(JSON.parse(fs.readFileSync(smPath, 'utf8')))) {
+      console.log(`[Routing] skill matrix loaded: ${smPath}`)
+      break
+    }
+  } catch (e) { console.error(`[Routing] bad skill matrix at ${smPath}: ${e.message}`) }
+}
+
 let _bankSaveTimer = null
 function persistTokenBank() {
   clearTimeout(_bankSaveTimer)
@@ -1916,6 +1931,30 @@ function recordUsage(mc, inTok = 0, outTok = 0) {
   return { cost, overBudget: budgetUSD > 0 && usage.costUSD >= budgetUSD }
 }
 const overBudget = () => budgetUSD > 0 && usage.costUSD >= budgetUSD
+
+// Async CLI runner for the subscription lanes. These calls previously used
+// execFileSync, which BLOCKS the whole event loop for the CLI's lifetime —
+// under concurrent sandbox load every other request starves ("fetch failed"
+// bursts), health checks time out, and a CLI child that never exits (e.g.
+// suspended across a Mac sleep) wedges the server permanently. Same contract
+// as execFileSync: resolves stdout, rejects with { status, stdout, stderr }.
+const CLI_TIMEOUT_MS = Number(process.env.NEXUS_CLI_TIMEOUT_MS) || 180000
+function execFileAsync(cmd, args, { timeout = CLI_TIMEOUT_MS, maxBuffer = 20 * 1024 * 1024, ...opts } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { ...opts, stdio: ['ignore', 'pipe', 'pipe'] })
+    let stdout = '', stderr = '', done = false
+    const finish = (fn, val) => { if (!done) { done = true; clearTimeout(timer); fn(val) } }
+    const fail = (msg, status) => {
+      const e = new Error(msg); e.status = status; e.stdout = stdout; e.stderr = stderr
+      finish(reject, e)
+    }
+    const timer = setTimeout(() => { child.kill('SIGKILL'); fail(`timed out after ${timeout}ms`, null) }, timeout)
+    child.stdout.on('data', d => { stdout += d; if (stdout.length > maxBuffer) { child.kill('SIGKILL'); fail('maxBuffer exceeded', null) } })
+    child.stderr.on('data', d => { stderr += d; if (stderr.length > maxBuffer) stderr = stderr.slice(-maxBuffer) })
+    child.on('error', e => fail(e.message, null))
+    child.on('close', code => code === 0 ? finish(resolve, stdout) : fail(`exit ${code}`, code))
+  })
+}
 
 async function callModel(modelConfig, systemContent, messages) {
   const provider = modelConfig.provider
@@ -1985,13 +2024,13 @@ async function callModel(modelConfig, systemContent, messages) {
     // is piped on stdin. Metered as $0 by recordUsage (provider !== paid).
     const model = modelConfig.model || 'sonnet'
     const prompt = [systemContent, ...messages.map(m => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))].filter(Boolean).join('\n\n')
-    // Prompt is passed as an ARGUMENT (execFileSync — no shell, no escaping issues).
-    // No --bare: bare mode skips the OAuth/keychain read, i.e. it would NOT use the
-    // Max subscription. cwd=home for a stable, low-context run.
+    // Prompt is passed as an ARGUMENT (no shell, no escaping issues). No --bare:
+    // bare mode skips the OAuth/keychain read, i.e. it would NOT use the Max
+    // subscription. cwd=home for a stable, low-context run. Async — a sync call
+    // here blocks the whole server (see execFileAsync).
     let out
     try {
-      out = execFileSync('claude', ['-p', prompt, '--output-format', 'json', '--model', model], {
-        encoding: 'utf8', timeout: 180000, maxBuffer: 20 * 1024 * 1024,
+      out = await execFileAsync('claude', ['-p', prompt, '--output-format', 'json', '--model', model], {
         cwd: os.homedir(), env: cliEnv(),
       })
     } catch (e) {
@@ -2019,10 +2058,7 @@ async function callModel(modelConfig, systemContent, messages) {
     args.push(prompt)
     let out
     try {
-      out = execFileSync('codex', args, {
-        encoding: 'utf8', timeout: 180000, maxBuffer: 20 * 1024 * 1024,
-        cwd: os.homedir(), env: codexEnv(),
-      })
+      out = await execFileAsync('codex', args, { cwd: os.homedir(), env: codexEnv() })
     } catch (e) {
       const raw = String(e.stderr || e.stdout || e.message || '')
       // codex dumps its whole transcript on stderr; surface the actual ERROR
@@ -2050,6 +2086,8 @@ app.post('/api/sandbox', async (req, res) => {
   let {
     task, participantIds = [], mode = 'roundtable',
     aggregatorId, rounds = 2, sourceDocs = [], roleAssignments = {},
+    aggregation = 'synthesize',                // roundtable: synthesize | vote | verify
+
     backendId, championFile, challengerFile,   // A/B (champion vs challenger) mode
     directorId, tools = true,                  // Umbruh-Director mode
     // Phase B (2026-07-14 general-use sync):
@@ -2064,11 +2102,14 @@ app.post('/api/sandbox', async (req, res) => {
   if (!routingPolicy && projectId) { const pj = generalUseStores.loadProject(projectId); if (pj && pj.routing && pj.routing !== 'auto') routingPolicy = pj.routing }
   if (routingPolicy) {
     const avail = (config.models || []).map(m => ({ id: m.id, provider: m.provider, tier: m.tier, pricePerMTokUsd: m.provider === 'ollama' ? 0 : (PRICE[m.model] ? PRICE[m.model][0] : undefined) }))
-    routingChoice = applyRoutingPolicy(String(routingPolicy), avail, { customSelection })
+    routingChoice = applyRoutingPolicy(String(routingPolicy), avail, { customSelection, task })
     if (routingChoice.selected.length) {
       participantIds = routingChoice.selected
       if (routingChoice.mode !== 'council' && routingChoice.mode !== 'custom') directorId = routingChoice.selected[0]
     }
+    // Policy-routed roundtables inherit the domain's aggregation style (vote
+    // for math, verify for code) unless the caller set one explicitly.
+    if (routingChoice.aggregation && req.body.aggregation === undefined) aggregation = routingChoice.aggregation
   }
   if (mode !== 'ab' && !participantIds.length) {
     return res.status(400).json({ error: routingChoice && !routingChoice.selected.length ? `routing policy "${routingPolicy}" selected no model (${routingChoice.reason})` : 'task and participantIds required' })
@@ -2077,6 +2118,10 @@ app.post('/api/sandbox', async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
+  // Long-reasoning members can go many minutes between events; undici (Node
+  // fetch) kills a body idle >300s, so heartbeat comments keep clients alive.
+  const heartbeat = setInterval(() => { try { res.write(': ping\n\n') } catch { /* closed */ } }, 25000)
+  res.on('close', () => clearInterval(heartbeat))
   // Phase B: durable run record + role-tagged trace. Every emitted event is
   // captured so /api/runs + the Run Inspector populate, and phased events carry
   // the runtime role (brain/worker/broker) for the trace.
@@ -2085,6 +2130,7 @@ app.post('/api/sandbox', async (req, res) => {
     startedAt: new Date().toISOString(), mode, task,
     projectId: projectId || null, participantIds,
     directorId: directorId || null, aggregatorId: aggregatorId || null,
+    aggregation: mode === 'roundtable' ? aggregation : undefined,
     routingPolicy: routingChoice ? { policy: routingChoice.policy, selected: routingChoice.selected } : null,
     events: [],
   }
@@ -2109,6 +2155,27 @@ app.post('/api/sandbox', async (req, res) => {
     return ((role ? role.systemPrompt : '') + docContext) || undefined
   }
 
+  // Verifiable tasks lose accuracy to freeform synthesis (bench v0, 2026-07-15:
+  // the aggregator "reconciled" math answers into numbers no member proposed).
+  // vote/verify never let the aggregator author an answer — they only pick one.
+  const answerKeyOf = (text) => {
+    const s = String(text)
+    const m = [...s.matchAll(/ANSWER\s*[:=]\s*(.+)/gi)].pop()      // ANSWER: 42
+      || [...s.matchAll(/<solution>([\s\S]*?)<\/solution>/gi)].pop() // <solution>…</solution>
+      || [...s.matchAll(/\*\*([^*]{1,300}?)\*\*/g)].pop()            // last **bold**
+    return (m ? m[1] : s).trim().toLowerCase()
+      .replace(/[*_`$.()[\]{}]/g, '').replace(/\s+/g, ' ').slice(0, 120)
+  }
+  // Aggregator checks each candidate and picks one verbatim — no blending.
+  async function verifySelect(candidates, phase) {
+    const prompt = `You are the verifier in a model council. The task was:\n\n"""${task}"""\n\nBelow are candidate answers from independent models. For each candidate, check its correctness on the merits (re-derive the key steps; recompute any math). Then select the single most correct candidate. Do NOT write your own answer and do NOT combine candidates.\n\n${candidates.map((a, i) => `### Candidate ${i + 1} — ${a.name}\n${a.text}`).join('\n\n')}\n\nEnd your reply with one line in exactly this format:\nSELECTED: <candidate number>`
+    const out = await callModel(aggregator, docContext || undefined, [{ role: 'user', content: prompt }])
+    const m = [...String(out).matchAll(/SELECTED\s*[:=]\s*(\d+)/gi)].pop()
+    const pick = m ? candidates[Number(m[1]) - 1] : null
+    if (pick) emit({ type: 'turn', model: aggregator.name, modelId: aggregator.id, phase, text: out })
+    return pick
+  }
+
   try {
     if (mode === 'roundtable') {
       emit({ type: 'status', message: 'Roundtable — gathering independent answers' })
@@ -2117,18 +2184,46 @@ app.post('/api/sandbox', async (req, res) => {
         emit({ type: 'turn-start', model: p.name, modelId: p.id, phase: 'propose' })
         try {
           const text = await callModel(p, roleSys(p.id), [{ role: 'user', content: task }])
-          answers.push({ name: p.name, text })
+          answers.push({ id: p.id, name: p.name, text })
           emit({ type: 'turn', model: p.name, modelId: p.id, phase: 'propose', text })
         } catch (e) {
           emit({ type: 'turn-error', model: p.name, modelId: p.id, phase: 'propose', error: e.message })
         }
       }
-      if (aggregator && answers.length) {
+      if (answers.length && aggregation === 'vote') {
+        emit({ type: 'status', message: 'Vote — tallying member answers' })
+        const tally = new Map()
+        for (const a of answers) {
+          const k = answerKeyOf(a.text)
+          tally.set(k, [...(tally.get(k) || []), a])
+        }
+        const groups = [...tally.values()].sort((x, y) => y.length - x.length)
+        const tied = groups.filter(g => g.length === groups[0].length)
+        let winner = tied[0][0]
+        if (tied.length > 1 && aggregator) {
+          emit({ type: 'status', message: `Vote tied ${tied.length}-way — ${aggregator.name} verifying tied candidates` })
+          try { winner = (await verifySelect(tied.map(g => g[0]), 'tiebreak')) || winner }
+          catch (e) { emit({ type: 'turn-error', model: aggregator.name, phase: 'tiebreak', error: e.message }) }
+        }
+        emit({
+          type: 'final', model: winner.name, modelId: winner.id, text: winner.text,
+          aggregation: 'vote', votes: groups[0].length, of: answers.length,
+        })
+      } else if (answers.length && aggregation === 'verify' && aggregator) {
+        emit({ type: 'status', message: `Verify — ${aggregator.name} checking each candidate` })
+        try {
+          const pick = await verifySelect(answers, 'verify')
+          const chosen = pick || answers[0]
+          emit({ type: 'final', model: chosen.name, modelId: chosen.id, text: chosen.text, aggregation: 'verify', fallback: !pick || undefined })
+        } catch (e) {
+          emit({ type: 'turn-error', model: aggregator.name, phase: 'verify', error: e.message })
+        }
+      } else if (aggregator && answers.length) {
         emit({ type: 'status', message: `Synthesizing with ${aggregator.name}` })
         const synth = `You are the aggregator in a Mixture-of-Agents council. The Director posed this task:\n\n"""${task}"""\n\nBelow are the council members' independent answers. Synthesize them into one superior answer: keep the strongest reasoning, reconcile agreements, resolve contradictions, and flag any important unresolved disagreement.\n\n${answers.map((a, i) => `### Member ${i + 1} — ${a.name}\n${a.text}`).join('\n\n')}`
         try {
           const finalText = await callModel(aggregator, docContext || undefined, [{ role: 'user', content: synth }])
-          emit({ type: 'final', model: aggregator.name, modelId: aggregator.id, text: finalText })
+          emit({ type: 'final', model: aggregator.name, modelId: aggregator.id, text: finalText, aggregation: 'synthesize' })
         } catch (e) {
           emit({ type: 'turn-error', model: aggregator.name, phase: 'synthesize', error: e.message })
         }
