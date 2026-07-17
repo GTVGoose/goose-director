@@ -22,11 +22,15 @@ export function applyAccent(key) {
 // default "studio" baseline need listing. `applyTheme` RESETS every
 // theme-controlled var to its captured default first, then applies the theme's
 // overrides — so switching themes never leaves a stale override behind. The
-// accent picker stays independent (option A): App boot and Settings call
-// `applyAccent` AFTER `applyTheme`, so the user's accent always wins even over a
-// theme that lists accent vars. `studio` = `{}` = the app.css :root baseline, so
-// an absent / 'studio' theme is byte-identical to today (config.ui.theme absent
-// ⇒ studio). T23 ships the engine + one dark proof theme (Midnight).
+// accent picker stays independent (option A, theme-system.md §5): App boot and
+// Settings call `applyAccent` AFTER `applyTheme`, so the user's accent always
+// wins even over a theme that lists accent vars. `studio` = `{}` = the app.css
+// :root baseline, so an absent / 'studio' theme is byte-identical to today —
+// that's the whole reversibility story (config.ui.theme absent ⇒ studio).
+// Named packs (8-bit / cyberpunk / parchment-light / …) + the per-theme
+// accessibility contract land in T24; T23 ships the engine + one dark proof
+// theme (Midnight) that exercises the ground/surface/border/text/radius
+// surface without leaving the dark-luminance regime (so contrast is safe).
 export const THEMES = {
   studio: { label: 'Studio — warm mineral (default)', vars: {} },
   midnight: {

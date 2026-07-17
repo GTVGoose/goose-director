@@ -1,9 +1,71 @@
 import AgentPostureRow from './AgentPostureRow.jsx'
 import StatusEntry from './StatusEntry.jsx'
 
-export default function Dashboard({ agents, statusData, canonDocs, onNav }) {
+export default function Dashboard({ agents, statusData, canonDocs, onNav, compact = false }) {
   const byPosture = (p) => agents.filter(a => a.posture === p).length
   const escalations = statusData.entries.filter(e => e.status === 'ESCALATION_REQUIRED')
+  const reviews = statusData.entries.filter(e => e.status === 'REVIEW_WHEN_READY')
+
+  // Condensed Overview (T12) — flag-gated (ui.overviewCompact, or implied by
+  // ui.chatHome per proposal §5). The full posture list duplicates the Agents
+  // view, so when compact we swap it for a stat strip that deep-links out. The
+  // escalation banner is shared verbatim so its rendered output is identical.
+  if (compact) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 1000 }}>
+
+        <EscalationBanner count={escalations.length} onNav={onNav} />
+
+        {/* Deep-link stat strip — each tile navigates to its full view */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+          {[
+            { label: 'Agents',      value: agents.length,      accent: 'var(--color-text)',            sub: 'Roster →',     view: 'agents' },
+            { label: 'Escalations', value: escalations.length, accent: 'var(--color-escalation-text)', sub: 'Respond →',    view: 'status' },
+            { label: 'Reviews',     value: reviews.length,     accent: 'var(--color-passive)',         sub: 'When ready →', view: 'status' },
+            { label: 'Canon',       value: canonDocs.length,   accent: 'var(--color-active)',          sub: 'Boundary →',   view: 'canon' },
+          ].map(s => (
+            <button
+              key={s.label}
+              onClick={() => onNav(s.view)}
+              style={{
+                background: 'var(--color-surface)',
+                border: '0.5px solid var(--color-border)',
+                borderTop: `2px solid ${s.accent}`,
+                borderRadius: 'var(--radius-lg)',
+                padding: '10px 12px',
+                textAlign: 'left',
+                cursor: 'pointer',
+                font: 'inherit',
+                width: '100%',
+                display: 'block',
+              }}
+            >
+              <div className="glyph-label" style={{ marginBottom: 6 }}>{s.label}</div>
+              <div style={{ fontSize: 28, fontWeight: 500, lineHeight: 1, color: s.accent }}>{s.value}</div>
+              <div style={{ fontSize: 11, color: 'var(--color-text-3)', marginTop: 4 }}>{s.sub}</div>
+            </button>
+          ))}
+        </div>
+
+        {/* Posture detail lives in the Agents view — keep the Overview light */}
+        <div style={{ fontSize: 12, color: 'var(--color-text-3)', padding: '2px 2px' }}>
+          Agent posture detail lives in the{' '}
+          <button
+            onClick={() => onNav('agents')}
+            style={{
+              background: 'none', border: 'none', padding: 0,
+              font: 'inherit', fontSize: 12, color: 'var(--color-text-2)',
+              cursor: 'pointer', textDecoration: 'underline',
+            }}
+          >
+            Agents
+          </button>
+          {' '}view.
+        </div>
+      </div>
+    )
+  }
+
   const topEntries = statusData.entries.slice(0, 4)
   const canonEntries = canonDocs.slice(0, 6)
 
@@ -11,39 +73,7 @@ export default function Dashboard({ agents, statusData, canonDocs, onNav }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 1000 }}>
 
       {/* Escalation banner — only shows when action is needed */}
-      {escalations.length > 0 && (
-        <div style={{
-          background: 'var(--color-escalation-bg)',
-          border: '0.5px solid var(--color-escalation-border)',
-          borderLeft: '2px solid var(--color-escalation-text)',
-          borderRadius: 'var(--radius)',
-          padding: '10px 14px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-        }}>
-          <i className="ti ti-alert-triangle" style={{ color: 'var(--color-escalation-text)', fontSize: 15, flexShrink: 0 }}></i>
-          <span style={{ color: 'var(--color-escalation-text)', fontSize: 13, fontWeight: 500 }}>
-            {escalations.length} escalation{escalations.length > 1 ? 's' : ''} awaiting Director response
-          </span>
-          <button
-            onClick={() => onNav('status')}
-            style={{
-              marginLeft: 'auto',
-              background: 'none',
-              border: '0.5px solid var(--color-escalation-border)',
-              color: 'var(--color-escalation-text)',
-              borderRadius: 'var(--radius)',
-              padding: '3px 10px',
-              fontSize: 11,
-              cursor: 'pointer',
-              letterSpacing: '0.03em',
-            }}
-          >
-            Respond →
-          </button>
-        </div>
-      )}
+      <EscalationBanner count={escalations.length} onNav={onNav} />
 
       {/* Stat row — color carries posture meaning */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
@@ -144,6 +174,45 @@ export default function Dashboard({ agents, statusData, canonDocs, onNav }) {
           </tbody>
         </table>
       </div>
+    </div>
+  )
+}
+
+// Escalation banner — shared by the full and condensed Overviews so the rendered
+// markup is identical in both. Renders nothing when there is no escalation.
+function EscalationBanner({ count, onNav }) {
+  if (count <= 0) return null
+  return (
+    <div style={{
+      background: 'var(--color-escalation-bg)',
+      border: '0.5px solid var(--color-escalation-border)',
+      borderLeft: '2px solid var(--color-escalation-text)',
+      borderRadius: 'var(--radius)',
+      padding: '10px 14px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+    }}>
+      <i className="ti ti-alert-triangle" style={{ color: 'var(--color-escalation-text)', fontSize: 15, flexShrink: 0 }}></i>
+      <span style={{ color: 'var(--color-escalation-text)', fontSize: 13, fontWeight: 500 }}>
+        {count} escalation{count > 1 ? 's' : ''} awaiting Director response
+      </span>
+      <button
+        onClick={() => onNav('status')}
+        style={{
+          marginLeft: 'auto',
+          background: 'none',
+          border: '0.5px solid var(--color-escalation-border)',
+          color: 'var(--color-escalation-text)',
+          borderRadius: 'var(--radius)',
+          padding: '3px 10px',
+          fontSize: 11,
+          cursor: 'pointer',
+          letterSpacing: '0.03em',
+        }}
+      >
+        Respond →
+      </button>
     </div>
   )
 }

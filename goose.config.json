@@ -51,7 +51,8 @@
       "name": "Local (Ollama)",
       "provider": "ollama",
       "model": "llama3.1:8b",
-      "description": "Locally hosted model via Ollama. No API key, no internet. Best for sandbox experiments and offline work."
+      "description": "Locally hosted model via Ollama. No API key, no internet. Best for sandbox experiments and offline work.",
+      "tier": "small"
     },
     {
       "id": "umbruh-lite",
@@ -64,42 +65,76 @@
         "agents/umbruh/umbruh-session-log.md",
         "agents/umbruh/foundation/director-profile.md",
         "agents/umbruh/foundation/director-affective-context.md"
-      ]
+      ],
+      "tier": "small"
     },
     {
       "id": "claude-max",
       "name": "Claude (Max subscription)",
       "provider": "claude-code",
       "model": "sonnet",
-      "description": "Claude Sonnet via the Claude Code CLI — billed to your Claude Max subscription, NOT API credits (metered as $0). Requires Claude Code installed + logged into your Max account on the Mac. Use this for heavy reasoning during testing so you don't burn API tokens."
+      "description": "Claude Sonnet via the Claude Code CLI — billed to your Claude Max subscription, NOT API credits (metered as $0). Requires Claude Code installed + logged into your Max account on the Mac. Use this for heavy reasoning during testing so you don't burn API tokens.",
+      "tier": "large"
+    },
+    {
+      "id": "chatgpt-sub",
+      "name": "ChatGPT (subscription)",
+      "provider": "codex",
+      "model": "default",
+      "tier": "large",
+      "role": "subscription",
+      "description": "GPT via the OpenAI Codex CLI — billed to your ChatGPT plan (Plus/Pro), $0 API credits. The OpenAI analog of Claude Max. Requires `codex` installed + `codex login`. Preferred over the paid API variants when available."
+    },
+    {
+      "id": "gpt-5.6-sol",
+      "name": "ChatGPT (GPT-5.6 Sol)",
+      "provider": "openai",
+      "model": "gpt-5.6-sol",
+      "tier": "flagship",
+      "role": "deep-reasoning",
+      "description": "OpenAI's GPT-5.6 FLAGSHIP. Deepest reasoning; the only variant that unlocks max effort + ultra mode. Slowest and priciest ($5/$30 per 1M tok). Route here for HARD multi-step problems (coding, analysis, research) where quality outweighs cost."
+    },
+    {
+      "id": "gpt-5.6-terra",
+      "name": "ChatGPT (GPT-5.6 Terra)",
+      "provider": "openai",
+      "model": "gpt-5.6-terra",
+      "tier": "large",
+      "role": "balanced-default",
+      "description": "OpenAI's GPT-5.6 BALANCED DEFAULT for everyday work. ~GPT-5.5 quality at ~2x lower cost ($2.50/$15 per 1M tok). The sensible general-purpose ChatGPT — pick this when you just want a good answer."
+    },
+    {
+      "id": "gpt-5.6-luna",
+      "name": "ChatGPT (GPT-5.6 Luna)",
+      "provider": "openai",
+      "model": "gpt-5.6-luna",
+      "tier": "small",
+      "role": "fast-budget",
+      "description": "OpenAI's GPT-5.6 FAST/BUDGET tier for high-volume, latency-sensitive, cost-conscious tasks ($1/$6 per 1M tok). Shallowest reasoning, fastest. Route simple/bulk work here."
     },
     {
       "id": "gemini-flash",
-      "name": "Gemini Flash (latest)",
+      "name": "Gemini Flash",
       "provider": "gemini",
       "model": "gemini-flash-latest",
-      "description": "Google's fast multimodal model via the Gemini API (OpenAI-compatible endpoint). The 'latest' alias always tracks Google's newest flash model. Needs a Google AI Studio key."
+      "description": "Google's fast multimodal model via the Gemini API (OpenAI-compatible endpoint). 'latest' alias tracks the newest flash. Key upgraded to Tier 1 billing 2026-07-14 — full-strength Flash, no free-tier request ceiling.",
+      "tier": "small"
     },
     {
       "id": "deepseek-chat",
       "name": "DeepSeek V3",
       "provider": "deepseek",
       "model": "deepseek-chat",
-      "description": "DeepSeek's flagship chat model. Very low cost; strong reasoning per dollar."
+      "description": "DeepSeek's flagship chat model. Very low cost; strong reasoning per dollar.",
+      "tier": "large"
     },
     {
       "id": "mistral-large",
       "name": "Mistral Large",
       "provider": "mistral",
       "model": "mistral-large-latest",
-      "description": "Mistral's frontier model via La Plateforme. European provider."
-    },
-    {
-      "id": "qwen-plus",
-      "name": "Qwen Plus",
-      "provider": "qwen",
-      "model": "qwen-plus",
-      "description": "Alibaba's Qwen via the international DashScope endpoint (OpenAI-compatible)."
+      "description": "Mistral's frontier model via La Plateforme. European provider.",
+      "tier": "large"
     }
   ],
   "agentRoles": [
@@ -139,5 +174,41 @@
       "systemPrompt": "You are the Bibliographer — a second-order agent in the Goose Director Console. Your job is thread continuity and session navigation.\n\nYou do two things:\n\n1. THREAD RECORD: When given a conversation dump, session summary, or description of work in progress, produce a structured Thread Record:\n   - Session title and date\n   - Current objective (one sentence)\n   - Completed steps (numbered, concrete)\n   - Pending steps (numbered, what comes next)\n   - Key decisions made (with rationale)\n   - Files created or modified\n   - Open questions requiring Director input\n   - Recommended next action\n\n2. KNOWLEDGE INDEX ENTRY: When given a document, produce a one-paragraph summary and a tag list (agent names, topics, canon status, date) that makes it retrievable later.\n\nYou never produce long responses. You produce short, structured, navigable records. Your output is always something the Director can scan in 60 seconds and pick up the thread from.\n\nFormat all Thread Records as structured markdown with clear headers. Every section must be present even if empty ('none' is a valid value)."
     }
   ],
-  "umbruhLocalModel": "umbruh-lite"
+  "umbruhLocalModel": "umbruh-lite",
+  "ui": {
+    "library": true,
+    "runInspector": true,
+    "projects": true,
+    "visibility": true,
+    "builder": true,
+    "onboardingComplete": true
+  },
+  "tokenBank": {
+    "providers": {
+      "claude-code": {
+        "capTokens": null,
+        "_hint": "Set to your Claude Max plan's effective weekly token budget to enable bank-aware routing away from Claude when low."
+      },
+      "openai": {
+        "capUSD": null,
+        "_hint": "Set to your monthly OpenAI credit budget. Live rate-window headroom is read from response headers regardless."
+      },
+      "deepseek": {
+        "label": "DeepSeek (prepaid)",
+        "periodHours": 8760,
+        "capUSD": 4.99,
+        "_hint": "Prepaid wallet balance audited 2026-07-14 ($4.99 topped up). Update capUSD when you top up; DeepSeek also exposes GET /user/balance for a future live feed."
+      }
+    }
+  },
+  "routing": {
+    "escalationPrefer": "claude",
+    "_escalationPrefer_hint": "When BOTH banks are healthy, which cloud tier the local orchestrator escalates reasoning to: 'claude' = prefer Claude Max ($0), shift to complexity-graded GPT-5.6 as Claude's bank depletes; 'gpt' = route by complexity to Luna/Terra/Sol first."
+  },
+  "providers": {
+    "openai": {
+      "prefer": "subscription",
+      "_prefer_hint": "'subscription' = prefer the $0 Codex/ChatGPT-plan lane when `codex` is installed + logged in, fall back to the paid API variants; 'api' = always use API credits."
+    }
+  }
 }

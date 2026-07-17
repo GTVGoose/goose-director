@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 const VAULT_LABELS = {
-  goose: 'Goose Agent System',
+  goose: 'Registry-style agent repo',
   sfs: 'SFS-style studio vault',
   generic: 'Generic vault',
 }
@@ -49,7 +49,7 @@ export default function Setup({ onDone }) {
         <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em' }}>NEXUS</div>
         <div style={{ fontSize: 12, color: 'var(--color-text-2)', marginTop: 6, lineHeight: 1.6 }}>
           Connect Nexus to the vault it should harness. Point it at the root folder of
-          your system — a Goose Agent System repo, an SFS-style studio vault, or any
+          your system — a registry-style agent repo, an SFS-style studio vault, or any
           vault with an agent registry — and Nexus adapts to what it finds there.
         </div>
 

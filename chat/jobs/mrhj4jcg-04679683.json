@@ -1,0 +1,373 @@
+{
+  "id": "mrhj4jcg-04679683",
+  "threadId": "director",
+  "channel": "pwa",
+  "text": "Yeah, I mean, this is the first time I'm trying out the pocket Nexus app that I'm developing. So, you know, I wasn't sure what to call you, I guess, at the start. But, you know, the interface that I want you to be is Umbra, you know, that's who I'm always trying to interface with and talk to.",
+  "status": "done",
+  "via": "local",
+  "reply": "The context file says you're under high load and Mind-dominant, so I'll match your tight register. You're testing the new Nexus app, and it seems like there was a moment of uncertainty about how to address me. You're right on track; from now on, let's call me Umbra or Umbruh – whatever feels most natural for our conversation. What do you want to work on with me today?",
+  "files": [],
+  "createdAt": "2026-07-12T08:26:22.577Z",
+  "doneAt": "2026-07-12T08:26:26.808Z",
+  "error": null,
+  "deltas": [
+    {
+      "type": "status",
+      "text": "Thinking…"
+    },
+    {
+      "type": "token",
+      "text": "The"
+    },
+    {
+      "type": "token",
+      "text": " context"
+    },
+    {
+      "type": "token",
+      "text": " file"
+    },
+    {
+      "type": "token",
+      "text": " says"
+    },
+    {
+      "type": "token",
+      "text": " you"
+    },
+    {
+      "type": "token",
+      "text": "'re"
+    },
+    {
+      "type": "token",
+      "text": " under"
+    },
+    {
+      "type": "token",
+      "text": " high"
+    },
+    {
+      "type": "token",
+      "text": " load"
+    },
+    {
+      "type": "token",
+      "text": " and"
+    },
+    {
+      "type": "token",
+      "text": " Mind"
+    },
+    {
+      "type": "token",
+      "text": "-d"
+    },
+    {
+      "type": "token",
+      "text": "omin"
+    },
+    {
+      "type": "token",
+      "text": "ant"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " so"
+    },
+    {
+      "type": "token",
+      "text": " I"
+    },
+    {
+      "type": "token",
+      "text": "'ll"
+    },
+    {
+      "type": "token",
+      "text": " match"
+    },
+    {
+      "type": "token",
+      "text": " your"
+    },
+    {
+      "type": "token",
+      "text": " tight"
+    },
+    {
+      "type": "token",
+      "text": " register"
+    },
+    {
+      "type": "token",
+      "text": "."
+    },
+    {
+      "type": "token",
+      "text": " You"
+    },
+    {
+      "type": "token",
+      "text": "'re"
+    },
+    {
+      "type": "token",
+      "text": " testing"
+    },
+    {
+      "type": "token",
+      "text": " the"
+    },
+    {
+      "type": "token",
+      "text": " new"
+    },
+    {
+      "type": "token",
+      "text": " Nexus"
+    },
+    {
+      "type": "token",
+      "text": " app"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " and"
+    },
+    {
+      "type": "token",
+      "text": " it"
+    },
+    {
+      "type": "token",
+      "text": " seems"
+    },
+    {
+      "type": "token",
+      "text": " like"
+    },
+    {
+      "type": "token",
+      "text": " there"
+    },
+    {
+      "type": "token",
+      "text": " was"
+    },
+    {
+      "type": "token",
+      "text": " a"
+    },
+    {
+      "type": "token",
+      "text": " moment"
+    },
+    {
+      "type": "token",
+      "text": " of"
+    },
+    {
+      "type": "token",
+      "text": " uncertainty"
+    },
+    {
+      "type": "token",
+      "text": " about"
+    },
+    {
+      "type": "token",
+      "text": " how"
+    },
+    {
+      "type": "token",
+      "text": " to"
+    },
+    {
+      "type": "token",
+      "text": " address"
+    },
+    {
+      "type": "token",
+      "text": " me"
+    },
+    {
+      "type": "token",
+      "text": "."
+    },
+    {
+      "type": "token",
+      "text": " You"
+    },
+    {
+      "type": "token",
+      "text": "'re"
+    },
+    {
+      "type": "token",
+      "text": " right"
+    },
+    {
+      "type": "token",
+      "text": " on"
+    },
+    {
+      "type": "token",
+      "text": " track"
+    },
+    {
+      "type": "token",
+      "text": ";"
+    },
+    {
+      "type": "token",
+      "text": " from"
+    },
+    {
+      "type": "token",
+      "text": " now"
+    },
+    {
+      "type": "token",
+      "text": " on"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " let"
+    },
+    {
+      "type": "token",
+      "text": "'s"
+    },
+    {
+      "type": "token",
+      "text": " call"
+    },
+    {
+      "type": "token",
+      "text": " me"
+    },
+    {
+      "type": "token",
+      "text": " Umb"
+    },
+    {
+      "type": "token",
+      "text": "ra"
+    },
+    {
+      "type": "token",
+      "text": " or"
+    },
+    {
+      "type": "token",
+      "text": " Um"
+    },
+    {
+      "type": "token",
+      "text": "br"
+    },
+    {
+      "type": "token",
+      "text": "uh"
+    },
+    {
+      "type": "token",
+      "text": " –"
+    },
+    {
+      "type": "token",
+      "text": " whatever"
+    },
+    {
+      "type": "token",
+      "text": " feels"
+    },
+    {
+      "type": "token",
+      "text": " most"
+    },
+    {
+      "type": "token",
+      "text": " natural"
+    },
+    {
+      "type": "token",
+      "text": " for"
+    },
+    {
+      "type": "token",
+      "text": " our"
+    },
+    {
+      "type": "token",
+      "text": " conversation"
+    },
+    {
+      "type": "token",
+      "text": "."
+    },
+    {
+      "type": "token",
+      "text": " What"
+    },
+    {
+      "type": "token",
+      "text": " do"
+    },
+    {
+      "type": "token",
+      "text": " you"
+    },
+    {
+      "type": "token",
+      "text": " want"
+    },
+    {
+      "type": "token",
+      "text": " to"
+    },
+    {
+      "type": "token",
+      "text": " work"
+    },
+    {
+      "type": "token",
+      "text": " on"
+    },
+    {
+      "type": "token",
+      "text": " with"
+    },
+    {
+      "type": "token",
+      "text": " me"
+    },
+    {
+      "type": "token",
+      "text": " today"
+    },
+    {
+      "type": "token",
+      "text": "?"
+    },
+    {
+      "type": "done",
+      "reply": "The context file says you're under high load and Mind-dominant, so I'll match your tight register. You're testing the new Nexus app, and it seems like there was a moment of uncertainty about how to address me. You're right on track; from now on, let's call me Umbra or Umbruh – whatever feels most natural for our conversation. What do you want to work on with me today?",
+      "via": "local",
+      "files": []
+    }
+  ]
+}
