@@ -103,13 +103,13 @@ export default function ThreadTOC({ conversation, visible, onToggle, onScrollTo 
           maxHeight: '62vh',
           background: 'var(--color-surface-2)',
           border: '0.5px solid var(--color-border-mid)',
-          borderRadius: 10,
+          borderRadius: 'var(--radius-10)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
           flexShrink: 0,
           zIndex: 30,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.5), 0 1px 2px rgba(0,0,0,0.4)',
+          boxShadow: 'var(--shadow-popover-2)',
           animation: 'fade-in var(--dur-fast) var(--ease-out)',
         }}>
           {/* Header */}

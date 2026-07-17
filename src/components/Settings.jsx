@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
-import { ACCENTS, applyAccent, THEMES, applyTheme } from '../theme.js'
+import { ACCENTS, applyAccent, THEMES, applyTheme, sanitizeCustomTheme } from '../theme.js'
 import { PROVIDER_CAPABILITIES, CAP_COLS } from '../lib/capabilities.js'
 
 const cardStyle = {
   background: 'var(--color-surface)',
   border: '0.5px solid var(--color-border)',
-  borderRadius: 8,
+  borderRadius: 'var(--radius-8)',
   padding: '24px',
   marginBottom: 16,
 }
@@ -114,7 +114,7 @@ function PersonalizationCard() {
               >
                 {/* mini preview built from the theme's own tokens */}
                 <div style={{ background: bg, padding: 8, borderBottom: `0.5px solid ${brd}` }}>
-                  <div style={{ height: 8, width: '70%', borderRadius: 2, background: txt, opacity: 0.85, marginBottom: 5 }} />
+                  <div style={{ height: 8, width: '70%', borderRadius: 'var(--radius-2)', background: txt, opacity: 0.85, marginBottom: 5 }} />
                   <div style={{ display: 'flex', gap: 4 }}>
                     <span style={{ width: 14, height: 14, borderRadius: 'var(--radius-sm)', background: surf, border: `0.5px solid ${brd}` }} />
                     <span style={{ width: 14, height: 14, borderRadius: '50%', background: 'var(--color-accent)' }} />
@@ -147,6 +147,263 @@ function PersonalizationCard() {
       </div>
     </div>
   )
+}
+
+// ── Custom theme editor (T25) ───────────────────────────────────────────────
+// Deep, additive aesthetic customization on TOP of the chosen preset: per-token
+// color pickers seeded from the live resolved theme, curated font / roundness /
+// border controls, live preview, and JSON export/import for sharing looks. The
+// authoritative state is `custom` — the exact { '--token': 'value' } map that is
+// persisted — so an imported theme's extra tokens (posture/status/effects the
+// pickers don't surface) survive a Save untouched. Default-off: the card only
+// WRITES ui.customTheme when the user hits Save; absent ⇒ today. Import is
+// user-local (paste / file), never fetches a URL, and passes through the SAME
+// sanitize the server enforces (key + per-type value allow-list, no CSS escapes).
+
+// Curated subset the pickers expose (the rest of the 67 allow-listed tokens —
+// posture / status / availability / effects / extra borders — are editable only
+// via imported JSON, as noted in the card footnote).
+const CT_COLORS = [
+  { k: '--color-bg',        label: 'Background' },
+  { k: '--color-surface',   label: 'Surface' },
+  { k: '--color-surface-2', label: 'Surface 2' },
+  { k: '--color-surface-3', label: 'Surface 3' },
+  { k: '--color-text',      label: 'Text' },
+  { k: '--color-text-2',    label: 'Text — muted' },
+  { k: '--color-text-3',    label: 'Text — faint' },
+]
+const CT_FONT_UI = {
+  '':       'Preset default',
+  "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif": 'System sans',
+  "'SF Mono', 'Fira Mono', 'Menlo', monospace": 'Monospace',
+  "'Iowan Old Style', 'Palatino Linotype', 'Palatino', Georgia, serif": 'Serif',
+}
+const CT_FONT_MONO = {
+  '':       'Preset default',
+  "'SF Mono', 'Fira Mono', 'Menlo', monospace": 'SF Mono',
+  "'Courier New', 'Courier', monospace": 'Courier',
+}
+// Roundness / border presets each own a fixed family of tokens; selecting one
+// REPLACES that whole family in the custom map (or removes it for 'default').
+const CT_RADIUS_KEYS = ['--radius','--radius-lg','--radius-sm','--radius-md','--radius-5','--radius-7','--radius-8','--radius-10']
+const CT_ROUNDNESS = {
+  '':    { label: 'Preset default', tokens: {} },
+  sharp: { label: 'Sharp', tokens: { '--radius':'0px','--radius-lg':'0px','--radius-sm':'0px','--radius-md':'2px','--radius-5':'2px','--radius-7':'2px','--radius-8':'2px','--radius-10':'2px' } },
+  soft:  { label: 'Soft',  tokens: { '--radius':'6px','--radius-lg':'10px','--radius-sm':'5px','--radius-md':'8px','--radius-5':'7px','--radius-7':'10px','--radius-8':'12px','--radius-10':'14px' } },
+  round: { label: 'Round', tokens: { '--radius':'10px','--radius-lg':'16px','--radius-sm':'8px','--radius-md':'12px','--radius-5':'10px','--radius-7':'14px','--radius-8':'18px','--radius-10':'20px' } },
+}
+const CT_BORDER_KEYS = ['--border-width','--border-width-strong']
+const CT_BORDERS = {
+  '':       { label: 'Preset default', tokens: {} },
+  hairline: { label: 'Hairline', tokens: { '--border-width':'0.5px','--border-width-strong':'1px' } },
+  chunky:   { label: 'Chunky',   tokens: { '--border-width':'1.5px','--border-width-strong':'3px' } },
+}
+
+// active preset is read LIVE from the DOM (applyTheme stamps dataset.theme), so
+// a preset change made in PersonalizationCard is always respected here (MAJOR-2).
+function ctActivePreset() {
+  const k = document.documentElement.dataset.theme
+  return THEMES[k] ? k : 'studio'
+}
+function ctToHex(c) {
+  if (!c) return '#000000'
+  c = String(c).trim()
+  if (c[0] === '#') return c.length === 4 ? '#' + [...c.slice(1)].map(x => x + x).join('') : c.slice(0, 7)
+  const m = c.match(/rgba?\(([^)]+)\)/)
+  if (!m) return '#000000'
+  const [r, g, b] = m[1].split(',').map(n => parseInt(n, 10))
+  const h = n => (isNaN(n) ? 0 : n).toString(16).padStart(2, '0')
+  return '#' + h(r) + h(g) + h(b)
+}
+function ctMatchBundle(custom, presets) {
+  for (const [id, def] of Object.entries(presets)) {
+    if (!id) continue
+    const tk = Object.keys(def.tokens)
+    if (tk.length && tk.every(k => custom[k] === def.tokens[k])) return id
+  }
+  return ''
+}
+
+function CustomThemeCard() {
+  const [custom, setCustom] = useState({})       // authoritative persisted map
+  const [seed, setSeed] = useState({})           // resolved active values (picker fallback)
+  const [importText, setImportText] = useState('')
+  const [loaded, setLoaded] = useState(false)
+  const [msg, setMsg] = useState(null)
+  const fileRef = useRef(null)
+
+  const reseed = () => {
+    const cs = getComputedStyle(document.documentElement)
+    const s = {}
+    for (const { k } of CT_COLORS) s[k] = cs.getPropertyValue(k).trim()
+    setSeed(s)
+  }
+
+  useEffect(() => {
+    fetch('/api/config').then(r => r.json()).then(cfg => {
+      setCustom(sanitizeCustomTheme(cfg.ui?.customTheme) || {})
+      reseed()   // boot already applied preset+custom; read the live resolved values
+      setLoaded(true)
+    }).catch(() => {})
+  }, [])
+
+  // live-apply: current preset (read live) + custom layered on top; accent is
+  // never reset by applyTheme, so it stays on top untouched.
+  const live = (next) => { applyTheme(ctActivePreset(), Object.keys(next).length ? next : null) }
+  const setToken = (k, v) => {
+    const next = { ...custom }
+    if (v) next[k] = v; else delete next[k]
+    setCustom(next); live(next)
+  }
+  const setBundle = (familyKeys, tokens) => {
+    const next = { ...custom }
+    for (const k of familyKeys) delete next[k]
+    for (const [k, v] of Object.entries(tokens)) next[k] = v
+    setCustom(next); live(next)
+  }
+
+  const save = async () => {
+    setMsg(null)
+    const payload = Object.keys(custom).length ? sanitizeCustomTheme(custom) : null
+    try {
+      const res = await fetch('/api/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ui: { customTheme: payload } }),
+      })
+      const data = await res.json()
+      if (data.ok) { applyTheme(ctActivePreset(), payload); setMsg({ ok: true, text: payload ? 'Saved.' : 'Custom theme cleared.' }) }
+      else setMsg({ ok: false, text: data.error || 'Failed' })
+    } catch (e) { setMsg({ ok: false, text: e.message }) }
+  }
+  const clear = () => { setCustom({}); applyTheme(ctActivePreset(), null); reseed(); setMsg(null) }
+
+  const doExport = () => {
+    const blob = new Blob([JSON.stringify(custom, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = 'nexus-theme.json'; a.click()
+    URL.revokeObjectURL(url)
+    setMsg({ ok: true, text: 'Downloaded nexus-theme.json' })
+  }
+  const doCopy = async () => {
+    try { await navigator.clipboard?.writeText(JSON.stringify(custom, null, 2)); setMsg({ ok: true, text: 'Copied JSON to clipboard.' }) }
+    catch { setMsg({ ok: false, text: 'Clipboard unavailable.' }) }
+  }
+  const applyImport = (raw) => {
+    setMsg(null)
+    if (raw.length > 64 * 1024) { setMsg({ ok: false, text: 'Too large.' }); return }
+    let parsed
+    try { parsed = JSON.parse(raw) } catch { setMsg({ ok: false, text: 'Not valid JSON.' }); return }
+    const clean = sanitizeCustomTheme(parsed)
+    if (!clean) { setMsg({ ok: false, text: 'No recognized theme tokens in that JSON.' }); return }
+    setCustom(clean); live(clean); setImportText('')
+    reseed()   // refresh picker fallbacks from the newly applied look
+    setMsg({ ok: true, text: `Imported ${Object.keys(clean).length} tokens (not yet saved).` })
+  }
+  const onFile = (e) => {
+    const f = e.target.files?.[0]; if (!f) return
+    if (f.size > 64 * 1024) { setMsg({ ok: false, text: 'File too large.' }); return }
+    const rd = new FileReader()
+    rd.onload = () => applyImport(String(rd.result || ''))
+    rd.readAsText(f); e.target.value = ''
+  }
+
+  const uiFont = custom['--font-ui'] || ''
+  const monoFont = custom['--font-mono'] || ''
+  const uiFontKnown = Object.prototype.hasOwnProperty.call(CT_FONT_UI, uiFont)
+  const monoFontKnown = Object.prototype.hasOwnProperty.call(CT_FONT_MONO, monoFont)
+  const roundness = ctMatchBundle(custom, CT_ROUNDNESS)
+  const borders = ctMatchBundle(custom, CT_BORDERS)
+  const active = Object.keys(custom).length > 0
+
+  return (
+    <div style={cardStyle}>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Custom theme</div>
+      <div style={{ fontSize: 12, color: 'var(--color-text-3)', marginBottom: 16, lineHeight: 1.5 }}>
+        Fine-tune colors, fonts, and shape on top of your chosen theme. Changes preview live;
+        nothing is stored until you Save. {active ? <b>A custom theme is active.</b> : 'No custom theme yet.'}
+      </div>
+
+      <div style={{ marginBottom: 18 }}>
+        <div className="glyph-label" style={{ marginBottom: 8 }}>Colors</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
+          {CT_COLORS.map(({ k, label }) => (
+            <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: 'var(--color-text-2)' }}>
+              <input type="color" disabled={!loaded}
+                value={ctToHex(custom[k] || seed[k])}
+                onChange={e => setToken(k, e.target.value)}
+                style={{ width: 28, height: 22, padding: 0, border: '0.5px solid var(--color-border-mid)', borderRadius: 'var(--radius-sm)', background: 'none', cursor: 'pointer' }} />
+              {label}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
+        <div>
+          <div className="glyph-label" style={{ marginBottom: 6 }}>UI font</div>
+          <select value={uiFontKnown ? uiFont : '__custom__'} disabled={!loaded}
+            onChange={e => { if (e.target.value !== '__custom__') setToken('--font-ui', e.target.value) }}>
+            {Object.entries(CT_FONT_UI).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            {!uiFontKnown && <option value="__custom__">Custom (imported)</option>}
+          </select>
+        </div>
+        <div>
+          <div className="glyph-label" style={{ marginBottom: 6 }}>Mono font</div>
+          <select value={monoFontKnown ? monoFont : '__custom__'} disabled={!loaded}
+            onChange={e => { if (e.target.value !== '__custom__') setToken('--font-mono', e.target.value) }}>
+            {Object.entries(CT_FONT_MONO).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            {!monoFontKnown && <option value="__custom__">Custom (imported)</option>}
+          </select>
+        </div>
+        <div>
+          <div className="glyph-label" style={{ marginBottom: 6 }}>Roundness</div>
+          <select value={roundness} disabled={!loaded} onChange={e => setBundle(CT_RADIUS_KEYS, CT_ROUNDNESS[e.target.value].tokens)}>
+            {Object.entries(CT_ROUNDNESS).map(([v, d]) => <option key={v} value={v}>{d.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <div className="glyph-label" style={{ marginBottom: 6 }}>Borders</div>
+          <select value={borders} disabled={!loaded} onChange={e => setBundle(CT_BORDER_KEYS, CT_BORDERS[e.target.value].tokens)}>
+            {Object.entries(CT_BORDERS).map(([v, d]) => <option key={v} value={v}>{d.label}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <div className="glyph-label" style={{ marginBottom: 6 }}>Share a look</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button onClick={doExport} disabled={!active} style={ctBtn}>Export file</button>
+          <button onClick={doCopy} disabled={!active} style={ctBtn}>Copy JSON</button>
+          <button onClick={() => fileRef.current?.click()} style={ctBtn}>Import file…</button>
+          <input ref={fileRef} type="file" accept="application/json,.json" onChange={onFile} style={{ display: 'none' }} />
+        </div>
+        <textarea value={importText} onChange={e => setImportText(e.target.value)}
+          placeholder='…or paste theme JSON here, then "Apply pasted"'
+          rows={2} style={{ width: '100%', marginTop: 8, fontFamily: 'var(--font-mono)', fontSize: 11 }} />
+        <button onClick={() => applyImport(importText)} disabled={!importText.trim()} style={{ ...ctBtn, marginTop: 6 }}>Apply pasted</button>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button onClick={save} style={{
+          background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)',
+          borderRadius: 'var(--radius-md)', padding: '7px 16px', fontSize: 12, fontWeight: 500, color: 'var(--color-text)',
+        }}>Save</button>
+        <button onClick={clear} style={ctBtn}>Reset to preset</button>
+        {msg && <span style={{ fontSize: 12, color: msg.ok ? 'var(--color-available)' : 'var(--color-unavailable)' }}>{msg.text}</span>}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--color-text-3)', marginTop: 10, lineHeight: 1.5 }}>
+        The editor exposes a curated subset (ground, surfaces, text, fonts, shape). An imported JSON may set
+        any of the 67 recognized theme tokens (posture, status, effects included); unknown keys and unsafe
+        values are dropped. Your accent color is independent and always layers on top.
+      </div>
+    </div>
+  )
+}
+
+const ctBtn = {
+  background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-mid)',
+  borderRadius: 'var(--radius-md)', padding: '6px 12px', fontSize: 11.5, color: 'var(--color-text-2)', cursor: 'pointer',
 }
 
 function TelegramCard() {
@@ -198,9 +455,9 @@ function TelegramCard() {
         <div style={{ fontSize: 13, fontWeight: 600 }}>Telegram bridge</div>
         <span style={{
           fontSize: 10, padding: '1px 6px', borderRadius: 'var(--radius-pill)', fontWeight: 600, letterSpacing: '0.04em',
-          background: enabled && tokenSet ? 'rgba(72,152,96,0.15)' : 'rgba(138,132,120,0.12)',
+          background: enabled && tokenSet ? 'var(--color-available-bg)' : 'var(--color-neutral-bg)',
           color: enabled && tokenSet ? 'var(--color-available)' : 'var(--color-text-3)',
-          border: `0.5px solid ${enabled && tokenSet ? 'rgba(72,152,96,0.3)' : 'var(--color-border-mid)'}`,
+          border: `0.5px solid ${enabled && tokenSet ? 'var(--color-available-border)' : 'var(--color-border-mid)'}`,
         }}>{enabled && tokenSet ? '● ACTIVE' : '○ OFF'}</span>
       </div>
       <div style={{ fontSize: 12, color: 'var(--color-text-3)', marginBottom: 16, lineHeight: 1.5 }}>
@@ -218,9 +475,9 @@ function TelegramCard() {
           <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-2)' }}>Bot token</span>
           <span style={{
             fontSize: 10, padding: '1px 6px', borderRadius: 'var(--radius-pill)', fontWeight: 600,
-            background: tokenSet ? 'rgba(72,152,96,0.15)' : 'rgba(216,80,80,0.12)',
+            background: tokenSet ? 'var(--color-available-bg)' : 'var(--color-unavailable-bg)',
             color: tokenSet ? 'var(--color-available)' : 'var(--color-unavailable)',
-            border: `0.5px solid ${tokenSet ? 'rgba(72,152,96,0.3)' : 'rgba(216,80,80,0.25)'}`,
+            border: `0.5px solid ${tokenSet ? 'var(--color-available-border)' : 'var(--color-unavailable-border)'}`,
           }}>{tokenSet ? '● SET' : '○ NOT SET'}</span>
         </div>
         <div style={{ position: 'relative' }}>
@@ -295,9 +552,9 @@ function SandboxCard() {
         <div style={{ fontSize: 13, fontWeight: 600 }}>Sandbox — local agent tools</div>
         <span style={{
           fontSize: 10, padding: '1px 6px', borderRadius: 'var(--radius-pill)', fontWeight: 600, letterSpacing: '0.04em',
-          background: enabled ? 'rgba(72,152,96,0.15)' : 'rgba(138,132,120,0.12)',
+          background: enabled ? 'var(--color-available-bg)' : 'var(--color-neutral-bg)',
           color: enabled ? 'var(--color-available)' : 'var(--color-text-3)',
-          border: `0.5px solid ${enabled ? 'rgba(72,152,96,0.3)' : 'var(--color-border-mid)'}`,
+          border: `0.5px solid ${enabled ? 'var(--color-available-border)' : 'var(--color-border-mid)'}`,
         }}>{enabled ? '● ENABLED' : '○ DISABLED'}</span>
       </div>
       <div style={{ fontSize: 12, color: 'var(--color-text-3)', marginBottom: 14, lineHeight: 1.6 }}>
@@ -531,7 +788,7 @@ function CapabilitiesCard() {
         <div style={{ fontSize: 13, fontWeight: 600 }}>Capabilities — per model (developer)</div>
         <span style={{
           fontSize: 10, padding: '1px 6px', borderRadius: 'var(--radius-pill)', fontWeight: 600, letterSpacing: '0.04em',
-          background: 'rgba(138,132,120,0.12)', color: 'var(--color-text-3)', border: '0.5px solid var(--color-border-mid)',
+          background: 'var(--color-neutral-bg)', color: 'var(--color-text-3)', border: '0.5px solid var(--color-border-mid)',
         }}>◇ SCAFFOLD</span>
       </div>
       <div style={{ fontSize: 12, color: 'var(--color-text-3)', marginBottom: 14, lineHeight: 1.6 }}>
@@ -677,7 +934,7 @@ function VaultCard() {
     <div style={{
       background: 'var(--color-surface)',
       border: '0.5px solid var(--color-border)',
-      borderRadius: 8,
+      borderRadius: 'var(--radius-8)',
       padding: '24px',
       marginBottom: 16,
     }}>
@@ -782,7 +1039,7 @@ function AdditionalReposCard() {
   const additional = repos.filter(r => !r.primary)
 
   return (
-    <div style={{ background: 'var(--color-surface)', border: '0.5px solid var(--color-border)', borderRadius: 8, padding: 24, marginBottom: 16 }}>
+    <div style={{ background: 'var(--color-surface)', border: '0.5px solid var(--color-border)', borderRadius: 'var(--radius-8)', padding: 24, marginBottom: 16 }}>
       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Additional repos</div>
       <div style={{ fontSize: 12, color: 'var(--color-text-3)', marginBottom: 14, lineHeight: 1.5 }}>
         Connect more repos for Nexus to index alongside the primary vault. Their Domains &amp; Knowledge
@@ -810,7 +1067,7 @@ function AdditionalReposCard() {
             value={r.role}
             onChange={e => post({ action: 'update', id: r.id, role: e.target.value })}
             disabled={busy}
-            style={{ fontSize: 11, padding: '3px 6px', borderRadius: 5, border: '0.5px solid var(--color-border-strong)', background: 'var(--color-surface)', color: 'var(--color-text)' }}
+            style={{ fontSize: 11, padding: '3px 6px', borderRadius: 'var(--radius-5)', border: '0.5px solid var(--color-border-strong)', background: 'var(--color-surface)', color: 'var(--color-text)' }}
           >
             <option value="reference">reference</option>
             <option value="workspace">workspace</option>
@@ -831,7 +1088,7 @@ function AdditionalReposCard() {
             <input value={name} onChange={e => setName(e.target.value)} placeholder="Display name (optional)"
               style={{ flex: 1, fontSize: 12 }} />
             <select value={role} onChange={e => setRole(e.target.value)}
-              style={{ fontSize: 12, padding: '4px 8px', borderRadius: 5, border: '0.5px solid var(--color-border-strong)', background: 'var(--color-surface)', color: 'var(--color-text)' }}>
+              style={{ fontSize: 12, padding: '4px 8px', borderRadius: 'var(--radius-5)', border: '0.5px solid var(--color-border-strong)', background: 'var(--color-surface)', color: 'var(--color-text)' }}>
               <option value="reference">reference</option>
               <option value="workspace">workspace</option>
             </select>
@@ -865,87 +1122,6 @@ const KEY_FIELDS = [
   { id: 'mistral',   field: 'mistralKey',   label: 'Mistral',                 placeholder: 'API key' },
   { id: 'qwen',      field: 'qwenKey',      label: 'Qwen (Alibaba DashScope)', placeholder: 'sk-...' },
 ]
-
-// Per-provider auth lane: subscription (CLI login, $0) vs API key (paid).
-// v1 covers OpenAI (ChatGPT subscription via Codex CLI vs the API variants),
-// mirroring how Claude Max already runs $0 through the Claude Code CLI.
-function ProviderAccessCard() {
-  const [prefer, setPrefer] = useState('subscription')
-  const [codexAvailable, setCodexAvailable] = useState(null) // null = loading
-  const [loaded, setLoaded] = useState(false)
-  const [msg, setMsg] = useState(null)
-
-  const refresh = () => {
-    fetch('/api/config').then(r => r.json()).then(cfg => {
-      setPrefer(cfg.providers?.openai?.prefer === 'api' ? 'api' : 'subscription')
-      setLoaded(true)
-    }).catch(() => {})
-    fetch('/api/models').then(r => r.json()).then(d => {
-      const codex = (d.models || []).find(m => m.provider === 'codex')
-      setCodexAvailable(codex ? !!codex.available : false)
-    }).catch(() => setCodexAvailable(false))
-  }
-  useEffect(refresh, [])
-
-  const save = async (next) => {
-    setPrefer(next); setMsg(null)
-    try {
-      const res = await fetch('/api/config', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ providers: { openai: { prefer: next } } }),
-      })
-      const data = await res.json()
-      setMsg(data.ok ? { ok: true, text: 'Saved.' } : { ok: false, text: data.error || 'Failed' })
-      setTimeout(refresh, 300)
-    } catch (e) { setMsg({ ok: false, text: e.message }) }
-  }
-
-  // Which lane is actually active given the preference + CLI availability.
-  const active = prefer === 'api' ? 'api'
-    : codexAvailable ? 'subscription'
-    : 'api-fallback'
-
-  const opt = (val, title, sub) => (
-    <button onClick={() => save(val)} disabled={!loaded} style={{
-      flex: 1, textAlign: 'left', cursor: 'pointer', padding: '12px 14px',
-      background: prefer === val ? 'var(--color-accent-bg)' : 'var(--color-surface-2)',
-      border: `1px solid ${prefer === val ? 'var(--color-accent)' : 'var(--color-border)'}`,
-      borderRadius: 8, color: 'var(--color-text)',
-    }}>
-      <div style={{ fontSize: 13, fontWeight: 600 }}>{title}</div>
-      <div style={{ fontSize: 11, color: 'var(--color-text-3)', marginTop: 3, lineHeight: 1.4 }}>{sub}</div>
-    </button>
-  )
-
-  return (
-    <div style={cardStyle}>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>OpenAI access</div>
-      <div style={{ fontSize: 12, color: 'var(--color-text-3)', marginBottom: 16, lineHeight: 1.5 }}>
-        Run GPT on your <strong style={{ color: 'var(--color-text-2)' }}>ChatGPT subscription</strong> ($0, via the Codex CLI) or on <strong style={{ color: 'var(--color-text-2)' }}>API credits</strong> (pay-per-token). Subscription is the OpenAI analog of Claude Max — preferred when available, with automatic fallback to the API.
-      </div>
-
-      <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-        {opt('subscription', 'Subscription (recommended)', 'ChatGPT plan via Codex CLI · $0 API credits')}
-        {opt('api', 'API key', 'GPT-5.6 Sol / Terra / Luna · pay-per-token')}
-      </div>
-
-      {/* Live status */}
-      <div style={{ fontSize: 12, padding: '10px 12px', borderRadius: 8, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border)', lineHeight: 1.5 }}>
-        {active === 'subscription' && <span style={{ color: 'var(--color-available)' }}>● Active: subscription — Codex CLI detected, GPT runs $0 on your ChatGPT plan.</span>}
-        {active === 'api' && <span style={{ color: 'var(--color-text-2)' }}>● Active: API — GPT-5.6 variants billed to your OpenAI API credits.</span>}
-        {active === 'api-fallback' && (
-          <span style={{ color: 'var(--color-review-text, #d9a441)' }}>
-            ● Subscription selected, but the Codex CLI isn’t installed yet — currently falling back to the API. To activate $0 subscription billing:
-            <div style={{ marginTop: 6, fontFamily: 'var(--font-mono, monospace)', fontSize: 11, color: 'var(--color-text-2)' }}>
-              npm install -g @openai/codex<br />codex login &nbsp;<span style={{ color: 'var(--color-text-3)' }}># sign in with your ChatGPT account</span>
-            </div>
-          </span>
-        )}
-      </div>
-      {msg && <div style={{ marginTop: 10, fontSize: 12, color: msg.ok ? 'var(--color-available)' : 'var(--color-unavailable)' }}>{msg.text}</div>}
-    </div>
-  )
-}
 
 export default function Settings() {
   const [keys, setKeys] = useState({})
@@ -992,9 +1168,9 @@ export default function Settings() {
           <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-2)' }}>{label}</span>
           <span style={{
             fontSize: 10, padding: '1px 6px', borderRadius: 'var(--radius-pill)',
-            background: isSet ? 'rgba(72,152,96,0.15)' : 'rgba(216,80,80,0.12)',
+            background: isSet ? 'var(--color-available-bg)' : 'var(--color-unavailable-bg)',
             color: isSet ? 'var(--color-available)' : 'var(--color-unavailable)',
-            border: `0.5px solid ${isSet ? 'rgba(72,152,96,0.3)' : 'rgba(216,80,80,0.25)'}`,
+            border: `0.5px solid ${isSet ? 'var(--color-available-border)' : 'var(--color-unavailable-border)'}`,
             fontWeight: 600, letterSpacing: '0.04em',
           }}>
             {isSet ? '● SET' : '○ NOT SET'}
@@ -1038,11 +1214,12 @@ export default function Settings() {
       <VaultCard />
       <AdditionalReposCard />
       <PersonalizationCard />
+      <CustomThemeCard />
 
       <div style={{
         background: 'var(--color-surface)',
         border: '0.5px solid var(--color-border)',
-        borderRadius: 8,
+        borderRadius: 'var(--radius-8)',
         padding: '24px',
         marginBottom: 16,
       }}>
@@ -1099,7 +1276,6 @@ export default function Settings() {
 
       <TelegramCard />
       <SandboxCard />
-      <ProviderAccessCard />
       <PricingCard />
       <CapabilitiesCard />
       <ReplayOnboardingCard />
@@ -1107,7 +1283,7 @@ export default function Settings() {
       <div style={{
         background: 'var(--color-surface)',
         border: '0.5px solid var(--color-border)',
-        borderRadius: 8,
+        borderRadius: 'var(--radius-8)',
         padding: '18px 24px',
         fontSize: 12,
         color: 'var(--color-text-3)',

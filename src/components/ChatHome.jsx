@@ -37,12 +37,12 @@ const PROVIDER_ICON = {
 }
 const providerIcon = (p) => PROVIDER_ICON[p] || 'ti-cloud'
 const UNIT_CSS = `
-@keyframes nxPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(150,132,255,0); } 50% { box-shadow: 0 0 14px 3px rgba(150,132,255,0.45); } }
+@keyframes nxPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(var(--color-glow-rgb),0); } 50% { box-shadow: 0 0 14px 3px rgba(var(--color-glow-rgb),0.45); } }
 @keyframes nxDotGlow { 0%,100% { box-shadow: 0 0 2px 0 var(--dotc); transform: scale(1); } 50% { box-shadow: 0 0 12px 3px var(--dotc); transform: scale(1.12); } }
 @keyframes nxNeuron { 0% { left: -3px; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { left: calc(100% - 4px); opacity: 0; } }
 .nx-pulse { animation: nxPulse 1.5s ease-in-out infinite; }
 .nx-active-dot { animation: nxDotGlow 1.2s ease-in-out infinite; }
-.nx-neuron { position: absolute; top: -2.5px; width: 7px; height: 7px; border-radius: 50%; background: rgba(160,140,255,0.95); box-shadow: 0 0 6px 1px rgba(160,140,255,0.7); animation: nxNeuron 1.25s linear infinite; }
+.nx-neuron { position: absolute; top: -2.5px; width: 7px; height: 7px; border-radius: 50%; background: rgba(var(--color-glow-rgb),0.95); box-shadow: 0 0 6px 1px rgba(var(--color-glow-rgb),0.7); animation: nxNeuron 1.25s linear infinite; }
 .nx-node { transition: border-color .25s ease, box-shadow .25s ease, transform .18s ease, background .25s ease; }
 .nx-node:hover { transform: translateY(-1px); border-color: var(--color-active-border) !important; }
 .nx-path { transition: background .3s ease; }
@@ -50,17 +50,6 @@ const UNIT_CSS = `
 // Working phrases — Goose-flavored (the flock as actor: geese trade the lead in the V,
 // exactly what the council does). Brand voice, no lore. Rotates while the unit works.
 const PHRASES = ['the wind takes it…', 'the V forms…', 'trading the lead…', 'riding the draft…', 'coming in to land…']
-
-// Council protocols (Sandbox fold-in, 2026-07-14): the same /api/sandbox modes the
-// standalone Sandbox view exposed, now selectable from the composer once ≥2 models
-// join. A/B (champion vs challenger) stays in Sandbox — it takes file inputs, not a
-// chat turn.
-const COUNCIL_MODES = [
-  { id: 'roundtable',   label: 'Roundtable',   hint: 'Each member answers; the Brain synthesizes one reply.' },
-  { id: 'debate',       label: 'Debate',       hint: 'Members argue positions across rounds; the Brain judges.' },
-  { id: 'orchestrator', label: 'Orchestrator', hint: 'The Brain decomposes the task and delegates the parts.' },
-  { id: 'director',     label: 'Director',     hint: 'The Brain plans, routes each part, uses tools, composes.' },
-]
 
 // T17: cost-meter formatters. Costs are ESTIMATES from the server's built-in pricing
 // table (see /api/usage + recordUsage); scale the precision so tiny spends stay legible.
@@ -73,7 +62,7 @@ const fmtUSD = (n) => {
 }
 const fmtTok = (n) => (Number(n) || 0).toLocaleString('en-US')
 
-export default function ChatHome({ canonDocs = [], onNav, project = null, onProjectChange = () => {} }) {
+export default function ChatHome({ canonDocs = [], onNav }) {
   const [models, setModels] = useState([])
   const [brainId, setBrainId] = useState(null)
   const [selectedModel, setSelectedModel] = useState('')
@@ -90,19 +79,6 @@ export default function ChatHome({ canonDocs = [], onNav, project = null, onProj
   const [saveNote, setSaveNote] = useState(null)
   const [councilRun, setCouncilRun] = useState(null)   // live/last /api/sandbox run → CouncilInspector (T11)
   const [inspectorOpen, setInspectorOpen] = useState(false)
-  // Sandbox-modes fold-in (2026-07-14 IA review): once ≥2 models join, the unit
-  // can run any council protocol — not just roundtable. Same /api/sandbox engine.
-  const [councilMode, setCouncilMode] = useState('roundtable')
-  // Invoke fold-in: agent-role system prompt + canon-doc attach, the two things
-  // the standalone Invoke view had that Chat didn't. Same /api/relay contract.
-  const [agentRoles, setAgentRoles] = useState([])
-  const [roleId, setRoleId] = useState('')
-  const [attachedDocs, setAttachedDocs] = useState([])   // [{title, path}]
-  const [showAttach, setShowAttach] = useState(false)
-  const [docSearch, setDocSearch] = useState('')
-  // Project-as-workspace (B): the selector's roster; lazy-loaded on open.
-  const [projects, setProjects] = useState(null)
-  const [showProjectPicker, setShowProjectPicker] = useState(false)
   // T15/T16 unit strip: which part of the unit is working right now (drives the
   // pulse/neuron animations), the local-model "representation" node, and the
   // rotating status phrase. All presentation — the run protocol is unchanged.
@@ -127,7 +103,6 @@ export default function ChatHome({ canonDocs = [], onNav, project = null, onProj
       const ms = d.models || []
       setModels(ms)
       setBrainId(d.brainId || null)
-      setAgentRoles(d.agentRoles || [])
       if (initial) {
         const first = ms.find(m => m.available && m.id === d.brainId) || ms.find(m => m.available)
         if (first) setSelectedModel(first.id)
@@ -198,23 +173,10 @@ export default function ChatHome({ canonDocs = [], onNav, project = null, onProj
   const unitWorking = unit.brain || unit.local || unit.cloud
   const unitStatusLine = unitWorking
     ? `${unit.activeName || (unit.brain ? (currentModel?.name || 'Brain') : unit.local ? (localModel?.name || 'Local model') : 'Cloud unit')} — ${phrase}`
-    : councilActive ? `Unit assembled · ${1 + council.length} minds · ${councilMode}` : null
-
-  // Provider FAMILY = one council seat. Convening two ChatGPT variants (or the
-  // subscription + an API tier) is redundant — the stronger one supersedes the
-  // weaker (David, 2026-07-14) — so adding a family sibling SWAPS it into that
-  // family's seat, same pattern chooseLocal already uses for local models.
-  // openai (API tiers) + codex (subscription) are both the ChatGPT family;
-  // anthropic + claude-code are both Claude.
-  const FAMILY = { openai: 'chatgpt', codex: 'chatgpt', anthropic: 'claude', 'claude-code': 'claude' }
-  const familyOf = (id) => { const p = models.find(m => m.id === id)?.provider; return FAMILY[p] || p || id }
+    : councilActive ? `Unit assembled · ${1 + council.length} minds · roundtable` : null
 
   const toggleCouncil = (id) =>
-    setCouncil(c => {
-      if (c.includes(id)) return c.filter(x => x !== id)
-      const fam = familyOf(id)
-      return [...c.filter(x => familyOf(x) !== fam), id]
-    })
+    setCouncil(c => c.includes(id) ? c.filter(x => x !== id) : [...c, id])
 
   // Local node: picking a model makes it the node's representation AND swaps it
   // into the unit in place of any other local member; picking it again stands it down.
@@ -272,17 +234,7 @@ export default function ChatHome({ canonDocs = [], onNav, project = null, onProj
       const res = await fetch('/api/relay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          modelId: selectedModel, messages: newConv,
-          // Invoke fold-in: role system prompt + attached canon docs ride along.
-          // Project workspace (B): the active project's instructions lead the
-          // system prompt so every solo turn is scoped to the project's context.
-          systemPrompt: [
-            project?.instructions && `PROJECT — ${project.name}:\n${project.instructions}`,
-            agentRoles.find(r => r.id === roleId)?.systemPrompt,
-          ].filter(Boolean).join('\n\n') || undefined,
-          sourceDocs: attachedDocs,
-        }),
+        body: JSON.stringify({ modelId: selectedModel, messages: newConv, sourceDocs: [] }),
       })
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
@@ -336,28 +288,17 @@ export default function ChatHome({ canonDocs = [], onNav, project = null, onProj
     // Parallel richer snapshot for the docked CouncilInspector (T11). Same `turns`
     // array; the inspector reads phase/round/subtask, so we enrich the pushes below.
     const aggName = models.find(m => m.id === selectedModel)?.name || selectedModel
-    const insp = { running: true, mode: councilMode, members, aggregator: aggName, status: 'Convening the council…', active: null, final: null, error: null }
+    const insp = { running: true, mode: 'roundtable', members, aggregator: aggName, status: 'Convening the council…', active: null, final: null, error: null }
     const syncInsp = (patch) => { Object.assign(insp, patch); setCouncilRun({ ...insp, turns: [...turns] }) }
     syncInsp({})
     try {
-      // Sandbox fold-in: the composer's protocol selector picks the mode. Director
-      // mode routes through the Brain as director (with tools, per the Sandbox
-      // doctrine); the other modes aggregate through the Brain as before.
-      const isDirector = councilMode === 'director'
       const res = await fetch('/api/sandbox', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          task, participantIds: unit, mode: councilMode,
-          ...(isDirector
-            ? { directorId: selectedModel, tools: true }
-            : { aggregatorId: selectedModel, rounds: 2, tools: false }),
-          sourceDocs: attachedDocs, roleAssignments: {},
-          // Project workspace (B): scope the run record + minted artifacts to the
-          // project. The user's explicitly-convened unit is pinned via the custom
-          // routing policy so the project's routing DEFAULT can't silently swap
-          // the members they chose (defaults apply when you didn't choose).
-          ...(project ? { projectId: project.id, routingPolicy: 'custom', customSelection: unit } : {}),
+          task, participantIds: unit, mode: 'roundtable',
+          aggregatorId: selectedModel, rounds: 2, tools: false,
+          sourceDocs: [], roleAssignments: {},
         }),
       })
       const reader = res.body.getReader()
@@ -429,14 +370,14 @@ export default function ChatHome({ canonDocs = [], onNav, project = null, onProj
     <div style={{ display: 'flex', height: '100%', gap: 14, position: 'relative', minWidth: 0 }}>
 
       {/* ── Left mini-rail: New chat + recent ── */}
-      <div style={{ width: 'clamp(150px, 15vw, 190px)', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+      <div style={{ width: 190, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
         <button
           onClick={newChat}
           disabled={streaming}
           style={{
             display: 'flex', alignItems: 'center', gap: 7, padding: '8px 10px',
             background: 'var(--color-active-bg)', color: 'var(--color-active-text)',
-            border: '0.5px solid var(--color-active-border)', borderRadius: 8,
+            border: '0.5px solid var(--color-active-border)', borderRadius: 'var(--radius-8)',
             fontSize: 13, fontWeight: 500, cursor: streaming ? 'default' : 'pointer',
             opacity: streaming ? 0.55 : 1,
           }}
@@ -467,7 +408,7 @@ export default function ChatHome({ canonDocs = [], onNav, project = null, onProj
                 title={t.title}
                 style={{
                   textAlign: 'left', background: viewingThread?.id === t.id ? 'var(--color-border)' : 'none',
-                  border: 'none', borderRadius: 5, padding: '5px 8px', cursor: 'pointer',
+                  border: 'none', borderRadius: 'var(--radius-5)', padding: '5px 8px', cursor: 'pointer',
                   color: 'var(--color-text-2)', fontSize: 12, overflow: 'hidden',
                   textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 }}
@@ -480,9 +421,9 @@ export default function ChatHome({ canonDocs = [], onNav, project = null, onProj
       {/* Thread reader overlay (read-only — restoring structured messages is a follow-up) */}
       {viewingThread && (
         <div style={{
-          position: 'absolute', left: 204, top: 8, width: 420, maxHeight: '82%', zIndex: 120,
+          position: 'absolute', left: 204, right: 12, top: 8, maxWidth: 420, maxHeight: '82%', zIndex: 120,
           background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)',
-          borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden',
+          borderRadius: 'var(--radius-10)', boxShadow: 'var(--shadow-popover)', overflow: 'hidden',
           display: 'flex', flexDirection: 'column',
         }}>
           <div style={{ padding: 10, borderBottom: '0.5px solid var(--color-border)', display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -497,49 +438,14 @@ export default function ChatHome({ canonDocs = [], onNav, project = null, onProj
         </div>
       )}
 
-      {/* ── Center: conversation + composer ──
-            Wrapped in a flex:1 centering shell so (a) the readable-width column
-            floats CENTERED in the free space (3-zone shell: threads left, chat
-            column center) and (b) the Council rail — the next flex sibling —
-            lands hard against the RIGHT edge instead of trailing the 900px cap
-            mid-screen on wide windows (polish-review + David 2026-07-14). */}
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'center' }}>
-      <div style={{ width: '100%', maxWidth: 900, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      {/* ── Center: conversation + composer ── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, maxWidth: 900 }}>
 
         {/* ── T17 live cost meter — always visible above the conversation (default
               placement; alt considered: under the brain node in the composer strip,
               but that row is already dense with the unit picker). Session $ + tokens,
               a per-turn delta, and the full per-model breakdown one click away. ── */}
-        <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 6, flexShrink: 0 }}>
-          {/* Project workspace (B): what this chat is working in. Scopes solo
-              system prompts, council run records, and minted artifacts. */}
-          <div style={{ position: 'relative' }}>
-            <button
-              onClick={() => { setShowProjectPicker(s => !s); if (projects === null) fetch('/api/projects').then(r => r.json()).then(d => setProjects(d.projects || [])).catch(() => setProjects([])) }}
-              title={project ? `Working in ${project.name} — instructions, runs, and artifacts scope here. Click to switch.` : 'Scope this chat to a project (instructions + saved runs/artifacts).'}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6, padding: '4px 11px', cursor: 'pointer', fontSize: 11,
-                background: project ? 'var(--color-recursive-bg)' : 'var(--color-surface)',
-                border: `0.5px solid ${project ? 'var(--color-recursive-border)' : 'var(--color-border)'}`,
-                borderRadius: 'var(--radius-pill)', color: project ? 'var(--color-recursive-text)' : 'var(--color-text-3)',
-              }}
-            >
-              <i className="ti ti-folders" style={{ fontSize: 12 }} />
-              {project ? <>working in <b>{project.name}</b></> : 'no project'}
-              <i className="ti ti-chevron-down" style={{ fontSize: 10 }} />
-            </button>
-            {showProjectPicker && (
-              <div style={{ position: 'absolute', top: '115%', left: 0, width: 260, zIndex: 120, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
-                <button onClick={() => { onProjectChange(null); setShowProjectPicker(false) }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 11px', fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', color: !project ? 'var(--color-recursive-text)' : 'var(--color-text-2)' }}>No project — plain chat</button>
-                {(projects || []).map(p => (
-                  <button key={p.id} onClick={() => { fetch(`/api/projects/${p.id}`).then(r => r.json()).then(full => onProjectChange(full.id ? full : p)).catch(() => onProjectChange(p)); setShowProjectPicker(false) }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 11px', fontSize: 12, background: project?.id === p.id ? 'var(--color-recursive-bg)' : 'none', border: 'none', borderTop: '0.5px solid var(--color-border)', cursor: 'pointer', color: project?.id === p.id ? 'var(--color-recursive-text)' : 'var(--color-text-2)' }}>
-                    {p.name}<span style={{ color: 'var(--color-text-3)', fontSize: 10 }}> · routing {p.routing}</span>
-                  </button>
-                ))}
-                {projects !== null && projects.length === 0 && <div style={{ padding: '7px 11px', fontSize: 11, color: 'var(--color-text-3)' }}>No projects yet — create one in Projects.</div>}
-              </div>
-            )}
-          </div>
+        <div style={{ position: 'relative', display: 'flex', justifyContent: 'flex-end', marginBottom: 6, flexShrink: 0 }}>
           <button
             onClick={() => { setShowUsage(s => !s); fetchUsage() }}
             title="Session tokens + estimated spend (this app run). Click for the per-model breakdown."
@@ -567,7 +473,7 @@ export default function ChatHome({ canonDocs = [], onNav, project = null, onProj
           </button>
 
           {showUsage && (
-            <div style={{ position: 'absolute', top: '112%', right: 0, width: 322, zIndex: 115, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', top: '112%', right: 0, width: 322, zIndex: 115, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 'var(--radius-10)', boxShadow: 'var(--shadow-popover)', overflow: 'hidden' }}>
               <div style={{ padding: '10px 12px', borderBottom: '0.5px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ flex: 1, fontSize: 12, fontWeight: 600 }}>Session spend</span>
                 <button
@@ -646,12 +552,7 @@ export default function ChatHome({ canonDocs = [], onNav, project = null, onProj
                 working (pulse on the node, neuron traveling down the live path,
                 rotating status phrase) without opening the inspector. ── */}
           <style>{UNIT_CSS}</style>
-          {/* NO overflow guard here: overflow-x:auto turns this into a clip
-              container, and the brain/local/cloud PICKER POPOVERS (absolutely
-              positioned above the strip) get clipped invisible — clicks then
-              look dead (regression caught by David 2026-07-14). The nodes
-              themselves shrink (flexShrink + minWidth) to absorb narrow widths. */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 2, position: 'relative', minHeight: 66, width: '100%', minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 2, position: 'relative', minHeight: 66, width: '100%' }}>
 
             {/* Brain node */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, width: 104, minWidth: 44, flexShrink: 1 }}>
@@ -664,13 +565,13 @@ export default function ChatHome({ canonDocs = [], onNav, project = null, onProj
                 <i className="ti ti-brain" style={{ fontSize: 22, color: 'var(--color-accent-text)' }} />
               </button>
               <div style={{ fontSize: 8, color: 'var(--color-text-3)', letterSpacing: '0.12em', fontWeight: 600 }}>BRAIN</div>
-              <div style={{ fontSize: 10, color: 'var(--color-text-2)', textAlign: 'center', lineHeight: 1.25, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: -2 }}>
+              <div style={{ fontSize: 10, color: 'var(--color-text-2)', textAlign: 'center', lineHeight: 1.25, maxWidth: 104, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: -2 }}>
                 {currentModel?.name || 'Select a model'}
               </div>
             </div>
 
             {/* Path: brain ↔ local — flexes so the chain spans the chat box */}
-            <div className="nx-path" style={{ position: 'relative', flex: 1, minWidth: 12, height: 1.5, borderRadius: 2, marginTop: 21, background: unit.local ? 'rgba(160,140,255,0.4)' : 'var(--color-border-strong)' }}>
+            <div className="nx-path" style={{ position: 'relative', flex: 1, minWidth: 12, height: 1.5, borderRadius: 'var(--radius-2)', marginTop: 21, background: unit.local ? 'rgba(var(--color-glow-rgb),0.4)' : 'var(--color-border-strong)' }}>
               {unit.local && <span className="nx-neuron" />}
             </div>
 
@@ -680,18 +581,18 @@ export default function ChatHome({ canonDocs = [], onNav, project = null, onProj
                 onClick={() => { if (!showLocalPicker) loadModels(); setShowLocalPicker(s => !s); setShowAdd(false); setShowModelPicker(false) }}
                 className={`nx-node${unit.local ? ' nx-pulse' : ''}`}
                 title={localModel ? `Local model — ${localModel.name}${localInUnit ? ' (in the unit)' : ' (standing by)'}. Click to change or bring it in.` : 'No local model detected — is Ollama running?'}
-                style={{ width: 42, height: 42, borderRadius: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', background: localInUnit ? `${providerColor('ollama')}1a` : 'var(--color-surface)', border: `1.5px ${localInUnit ? 'solid' : 'dashed'} ${unit.local ? 'var(--color-active-border)' : localInUnit ? providerColor('ollama') : 'var(--color-border-strong)'}`, cursor: 'pointer', opacity: localModel ? 1 : 0.45, flexShrink: 0 }}
+                style={{ width: 42, height: 42, borderRadius: 'var(--radius-13)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: localInUnit ? `${providerColor('ollama')}1a` : 'var(--color-surface)', border: `1.5px ${localInUnit ? 'solid' : 'dashed'} ${unit.local ? 'var(--color-active-border)' : localInUnit ? providerColor('ollama') : 'var(--color-border-strong)'}`, cursor: 'pointer', opacity: localModel ? 1 : 0.45, flexShrink: 0 }}
               >
                 <i className="ti ti-cpu" style={{ fontSize: 20, color: localInUnit ? providerColor('ollama') : 'var(--color-text-3)' }} />
               </button>
               <div style={{ fontSize: 8, color: 'var(--color-text-3)', letterSpacing: '0.12em', fontWeight: 600 }}>LOCAL</div>
-              <div style={{ fontSize: 10, color: 'var(--color-text-2)', textAlign: 'center', lineHeight: 1.25, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: -2 }}>
+              <div style={{ fontSize: 10, color: 'var(--color-text-2)', textAlign: 'center', lineHeight: 1.25, maxWidth: 104, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: -2 }}>
                 {localModel ? localModel.name : 'none found'}
               </div>
             </div>
 
             {/* Path: local ↔ cloud unit */}
-            <div className="nx-path" style={{ position: 'relative', flex: 1, minWidth: 12, height: 1.5, borderRadius: 2, marginTop: 21, background: unit.cloud ? 'rgba(160,140,255,0.4)' : 'var(--color-border-strong)' }}>
+            <div className="nx-path" style={{ position: 'relative', flex: 1, minWidth: 12, height: 1.5, borderRadius: 'var(--radius-2)', marginTop: 21, background: unit.cloud ? 'rgba(var(--color-glow-rgb),0.4)' : 'var(--color-border-strong)' }}>
               {unit.cloud && <span className="nx-neuron" />}
             </div>
 
@@ -732,7 +633,7 @@ export default function ChatHome({ canonDocs = [], onNav, project = null, onProj
 
             {/* Model picker popover (Brain) */}
             {showModelPicker && (
-              <div style={{ position: 'absolute', bottom: '110%', left: 0, width: 300, zIndex: 110, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', bottom: '110%', left: 0, width: 300, zIndex: 110, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 'var(--radius-10)', boxShadow: 'var(--shadow-popover)', overflow: 'hidden' }}>
                 <div className="scroll-y" style={{ maxHeight: 300, overflowY: 'auto' }}>
                   {models.map(m => (
                     <div
@@ -755,7 +656,7 @@ export default function ChatHome({ canonDocs = [], onNav, project = null, onProj
 
             {/* Local-model picker popover (T15) */}
             {showLocalPicker && (
-              <div style={{ position: 'absolute', bottom: '110%', left: '50%', transform: 'translateX(-50%)', width: 300, zIndex: 110, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', bottom: '110%', left: '50%', transform: 'translateX(-50%)', width: 300, zIndex: 110, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 'var(--radius-10)', boxShadow: 'var(--shadow-popover)', overflow: 'hidden' }}>
                 <div style={{ padding: '8px 12px', borderBottom: '0.5px solid var(--color-border)', fontSize: 11, color: 'var(--color-text-3)' }}>Local model — pick one to bring it into the unit; pick it again to stand it down</div>
                 <div className="scroll-y" style={{ maxHeight: 280, overflowY: 'auto' }}>
                   {localModels.length === 0 && (
@@ -779,7 +680,7 @@ export default function ChatHome({ canonDocs = [], onNav, project = null, onProj
             {/* Cloud-unit popover — add/remove council members (cloud models only;
                 the local model has its own node, the Brain its own circle) */}
             {showAdd && (
-              <div style={{ position: 'absolute', bottom: '110%', right: 0, width: 300, zIndex: 110, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', bottom: '110%', right: 0, width: 300, zIndex: 110, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 'var(--radius-10)', boxShadow: 'var(--shadow-popover)', overflow: 'hidden' }}>
                 <div style={{ padding: '8px 12px', borderBottom: '0.5px solid var(--color-border)', fontSize: 11, color: 'var(--color-text-3)' }}>Convene the cloud unit — tap to add or remove</div>
                 <div className="scroll-y" style={{ maxHeight: 280, overflowY: 'auto' }}>
                   {cloudRoster.length === 0 && (
@@ -813,102 +714,36 @@ export default function ChatHome({ canonDocs = [], onNav, project = null, onProj
             {unitStatusLine}
           </div>
 
-          {/* Council protocol selector (Sandbox fold-in) — only once ≥2 models are
-              in the unit; a solo chat stays quiet. */}
-          {councilActive && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--color-text-3)', textTransform: 'uppercase', marginRight: 3 }}>Protocol</span>
-              {COUNCIL_MODES.map(m => (
-                <button key={m.id} onClick={() => setCouncilMode(m.id)} title={m.hint} style={{
-                  fontSize: 11, padding: '3px 10px', borderRadius: 'var(--radius-pill)', cursor: 'pointer',
-                  background: councilMode === m.id ? 'var(--color-recursive-bg)' : 'transparent',
-                  border: `0.5px solid ${councilMode === m.id ? 'var(--color-recursive-border)' : 'var(--color-border-mid)'}`,
-                  color: councilMode === m.id ? 'var(--color-recursive-text)' : 'var(--color-text-3)',
-                  fontWeight: councilMode === m.id ? 600 : 400,
-                }}>{m.label}</button>
-              ))}
-            </div>
-          )}
-
-          {/* Composer: full-width box, Send UNDERNEATH it (right-aligned) so the
-              textarea, the unit strip above, and the controls all share one right
-              edge — no control spilling past the box (design-notes composer). */}
-          <textarea
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-            placeholder={councilActive ? `Ask the Council (${1 + council.length} models)…` : `Message ${currentModel?.name || 'the Brain'}…`}
-            rows={3}
-            style={{ width: '100%', boxSizing: 'border-box', resize: 'none', fontSize: 13, lineHeight: 1.5, padding: '8px 10px', border: '0.5px solid var(--color-border-strong)', borderRadius: 8, background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'inherit' }}
-          />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-            {/* Invoke fold-in: role + canon-doc attach, in a compact popover. */}
-            <div style={{ position: 'relative', flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <textarea
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
+              placeholder={councilActive ? `Ask the Council (${1 + council.length} models)…` : `Message ${currentModel?.name || 'the Brain'}…`}
+              rows={3}
+              style={{ flex: 1, resize: 'none', fontSize: 13, lineHeight: 1.5, padding: '8px 10px', border: '0.5px solid var(--color-border-strong)', borderRadius: 'var(--radius-8)', background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'inherit' }}
+            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <button
-                onClick={() => setShowAttach(s => !s)}
-                title="Attach canon docs / set an agent role for this chat"
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 4, padding: '7px 10px', cursor: 'pointer',
-                  background: (attachedDocs.length || roleId) ? 'var(--color-recursive-bg)' : 'none',
-                  border: `0.5px solid ${(attachedDocs.length || roleId) ? 'var(--color-recursive-border)' : 'var(--color-border-strong)'}`,
-                  borderRadius: 8, fontSize: 12, color: (attachedDocs.length || roleId) ? 'var(--color-recursive-text)' : 'var(--color-text-3)',
-                }}
+                onClick={send}
+                disabled={!input.trim() || !selectedModel || streaming}
+                style={{ padding: '8px 14px', background: streaming ? 'var(--color-surface-2)' : 'var(--color-active-bg)', color: streaming ? 'var(--color-text-3)' : 'var(--color-active-text)', border: streaming ? '0.5px solid var(--color-border)' : '0.5px solid var(--color-active-border)', borderRadius: 'var(--radius-8)', fontSize: 13, cursor: (!input.trim() || !selectedModel || streaming) ? 'default' : 'pointer', opacity: (!input.trim() || !selectedModel) && !streaming ? 0.55 : 1, display: 'flex', alignItems: 'center', gap: 5 }}
               >
-                <i className="ti ti-paperclip" style={{ fontSize: 14 }} />
-                {(attachedDocs.length > 0 || roleId) && (
-                  <span style={{ fontSize: 10, fontWeight: 600 }}>
-                    {[roleId && (agentRoles.find(r => r.id === roleId)?.name || 'role'), attachedDocs.length && `${attachedDocs.length} doc${attachedDocs.length > 1 ? 's' : ''}`].filter(Boolean).join(' · ')}
-                  </span>
-                )}
+                <i className={`ti ${streaming ? 'ti-loader-2 spin' : 'ti-send'}`} style={{ fontSize: 15 }} />
+                {streaming ? '…' : 'Send'}
               </button>
-              {showAttach && (
-                <div style={{ position: 'absolute', bottom: '112%', left: 0, width: 300, zIndex: 110, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border-strong)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                  <div style={{ padding: '8px 10px', borderBottom: '0.5px solid var(--color-border)' }}>
-                    <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--color-text-3)', textTransform: 'uppercase', marginBottom: 5 }}>Agent role</div>
-                    <select value={roleId} onChange={e => setRoleId(e.target.value)} style={{ width: '100%', fontSize: 12 }}>
-                      <option value="">No role — plain chat</option>
-                      {agentRoles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                    </select>
-                  </div>
-                  <div style={{ padding: '8px 10px' }}>
-                    <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--color-text-3)', textTransform: 'uppercase', marginBottom: 5 }}>Attach canon docs</div>
-                    <input value={docSearch} onChange={e => setDocSearch(e.target.value)} placeholder="Search docs…" style={{ width: '100%', fontSize: 12, marginBottom: 6 }} />
-                    <div className="scroll-y" style={{ maxHeight: 170, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      {canonDocs.filter(d => !docSearch || d.title.toLowerCase().includes(docSearch.toLowerCase())).slice(0, 40).map(d => {
-                        const on = attachedDocs.some(x => x.path === d.path)
-                        return (
-                          <button key={d.path} onClick={() => setAttachedDocs(a => on ? a.filter(x => x.path !== d.path) : [...a, { title: d.title, path: d.path }])} style={{ display: 'flex', alignItems: 'center', gap: 6, textAlign: 'left', background: on ? 'var(--color-recursive-bg)' : 'none', border: 'none', borderRadius: 5, padding: '4px 7px', cursor: 'pointer', fontSize: 12, color: on ? 'var(--color-recursive-text)' : 'var(--color-text-2)' }}>
-                            <i className={`ti ${on ? 'ti-check' : 'ti-file-text'}`} style={{ fontSize: 12, flexShrink: 0 }} />
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.title}</span>
-                          </button>
-                        )
-                      })}
-                      {canonDocs.length === 0 && <div style={{ fontSize: 11, color: 'var(--color-text-3)', padding: 4 }}>No canon docs found.</div>}
-                    </div>
-                  </div>
-                </div>
+              {conversation.length > 0 && !streaming && (
+                <button onClick={saveThread} className="btn-ghost" style={{ padding: '5px 10px', background: 'none', border: '0.5px solid var(--color-border-strong)', borderRadius: 'var(--radius-8)', fontSize: 11, color: saveNote ? 'var(--color-available)' : 'var(--color-text-3)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+                  <i className={`ti ${saveNote ? 'ti-check' : 'ti-bookmark'}`} style={{ fontSize: 13 }} /> {saveNote || 'Save'}
+                </button>
               )}
             </div>
-            <div style={{ flex: 1, minWidth: 0, fontSize: 11, color: 'var(--color-text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              Enter to send · Shift+Enter for new line{councilActive ? ` · ${COUNCIL_MODES.find(m => m.id === councilMode)?.hint || ''}` : ''}
-            </div>
-            {conversation.length > 0 && !streaming && (
-              <button onClick={saveThread} className="btn-ghost" style={{ padding: '7px 12px', background: 'none', border: '0.5px solid var(--color-border-strong)', borderRadius: 8, fontSize: 12, color: saveNote ? 'var(--color-available)' : 'var(--color-text-3)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-                <i className={`ti ${saveNote ? 'ti-check' : 'ti-bookmark'}`} style={{ fontSize: 13 }} /> {saveNote || 'Save'}
-              </button>
-            )}
-            <button
-              onClick={send}
-              disabled={!input.trim() || !selectedModel || streaming}
-              style={{ padding: '8px 20px', background: streaming ? 'var(--color-surface-2)' : 'var(--color-active-bg)', color: streaming ? 'var(--color-text-3)' : 'var(--color-active-text)', border: streaming ? '0.5px solid var(--color-border)' : '0.5px solid var(--color-active-border)', borderRadius: 8, fontSize: 13, cursor: (!input.trim() || !selectedModel || streaming) ? 'default' : 'pointer', opacity: (!input.trim() || !selectedModel) && !streaming ? 0.55 : 1, display: 'flex', alignItems: 'center', gap: 5 }}
-            >
-              <i className={`ti ${streaming ? 'ti-loader-2 spin' : 'ti-send'}`} style={{ fontSize: 15 }} />
-              {streaming ? '…' : 'Send'}
-            </button>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--color-text-3)', marginTop: 4 }}>
+            Enter to send · Shift+Enter for new line{councilActive ? ' · Council answers this message (not prior turns), then synthesizes' : ''}
           </div>
         </div>
       </div>
-      </div>{/* /centering shell */}
 
       {/* ── Right rail: Council inspector (T11) — docks open when a 2nd model joins ── */}
       <CouncilInspector run={councilRun} open={inspectorOpen} onToggle={() => setInspectorOpen(o => !o)} />
