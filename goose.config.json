@@ -194,7 +194,10 @@
     "projects": true,
     "visibility": true,
     "builder": true,
-    "onboardingComplete": true
+    "onboardingComplete": true,
+    "chatHome": true,
+    "councilLabel": true,
+    "overviewCompact": true
   },
   "tokenBank": {
     "providers": {
