@@ -172,13 +172,22 @@ export function initMeetings({ app, config, callModel, resolveBrain, localModel,
       ].filter(Boolean).find(p => fs.existsSync(p))
     if (!bin || !fs.existsSync(bin)) throw new Error('No transcription engine — install whisper-cpp (brew install whisper-cpp) or set the binary path in Settings → Meetings.')
     if (!model) throw new Error('No transcription model — put ggml-base.en.bin under <app data>/models/ or set the model path in Settings → Meetings.')
-    return { bin, model }
+    // Optional tinydiarize model: enables speaker-turn detection on mixed
+    // channels (in-person rooms). Absent → single-speaker labels, no failure.
+    const tdrzModel = config.meetings?.asrDiarizeModelPath
+      || [
+        process.env.NEXUS_USER_DATA && path.join(process.env.NEXUS_USER_DATA, 'models', 'ggml-small.en-tdrz.bin'),
+        path.join(os.homedir(), 'Library', 'Application Support', 'Nexus', 'models', 'ggml-small.en-tdrz.bin'),
+      ].filter(Boolean).find(p => fs.existsSync(p)) || null
+    return { bin, model, tdrzModel }
   }
 
-  function transcribeWav(wavPath, outBase) {
-    const { bin, model } = resolveAsr()
+  function transcribeWav(wavPath, outBase, { diarize = false } = {}) {
+    const { bin, model, tdrzModel } = resolveAsr()
+    const useTdrz = diarize && tdrzModel
+    const args = ['-m', useTdrz ? tdrzModel : model, '-f', wavPath, '-oj', '-of', outBase, '-np', ...(useTdrz ? ['-tdrz'] : [])]
     return new Promise((resolve, reject) => {
-      const p = spawn(bin, ['-m', model, '-f', wavPath, '-oj', '-of', outBase, '-np'], { stdio: ['ignore', 'ignore', 'pipe'] })
+      const p = spawn(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] })
       let err = ''
       p.stderr.on('data', d => { err += d })
       p.on('error', reject)
@@ -186,8 +195,31 @@ export function initMeetings({ app, config, callModel, resolveBrain, localModel,
         if (code !== 0) return reject(new Error(`whisper exited ${code}: ${err.slice(-300)}`))
         try {
           const j = JSON.parse(fs.readFileSync(`${outBase}.json`, 'utf8'))
-          resolve((j.transcription || []).map(s => ({ from: s.offsets?.from ?? 0, text: String(s.text || '').trim() })).filter(s => s.text))
+          resolve((j.transcription || []).map(s => ({ from: s.offsets?.from ?? 0, to: s.offsets?.to ?? 0, text: String(s.text || '').replace(/\[SPEAKER_TURN\]/g, '').trim(), turnNext: !!s.speaker_turn_next })).filter(s => s.text))
         } catch (e) { reject(new Error(`whisper output unreadable: ${e.message}`)) }
+      })
+    })
+  }
+
+  // Acoustic speaker diarization (primary): scripts/meetings-diarize.py via
+  // BYO python3 + sherpa-onnx, models under <app data>/models/diarization/.
+  // Real clustering — identifies WHO spoke, any speaker count, no alternation
+  // assumption. Returns null on any failure so callers fall back gracefully.
+  function runDiarizer(wavPath) {
+    const script = path.join(__dirname, 'scripts', 'meetings-diarize.py')
+    const modelsDir = [
+      process.env.NEXUS_USER_DATA && path.join(process.env.NEXUS_USER_DATA, 'models', 'diarization'),
+      path.join(os.homedir(), 'Library', 'Application Support', 'Nexus', 'models', 'diarization'),
+    ].filter(Boolean).find(d => fs.existsSync(path.join(d, 'segmentation.onnx')) && fs.existsSync(path.join(d, 'embedding.onnx')))
+    if (!fs.existsSync(script) || !modelsDir) return Promise.resolve(null)
+    return new Promise((resolve) => {
+      const p = spawn('python3', [script, wavPath, modelsDir], { stdio: ['ignore', 'pipe', 'ignore'] })
+      let out = ''
+      p.stdout.on('data', d => { out += d })
+      p.on('error', () => resolve(null))
+      p.on('close', code => {
+        if (code !== 0) return resolve(null)
+        try { const j = JSON.parse(out); resolve(Array.isArray(j) && j.length ? j : null) } catch { resolve(null) }
       })
     })
   }
@@ -207,6 +239,34 @@ export function initMeetings({ app, config, callModel, resolveBrain, localModel,
         const wav = path.join(audioDir, `${ch}.wav`)
         const data = fs.readFileSync(pcm)
         fs.writeFileSync(wav, Buffer.concat([wavHeader(data.length), data]))
+        // In-person rooms are one mixed channel — split it into real speakers.
+        // Primary: acoustic clustering (sherpa-onnx — identifies WHO, any count).
+        // Fallback: whisper tinydiarize turn-alternation (two-voice assumption).
+        // Last resort: one unlabeled room speaker.
+        if (ch === 'room') {
+          const intervals = await runDiarizer(wav)
+          if (intervals) {
+            const segs = await transcribeWav(wav, path.join(audioDir, ch))
+            for (const s of segs) {
+              // assign the diarization speaker with maximum time overlap
+              let best = null, bestOv = 0
+              for (const iv of intervals) {
+                const ov = Math.min(s.to / 1000, iv.end) - Math.max(s.from / 1000, iv.start)
+                if (ov > bestOv) { bestOv = ov; best = iv.speaker }
+              }
+              events.push({ t: s.from, speaker: best === null ? 'Speaker 1' : `Speaker ${best + 1}`, text: s.text })
+            }
+            continue
+          }
+          const tdrz = !!resolveAsr().tdrzModel
+          const segs = await transcribeWav(wav, path.join(audioDir, ch), { diarize: tdrz })
+          let turn = 1
+          for (const s of segs) {
+            events.push({ t: s.from, speaker: tdrz ? `Speaker ${turn}` : CHANNEL_SPEAKER[ch], text: s.text })
+            if (tdrz && s.turnNext) turn = turn === 1 ? 2 : 1
+          }
+          continue
+        }
         const segs = await transcribeWav(wav, path.join(audioDir, ch))
         for (const s of segs) events.push({ t: s.from, speaker: CHANNEL_SPEAKER[ch], text: s.text })
       }
@@ -426,7 +486,7 @@ Base every field ONLY on the material. Empty arrays are fine. STRICT JSON: no co
 
   // GET /api/meetings/asr-status — engine probe for Settings/record card
   app.get('/api/meetings/asr-status', (req, res) => {
-    try { const a = resolveAsr(); res.json({ ok: true, bin: a.bin, model: path.basename(a.model) }) }
+    try { const a = resolveAsr(); res.json({ ok: true, bin: a.bin, model: path.basename(a.model), diarize: !!a.tdrzModel, diarizeModel: a.tdrzModel ? path.basename(a.tdrzModel) : null }) }
     catch (e) { res.json({ ok: false, error: e.message }) }
   })
 

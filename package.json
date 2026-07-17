@@ -52,6 +52,7 @@
       "electron/**/*",
       "server.mjs",
       "meetings.mjs",
+      "scripts/meetings-diarize.py",
       "automations.mjs",
       "src/lib/**/*",
       "src/generaluse-routes.mjs",
