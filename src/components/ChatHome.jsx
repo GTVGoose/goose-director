@@ -154,6 +154,15 @@ export default function ChatHome({ canonDocs = [], onNav }) {
   const available = models.filter(m => m.available)
   const currentModel = models.find(m => m.id === selectedModel)
   const councilActive = council.length > 0
+  // How the convened cloud unit works the task — the full engine mode set
+  // (owner ask 2026-07-17: every workflow mode selectable from Chat).
+  const COUNCIL_MODES = [
+    { id: 'roundtable',  label: 'Roundtable',  sub: 'Everyone answers; the Brain synthesizes' },
+    { id: 'debate',      label: 'Debate',      sub: 'Positions clash across rounds, then a verdict' },
+    { id: 'orchestrator',label: 'Orchestrator',sub: 'The Brain decomposes and delegates subtasks' },
+    { id: 'director',    label: 'Director',    sub: 'The Brain plans, routes each subtask, synthesizes' },
+  ]
+  const [councilMode, setCouncilMode] = useState('roundtable')
   const noneAvailable = models.length > 0 && !available.length
 
   // T15 unit-strip derivations. The strip is pure presentation over the same
@@ -173,7 +182,7 @@ export default function ChatHome({ canonDocs = [], onNav }) {
   const unitWorking = unit.brain || unit.local || unit.cloud
   const unitStatusLine = unitWorking
     ? `${unit.activeName || (unit.brain ? (currentModel?.name || 'Brain') : unit.local ? (localModel?.name || 'Local model') : 'Cloud unit')} — ${phrase}`
-    : councilActive ? `Unit assembled · ${1 + council.length} minds · roundtable` : null
+    : councilActive ? `Unit assembled · ${1 + council.length} minds · ${councilMode}` : null
 
   const toggleCouncil = (id) =>
     setCouncil(c => c.includes(id) ? c.filter(x => x !== id) : [...c, id])
@@ -288,7 +297,7 @@ export default function ChatHome({ canonDocs = [], onNav }) {
     // Parallel richer snapshot for the docked CouncilInspector (T11). Same `turns`
     // array; the inspector reads phase/round/subtask, so we enrich the pushes below.
     const aggName = models.find(m => m.id === selectedModel)?.name || selectedModel
-    const insp = { running: true, mode: 'roundtable', members, aggregator: aggName, status: 'Convening the council…', active: null, final: null, error: null }
+    const insp = { running: true, mode: councilMode, members, aggregator: aggName, status: 'Convening the council…', active: null, final: null, error: null }
     const syncInsp = (patch) => { Object.assign(insp, patch); setCouncilRun({ ...insp, turns: [...turns] }) }
     syncInsp({})
     try {
@@ -296,7 +305,7 @@ export default function ChatHome({ canonDocs = [], onNav }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          task, participantIds: unit, mode: 'roundtable',
+          task, participantIds: unit, mode: councilMode,
           aggregatorId: selectedModel, rounds: 2, tools: false,
           sourceDocs: [], roleAssignments: {},
         }),
@@ -741,6 +750,15 @@ export default function ChatHome({ canonDocs = [], onNav }) {
           </div>
           <div style={{ fontSize: 11, color: 'var(--color-text-3)', marginTop: 4 }}>
             Enter to send · Shift+Enter for new line{councilActive ? ' · Council answers this message (not prior turns), then synthesizes' : ''}
+            {councilActive && (
+              <span style={{ marginLeft: 10 }}>
+                <select value={councilMode} onChange={e => setCouncilMode(e.target.value)}
+                  title={COUNCIL_MODES.find(m => m.id === councilMode)?.sub}
+                  style={{ fontSize: 11, padding: '1px 6px', background: 'var(--color-surface-2)', color: 'var(--color-text-2)', border: '0.5px solid var(--color-border-mid)', borderRadius: 4 }}>
+                  {COUNCIL_MODES.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+              </span>
+            )}
           </div>
         </div>
       </div>
