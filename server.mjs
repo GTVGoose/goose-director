@@ -11,19 +11,74 @@ import { initTelegram } from './telegram.mjs'
 import { initSignal } from './signal.mjs'
 import { initGate } from './gate.mjs'
 import { initBrain } from './brain.mjs'
+// General-use engine routes (2026-07-14 lineage sync from the nexus-product
+// general-use build): capability manifest, skills, routing policies, artifacts,
+// projects, memory, runs, Agentic System Builder. Self-contained module.
+import { registerGeneralUseRoutes, generalUseStores } from './src/generaluse-routes.mjs'
+import { roleForPhase } from './src/lib/run-roles.js'
+import { applyRoutingPolicy, setSkillMatrix } from './src/lib/routing-policies.js'
+import { createTokenBank } from './src/lib/token-bank.js'
+import { initMeetings } from './meetings.mjs'
+import { initAutomations } from './automations.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-// Config file location — in packaged app it lives in Contents/Resources/
-// (set by main.cjs via NEXUS_RESOURCES). Fall back to local dir for dev.
-const configCandidates = [
+// ─── Layered config (one base, one overlay) ──────────────────────────────────
+// ONE shared base config across every Nexus lineage (the template shipped in
+// the bundle / repo), plus a per-install OVERLAY of the user's deltas —
+// goose.overrides.json in userData. The running config = deepMerge(base,
+// overlay); every runtime write persists ONLY the diff against base. The
+// Goose "shell" IS this overlay (+ personal-extensions.jsx for components):
+// same base as the product, personal preferences layered on top. Also ends
+// the old in-bundle write behavior that wiped settings on every reinstall.
+const USER_DATA_DIR = process.env.NEXUS_USER_DATA || null
+
+const isPlainObject = (v) => v && typeof v === 'object' && !Array.isArray(v)
+function deepMerge(base, over) {
+  if (!isPlainObject(base) || !isPlainObject(over)) return over === undefined ? base : over
+  const out = { ...base }
+  for (const [k, v] of Object.entries(over)) {
+    out[k] = isPlainObject(base[k]) && isPlainObject(v) ? deepMerge(base[k], v) : v
+  }
+  return out
+}
+function deepDiff(base, cur) {
+  const out = {}
+  for (const [k, v] of Object.entries(cur || {})) {
+    if (isPlainObject(v) && isPlainObject(base?.[k])) {
+      const d = deepDiff(base[k], v)
+      if (Object.keys(d).length) out[k] = d
+    } else if (JSON.stringify(v) !== JSON.stringify(base?.[k])) {
+      out[k] = v
+    }
+  }
+  return out
+}
+
+const baseCandidates = [
   process.env.NEXUS_RESOURCES && path.join(process.env.NEXUS_RESOURCES, 'goose.config.json'),
   path.join(__dirname, 'goose.config.json'),
   path.join(__dirname, '..', 'goose.config.json'),
 ].filter(Boolean)
-const configPath = configCandidates.find(p => fs.existsSync(p))
-if (!configPath) throw new Error(`goose.config.json not found. Searched:\n  ${configCandidates.join('\n  ')}`)
-const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+const basePath = baseCandidates.find(p => fs.existsSync(p))
+if (!basePath) throw new Error(`goose.config.json not found. Searched:\n  ${baseCandidates.join('\n  ')}`)
+const baseConfig = JSON.parse(fs.readFileSync(basePath, 'utf8'))
+
+const overridesPath = path.join(USER_DATA_DIR || __dirname, 'goose.overrides.json')
+let overrides = {}
+try {
+  if (fs.existsSync(overridesPath)) overrides = JSON.parse(fs.readFileSync(overridesPath, 'utf8'))
+} catch (e) {
+  console.error('[config] overrides unreadable — running on base config:', e.message)
+}
+const config = deepMerge(baseConfig, overrides)
+const configPath = basePath // legacy alias (read-only uses)
+
+function saveConfig() {
+  const diff = deepDiff(baseConfig, config)
+  fs.mkdirSync(path.dirname(overridesPath), { recursive: true })
+  fs.writeFileSync(overridesPath, JSON.stringify(diff, null, 2) + '\n')
+}
 let REPO = config.repoPath
 
 // Local Umbruh model resolution (fix 2026-07-03): the old hardcoded 'umbruh'
@@ -37,6 +92,51 @@ const UMBRUH_MODEL = process.env.UMBRUH_MODEL || config.umbruhLocalModel || 'umb
 // user consents in Settings → Sandbox.
 function sandboxEnabled() { return config.sandbox ? !!config.sandbox.enabled : true }
 function sandboxModel() { return config.sandbox?.model || config.sandboxModel || UMBRUH_MODEL }
+
+// ─── Provider-call hardening (wake-wedge fix, 2026-07-15) ────────────────────
+// After a lid-close/sleep/wake cycle, outbound sockets that were mid-flight
+// during suspend can die without ever erroring; a fetch with no AbortSignal
+// then pins its handler (and any long job driving it — benchmarks, routines,
+// the gate poller) forever. Every outbound provider call goes through
+// providerFetch(): a hard AbortSignal cap, plus registration in an in-flight
+// set so the Electron wake watchdog (electron/main.cjs) can abort everything
+// that was mid-flight when the machine suspended.
+const PROVIDER_TIMEOUT_MS = Number(process.env.NEXUS_PROVIDER_TIMEOUT_MS) || 180_000
+// Streaming completions legitimately run for minutes — cap them high, but cap them.
+const PROVIDER_STREAM_TIMEOUT_MS = Number(process.env.NEXUS_PROVIDER_STREAM_TIMEOUT_MS) || 900_000
+const inflightProviderCalls = new Set()
+
+function providerFetch(url, opts = {}, { timeoutMs = PROVIDER_TIMEOUT_MS } = {}) {
+  const ctrl = new AbortController()
+  const entry = { ctrl, url: String(url), startedAt: Date.now() }
+  inflightProviderCalls.add(entry)
+  // The timer deliberately stays armed after headers arrive: the same signal
+  // also kills response.body reads, so it is the hard cap for streaming too.
+  // If the call finished long ago, the late abort is a no-op.
+  const timer = setTimeout(() => {
+    inflightProviderCalls.delete(entry)
+    ctrl.abort(new Error(`provider call exceeded ${timeoutMs}ms: ${entry.url}`))
+  }, timeoutMs)
+  if (typeof timer.unref === 'function') timer.unref()
+  const p = fetch(url, { ...opts, signal: ctrl.signal })
+  // Rejected → nothing left to guard; drop out of the registry immediately.
+  p.catch(() => { clearTimeout(timer); inflightProviderCalls.delete(entry) })
+  return p
+}
+
+// Abort every provider call currently in flight. Called by the Electron wake
+// watchdog when the post-resume self-health-check fails: sockets that were
+// open across a suspend are almost certainly dead, and aborting them frees
+// every handler/job wedged on them.
+export function abortInflightProviderCalls(reason = 'aborted by watchdog') {
+  const entries = [...inflightProviderCalls]
+  inflightProviderCalls.clear()
+  for (const entry of entries) {
+    try { entry.ctrl.abort(new Error(`${reason} — in-flight since ${new Date(entry.startedAt).toISOString()}: ${entry.url}`)) } catch {}
+  }
+  if (entries.length) console.warn(`[watchdog] aborted ${entries.length} in-flight provider call(s): ${reason}`)
+  return entries.length
+}
 
 // Load .env — try multiple locations in order of priority
 try {
@@ -595,6 +695,20 @@ app.get('/api/config', (req, res) => {
       enabled: sandboxEnabled(),
       model: sandboxModel(),
     },
+    // Per-provider auth preference (subscription CLI vs API key).
+    providers: config.providers || {},
+    meetings: {
+      enabled: !!(config.meetings && config.meetings.enabled === true),
+      synthesisMode: config.meetings?.synthesisMode === 'local' ? 'local' : 'cloud-assisted',
+      autoSynthesize: config.meetings?.autoSynthesize !== false,
+      asrBinaryPath: config.meetings?.asrBinaryPath || '',
+      asrModelPath: config.meetings?.asrModelPath || '',
+      exportDestinations: Array.isArray(config.meetings?.exportDestinations) ? config.meetings.exportDestinations : [],
+      retention: {
+        audioDeleteAfterNote: config.meetings?.retention?.audioDeleteAfterNote !== false,
+        transcriptTtlDays: config.meetings?.retention?.transcriptTtlDays ?? null,
+      },
+    },
   })
 })
 
@@ -602,7 +716,7 @@ app.get('/api/config', (req, res) => {
 // telegram wiring. All persist to goose.config.json; the bot token itself
 // goes through /api/settings into .env, never into config.
 app.post('/api/config', (req, res) => {
-  let { repoPath, ui, telegram, sandbox } = req.body
+  let { repoPath, ui, telegram, sandbox, meetings } = req.body
 
   if (repoPath !== undefined) {
     if (!repoPath || typeof repoPath !== 'string') {
@@ -623,6 +737,12 @@ app.post('/api/config', (req, res) => {
     // Full-UI theme (T23) — string key into THEMES; absent ⇒ 'studio' ⇒ today's
     // look. String-coerced + undefined-guarded so an unrelated save can't drop it.
     if (ui.theme !== undefined) config.ui.theme = String(ui.theme).slice(0, 40)
+    // General-use engine surface flags (2026-07-14 sync) + chat-first UX flags
+    // (chatHome/councilLabel/overviewCompact — App.jsx reads them; they were
+    // missing from this allow-list so saves silently dropped them). Bool-coerced.
+    for (const f of ['library', 'runInspector', 'projects', 'visibility', 'builder', 'chatHome', 'councilLabel', 'overviewCompact', 'domainsInVisibility']) {
+      if (ui[f] !== undefined) config.ui[f] = !!ui[f]
+    }
   }
 
   if (telegram && typeof telegram === 'object') {
@@ -638,8 +758,49 @@ app.post('/api/config', (req, res) => {
     }
   }
 
+  // Per-provider auth preference: subscription (CLI login, $0) vs api (paid key).
+  const { providers } = req.body
+  if (providers && typeof providers === 'object') {
+    config.providers = { ...(config.providers || {}) }
+    for (const [fam, cfg] of Object.entries(providers)) {
+      if (!cfg || typeof cfg !== 'object') continue
+      config.providers[fam] = { ...(config.providers[fam] || {}) }
+      if (cfg.prefer !== undefined) config.providers[fam].prefer = cfg.prefer === 'api' ? 'api' : 'subscription'
+    }
+  }
+
+  // Meetings (meeting → report appliance). Settings-only human action per the
+  // onboarding manifest; export destinations are the ONLY paths a report may be
+  // written to (report-only handoff — transcripts/audio never leave userData).
+  if (meetings && typeof meetings === 'object') {
+    const prior = config.meetings || {}
+    config.meetings = {
+      ...prior,
+      enabled: meetings.enabled !== undefined ? !!meetings.enabled : prior.enabled === true,
+      synthesisMode: meetings.synthesisMode !== undefined
+        ? (meetings.synthesisMode === 'local' ? 'local' : 'cloud-assisted')
+        : (prior.synthesisMode === 'local' ? 'local' : 'cloud-assisted'),
+      autoSynthesize: meetings.autoSynthesize !== undefined ? !!meetings.autoSynthesize : prior.autoSynthesize !== false,
+      asrBinaryPath: meetings.asrBinaryPath !== undefined ? String(meetings.asrBinaryPath).trim() : (prior.asrBinaryPath || ''),
+      asrModelPath: meetings.asrModelPath !== undefined ? String(meetings.asrModelPath).trim() : (prior.asrModelPath || ''),
+      exportDestinations: meetings.exportDestinations !== undefined
+        ? (Array.isArray(meetings.exportDestinations) ? meetings.exportDestinations : [])
+            .map(d => String(d).trim()).filter(Boolean).slice(0, 20)
+        : (Array.isArray(prior.exportDestinations) ? prior.exportDestinations : []),
+      retention: {
+        audioDeleteAfterNote: meetings.retention?.audioDeleteAfterNote !== undefined
+          ? !!meetings.retention.audioDeleteAfterNote
+          : prior.retention?.audioDeleteAfterNote !== false,
+        transcriptTtlDays: meetings.retention?.transcriptTtlDays !== undefined
+          ? (Number.isInteger(meetings.retention.transcriptTtlDays) && meetings.retention.transcriptTtlDays > 0
+              ? meetings.retention.transcriptTtlDays : null)
+          : (prior.retention?.transcriptTtlDays ?? null),
+      },
+    }
+  }
+
   try {
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n')
+    saveConfig()
   } catch (e) {
     return res.status(500).json({ ok: false, error: `Could not save config: ${e.message}` })
   }
@@ -705,7 +866,7 @@ app.post('/api/repos', (req, res) => {
     return res.status(400).json({ ok: false, error: 'action must be add | remove | update' })
   }
 
-  try { fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n') }
+  try { saveConfig() }
   catch (e) { return res.status(500).json({ ok: false, error: `Could not save config: ${e.message}` }) }
   res.json({ ok: true, repos: mountedRepos() })
 })
@@ -1099,7 +1260,10 @@ app.post('/api/settings', (req, res) => {
     if (!lines.find(l => l.startsWith('OLLAMA_BASE_URL=')))
       lines.push('OLLAMA_BASE_URL=http://localhost:11434')
 
-    fs.writeFileSync(envPath, lines.join('\n') + '\n')
+    // Secrets file: owner-only. mode applies on create; chmod repairs any
+    // pre-existing world-readable .env from earlier builds (council major 10).
+    fs.writeFileSync(envPath, lines.join('\n') + '\n', { mode: 0o600 })
+    try { fs.chmodSync(envPath, 0o600) } catch {}
     res.json({
       ok: true,
       keyStatus: {
@@ -1156,6 +1320,17 @@ function cliEnv() {
   return env
 }
 
+// Like cliEnv, but for the OpenAI Codex CLI: strip the API keys so `codex` uses
+// the ChatGPT-subscription login (Plus/Pro) rather than API credits. Codex
+// prefers CODEX_API_KEY / OPENAI_API_KEY when present, which would bill
+// pay-per-token — the exact thing we're avoiding for the $0 subscription path.
+function codexEnv() {
+  const env = cliEnv()
+  delete env.OPENAI_API_KEY
+  delete env.CODEX_API_KEY
+  return env
+}
+
 // ─── OpenAI-compatible cloud providers ──────────────────────────────────────
 // Most non-Anthropic clouds speak the OpenAI chat/completions protocol, so one
 // engine serves them all. Each entry: default endpoint + the .env key that
@@ -1181,6 +1356,18 @@ function compatFor(modelConfig) {
   const base = String(modelConfig.baseUrl || preset.base).replace(/\/+$/, '')
   const keyEnv = modelConfig.apiKeyEnv || preset?.keyEnv || 'OPENAI_API_KEY'
   return { base, keyEnv, key: process.env[keyEnv], label: preset?.label || modelConfig.provider }
+}
+
+// Pull the human message out of a provider error body (JSON, sometimes
+// array-wrapped like Gemini's) instead of dumping raw JSON at the user.
+function apiErrMessage(text) {
+  try {
+    let d = JSON.parse(text)
+    if (Array.isArray(d)) d = d[0]
+    const m = d?.error?.message || d?.message
+    if (m) return String(m).split('\n')[0]
+  } catch { /* not JSON — fall through */ }
+  return String(text).replace(/\s+/g, ' ')
 }
 
 // ─── Honest cloud-key validation ────────────────────────────────────────────
@@ -1217,18 +1404,39 @@ async function validateProvider(provider) {
       const compat = compatFor(probeModel || { provider })
       if (!compat) { result.error = 'Unknown provider' }
       else if (!compat.key) { result.error = `No API key set (${compat.keyEnv})` }
-      else {
-        const model = probeModel?.model || 'gpt-4o'
+      else if (provider === 'gemini') {
+        // Gemini keys are commonly FREE TIER with tiny request-per-day quotas —
+        // a real 1-token generation probe every 5 minutes EATS the user's quota
+        // (found live 2026-07-14: "free_tier_requests, limit: 20" exhausted by
+        // probes). Validate auth with GET /models instead: quota-free, still
+        // honest (bad key → 4xx). Generation-time quota errors surface cleanly
+        // from callModel when a real turn runs.
         const ctrl = new AbortController()
         const t = setTimeout(() => ctrl.abort(), 8000)
-        const r = await fetch(`${compat.base}/chat/completions`, {
-          method: 'POST', signal: ctrl.signal,
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${compat.key}` },
-          body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+        const r = await fetch(`${compat.base}/models`, {
+          signal: ctrl.signal, headers: { 'Authorization': `Bearer ${compat.key}` },
         })
         clearTimeout(t)
         if (r.ok) result.ok = true
-        else result.error = `${r.status}: ${(await r.text()).slice(0, 140)}`
+        else result.error = `${r.status}: ${apiErrMessage(await r.text()).slice(0, 140)}`
+      } else {
+        const model = probeModel?.model || 'gpt-4o'
+        const ctrl = new AbortController()
+        const t = setTimeout(() => ctrl.abort(), 8000)
+        // Real OpenAI's newer models (GPT-5 / o-series) reject `max_tokens` and
+        // require `max_completion_tokens`; the other OpenAI-compat clones
+        // (DeepSeek/Mistral/Qwen) still expect `max_tokens`. A reasoning
+        // model can spend the whole budget on hidden reasoning, so give the probe
+        // a little headroom (a 200 with empty content still proves the key works).
+        const tokenCap = provider === 'openai' ? { max_completion_tokens: 16 } : { max_tokens: 1 }
+        const r = await fetch(`${compat.base}/chat/completions`, {
+          method: 'POST', signal: ctrl.signal,
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${compat.key}` },
+          body: JSON.stringify({ model, ...tokenCap, messages: [{ role: 'user', content: 'hi' }] }),
+        })
+        clearTimeout(t)
+        if (r.ok) result.ok = true
+        else result.error = `${r.status}: ${apiErrMessage(await r.text()).slice(0, 140)}`
       }
     } else if (provider === 'claude-code') {
       // Available iff the Claude Code CLI is installed (it uses the Max login).
@@ -1237,6 +1445,16 @@ async function validateProvider(provider) {
         result.ok = true
       } catch {
         result.error = 'Claude Code CLI not found — install it and log in with your Claude Max account'
+      }
+    } else if (provider === 'codex') {
+      // Available iff the OpenAI Codex CLI is installed. It runs on the ChatGPT
+      // subscription login ($0 API), the OpenAI analog of claude-code/Max. We can
+      // only cheaply check the binary; the login is exercised on the first call.
+      try {
+        execSync('codex --version', { timeout: 6000, encoding: 'utf8', env: codexEnv() })
+        result.ok = true
+      } catch {
+        result.error = 'Codex CLI not found — install it (npm i -g @openai/codex) and run `codex login` with your ChatGPT account'
       }
     } else {
       result.error = 'Unknown provider'
@@ -1311,6 +1529,7 @@ app.get('/api/usage', (req, res) => {
     budgetUSD,
     overBudget: budgetUSD > 0 && usage.costUSD >= budgetUSD,
     remainingUSD: budgetUSD > 0 ? Math.max(0, budgetUSD - usage.costUSD) : null,
+    bank: tokenBank.snapshot(),
   })
 })
 
@@ -1409,6 +1628,31 @@ app.get('/api/domains', (req, res) => {
   res.json(out)
 })
 
+// Read a streaming body (SSE / NDJSON) line-by-line with a persistent buffer
+// across network reads. Node hands the reader raw TCP segments — under the
+// packaged app's runtime (Electron/Node 20) a `data:` line routinely arrives
+// split across two reads — so parsing each read in isolation silently drops
+// those lines (this is how Mistral relays streamed back completely empty).
+// onLine receives each complete line, trimmed, empty lines skipped.
+async function readStreamLines(body, onLine) {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let nl
+    while ((nl = buf.indexOf('\n')) !== -1) {
+      const line = buf.slice(0, nl).trim()
+      buf = buf.slice(nl + 1)
+      if (line) onLine(line)
+    }
+  }
+  const tail = (buf + decoder.decode()).trim()
+  if (tail) onLine(tail)
+}
+
 // POST /api/relay — send a prompt to a model, stream response
 app.post('/api/relay', async (req, res) => {
   const { modelId, systemPrompt, messages, sourceDocs } = req.body
@@ -1470,7 +1714,7 @@ app.post('/api/relay', async (req, res) => {
     if (modelConfig.provider === 'anthropic') {
       if (!process.env.ANTHROPIC_API_KEY) return sendError('ANTHROPIC_API_KEY not set in .env')
 
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await providerFetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1484,30 +1728,22 @@ app.post('/api/relay', async (req, res) => {
           system: systemContent || undefined,
           messages: messages.map(m => ({ role: m.role, content: m.content })),
         }),
-      })
+      }, { timeoutMs: PROVIDER_STREAM_TIMEOUT_MS })
 
       if (!response.ok) {
         const err = await response.text()
         return sendError(`Anthropic API error: ${err}`)
       }
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const chunk = decoder.decode(value)
-        for (const line of chunk.split('\n')) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              if (data.type === 'content_block_delta' && data.delta?.text) {
-                sendChunk(data.delta.text)
-              }
-            } catch {}
+      await readStreamLines(response.body, (line) => {
+        if (!line.startsWith('data: ')) return
+        try {
+          const data = JSON.parse(line.slice(6))
+          if (data.type === 'content_block_delta' && data.delta?.text) {
+            sendChunk(data.delta.text)
           }
-        }
-      }
+        } catch {}
+      })
       sendDone({ model: modelConfig.model, provider: 'anthropic' })
 
     } else if (compatFor(modelConfig)) {
@@ -1520,40 +1756,38 @@ app.post('/api/relay', async (req, res) => {
       if (systemContent) oaiMessages.push({ role: 'system', content: systemContent })
       oaiMessages.push(...messages.map(m => ({ role: m.role, content: m.content })))
 
-      const response = await fetch(`${compat.base}/chat/completions`, {
+      const baseBody = { model: modelConfig.model, stream: true, messages: oaiMessages }
+      const doFetch = (withUsage) => providerFetch(`${compat.base}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${compat.key}`,
         },
-        body: JSON.stringify({
-          model: modelConfig.model,
-          stream: true,
-          messages: oaiMessages,
-        }),
-      })
+        // stream_options.include_usage asks for a final usage-only chunk (OpenAI
+        // spec) so the meter sees real tokens. Not every OpenAI-compat provider
+        // accepts the extra field — a strict one (e.g. Mistral) may 400/422 it.
+        body: JSON.stringify(withUsage ? { ...baseBody, stream_options: { include_usage: true } } : baseBody),
+      }, { timeoutMs: PROVIDER_STREAM_TIMEOUT_MS })
+      // Best-effort: request usage, but if the provider rejects the field, retry
+      // once WITHOUT it so streaming never regresses (usage simply stays 0).
+      let response = await doFetch(true)
+      if (!response.ok && (response.status === 400 || response.status === 422)) {
+        response = await doFetch(false)
+      }
 
       if (!response.ok) {
         const err = await response.text()
         return sendError(`${compat.label} API error: ${err}`)
       }
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const chunk = decoder.decode(value)
-        for (const line of chunk.split('\n')) {
-          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
-            try {
-              const data = JSON.parse(line.slice(6))
-              const text = data.choices?.[0]?.delta?.content
-              if (text) sendChunk(text)
-            } catch {}
-          }
-        }
-      }
+      await readStreamLines(response.body, (line) => {
+        if (!line.startsWith('data: ') || line === 'data: [DONE]') return
+        try {
+          const data = JSON.parse(line.slice(6))
+          const text = data.choices?.[0]?.delta?.content
+          if (text) sendChunk(text)
+        } catch {}
+      })
       sendDone({ model: modelConfig.model, provider: modelConfig.provider })
 
     } else if (modelConfig.provider === 'ollama') {
@@ -1562,7 +1796,7 @@ app.post('/api/relay', async (req, res) => {
       if (systemContent) ollamaMessages.push({ role: 'system', content: systemContent })
       ollamaMessages.push(...messages.map(m => ({ role: m.role, content: m.content })))
 
-      const response = await fetch(`${base}/api/chat`, {
+      const response = await providerFetch(`${base}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1570,23 +1804,16 @@ app.post('/api/relay', async (req, res) => {
           stream: true,
           messages: ollamaMessages,
         }),
-      })
+      }, { timeoutMs: PROVIDER_STREAM_TIMEOUT_MS })
 
       if (!response.ok) return sendError(`Ollama error: is Ollama running at ${base}?`)
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const lines = decoder.decode(value).split('\n').filter(Boolean)
-        for (const line of lines) {
-          try {
-            const data = JSON.parse(line)
-            if (data.message?.content) sendChunk(data.message.content)
-          } catch {}
-        }
-      }
+      await readStreamLines(response.body, (line) => {
+        try {
+          const data = JSON.parse(line)
+          if (data.message?.content) sendChunk(data.message.content)
+        } catch {}
+      })
       sendDone({ model: modelConfig.model, provider: 'ollama' })
 
     } else if (modelConfig.provider === 'claude-code') {
@@ -1639,6 +1866,55 @@ app.post('/api/relay', async (req, res) => {
           if (!streamed && finalResult?.result) sendChunk(String(finalResult.result))
           recordUsage(modelConfig, finalResult?.usage?.input_tokens, finalResult?.usage?.output_tokens)
           sendDone({ model, provider: 'claude-code' })
+        })
+      })
+      return // async streaming — the child's close handler ends the response
+
+    } else if (modelConfig.provider === 'codex') {
+      // GPT via the OpenAI Codex CLI — billed to the ChatGPT SUBSCRIPTION
+      // (Plus/Pro), NOT API credits ($0-metered, like callModel's codex path).
+      // `codex exec` runs non-interactively: progress → stderr, the final
+      // message → stdout, delivered when the turn completes — so the relay
+      // sends one text chunk on close rather than incremental deltas.
+      // codexEnv() strips OPENAI_API_KEY/CODEX_API_KEY so the CLI uses the
+      // ChatGPT login instead of pay-per-token API billing.
+      const prompt = [systemContent, ...messages.map(m => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))].filter(Boolean).join('\n\n')
+      const args = ['exec', '--skip-git-repo-check', '--sandbox', 'read-only']
+      if (modelConfig.model && modelConfig.model !== 'default') args.push('--model', modelConfig.model)
+      args.push(prompt)
+      // stdin MUST be closed ('ignore'): with a default open pipe, codex exec
+      // prints "Reading additional input from stdin..." and blocks on EOF forever.
+      const child = spawn('codex', args, { cwd: os.homedir(), env: codexEnv(), stdio: ['ignore', 'pipe', 'pipe'] })
+      let out = ''
+      let stderr = ''
+      let finished = false
+      const finish = (fn) => { if (!finished) { finished = true; fn() } }
+      child.stdout.on('data', (d) => { out += d })
+      child.stderr.on('data', (d) => { stderr += d })
+      const timer = setTimeout(() => child.kill('SIGKILL'), 300000)
+      child.on('error', (e) => {
+        clearTimeout(timer)
+        finish(() => sendError(`Codex CLI not found: ${e.message} — install it (npm i -g @openai/codex) and run \`codex login\``))
+      })
+      child.on('close', (code) => {
+        clearTimeout(timer)
+        finish(() => {
+          const text = out.trim()
+          if (code !== 0 && !text) {
+            // codex dumps its whole transcript on stderr; surface the actual
+            // ERROR line (e.g. "Your workspace is out of credits") not banner noise.
+            const m = stderr.match(/ERROR:\s*(.+)/)
+            const detail = (m ? m[1] : stderr.replace(/\s+/g, ' ')).slice(0, 300)
+            // Subscription pool dry → mark exhausted (1h) so bank-aware routing
+            // fails over to the API variants until the window refills.
+            if (/out of credits|rate.?limit|usage limit|quota/i.test(stderr) && tokenBank.has('codex')) {
+              tokenBank.markExhausted('codex', 3600_000); persistTokenBank()
+            }
+            return sendError(`ChatGPT subscription (Codex): ${detail || `codex exec failed (exit ${code}) — is the codex CLI installed and logged in?`}`)
+          }
+          if (text) sendChunk(text)
+          recordUsage(modelConfig, 0, 0)   // subscription-metered; codex exec stdout carries no token counts
+          sendDone({ model: modelConfig.model || 'default', provider: 'codex' })
         })
       })
       return // async streaming — the child's close handler ends the response
@@ -1718,6 +1994,10 @@ const PRICE = {
   'claude-sonnet-4-6': [3, 15],
   'claude-haiku-4-5-20251001': [0.8, 4],
   'gpt-4o': [2.5, 10],
+  // GPT-5.6 family (2026-07): Sol flagship / Terra balanced / Luna budget.
+  'gpt-5.6-sol': [5, 30],
+  'gpt-5.6-terra': [2.5, 15],
+  'gpt-5.6-luna': [1, 6],
 }
 const usage = { calls: 0, inTok: 0, outTok: 0, costUSD: 0, byModel: {}, since: new Date().toISOString() }
 // Soft daily ceiling on *paid* spend (USD). 0 disables. Override via NEXUS_DAILY_BUDGET_USD.
@@ -1728,17 +2008,99 @@ const usage = { calls: 0, inTok: 0, outTok: 0, costUSD: 0, byModel: {}, since: n
 // tokens from the phone; the breaker stays as a runaway backstop, not a leash.
 let budgetUSD = Number(process.env.NEXUS_DAILY_BUDGET_USD || 25)
 
+// ─── Token bank (2026-07-14) ─────────────────────────────────────────────────
+// Per-provider PERIOD ledger so bank-aware routing can lean on whichever
+// subscription/credit pool has headroom left. Providers expose little
+// remaining-quota truth (OpenAI blocks credit-balance for API keys; Claude Max
+// has no quota API), so this is a LOCAL ledger fed by real usage + OpenAI's live
+// rate-limit headers + 429 detection. Caps are operator-set via config.tokenBank;
+// until a cap is set a provider reads "unknown" and routing falls back to its
+// default order. Persisted to userData so it survives restarts within a period.
+const TOKEN_BANK_FILE = path.join(process.env.NEXUS_USER_DATA || __dirname, 'token-bank.json')
+const DEFAULT_BANK_CFG = {
+  'claude-code': { label: 'Claude (Max)',          periodHours: 168, note: 'Weekly Max usage window — set capTokens to your plan’s effective token budget.' },
+  'openai':      { label: 'OpenAI (API)',          periodHours: 720, note: 'Monthly credit window — set capUSD to your spend cap. Live rate-window headroom is read from response headers.' },
+  'codex':       { label: 'ChatGPT (subscription)', periodHours: 5,   note: '5-hour ChatGPT plan window (Codex). Task-based limits aren’t exposed by the CLI, so remaining shows as unknown unless you set an estimated capTokens.' },
+}
+const bankCfg = { ...DEFAULT_BANK_CFG }
+for (const [id, c] of Object.entries(config.tokenBank?.providers || {})) bankCfg[id] = { ...(bankCfg[id] || {}), ...c }
+const tokenBank = createTokenBank(bankCfg)
+try { if (fs.existsSync(TOKEN_BANK_FILE)) tokenBank.hydrate(JSON.parse(fs.readFileSync(TOKEN_BANK_FILE, 'utf8'))) } catch { /* fresh bank */ }
+// Measured per-domain model skill (Nexus Bench). A user-supplied matrix in
+// userData wins; the shipped bench/reports snapshot is the default. Absent
+// both, routing falls back to the static strength table.
+for (const smPath of [
+  path.join(process.env.NEXUS_USER_DATA || __dirname, 'skill-matrix.json'),
+  path.join(__dirname, 'bench/reports/v0/skill-matrix.json'),
+]) {
+  try {
+    if (fs.existsSync(smPath) && setSkillMatrix(JSON.parse(fs.readFileSync(smPath, 'utf8')))) {
+      console.log(`[Routing] skill matrix loaded: ${smPath}`)
+      break
+    }
+  } catch (e) { console.error(`[Routing] bad skill matrix at ${smPath}: ${e.message}`) }
+}
+
+let _bankSaveTimer = null
+function persistTokenBank() {
+  clearTimeout(_bankSaveTimer)
+  _bankSaveTimer = setTimeout(() => {
+    try { fs.writeFileSync(TOKEN_BANK_FILE, JSON.stringify(tokenBank.dump(), null, 2)) } catch { /* best-effort */ }
+  }, 1500)
+}
+// OpenAI returns a live rolling-window headroom on every response — capture it.
+function captureOpenAIHeadroom(res) {
+  const rem = Number(res.headers.get('x-ratelimit-remaining-tokens'))
+  const lim = Number(res.headers.get('x-ratelimit-limit-tokens'))
+  if (!Number.isFinite(rem) || !Number.isFinite(lim) || lim <= 0) return
+  const m = /([\d.]+)s/.exec(res.headers.get('x-ratelimit-reset-tokens') || '')
+  tokenBank.setLive('openai', { remainingTokens: rem, limitTokens: lim, resetSeconds: m ? parseFloat(m[1]) : undefined })
+}
+function retryAfterMs(res) {
+  const ra = Number(res.headers.get('retry-after'))
+  if (Number.isFinite(ra) && ra > 0) return ra * 1000
+  const m = /([\d.]+)s/.exec(res.headers.get('x-ratelimit-reset-tokens') || '')
+  return m ? Math.max(1000, Math.round(parseFloat(m[1]) * 1000)) : 60_000
+}
+
 function recordUsage(mc, inTok = 0, outTok = 0) {
   inTok = inTok || 0; outTok = outTok || 0
-  const paid = mc.provider !== 'ollama' && mc.provider !== 'claude-code'
+  const paid = mc.provider !== 'ollama' && mc.provider !== 'claude-code' && mc.provider !== 'codex'
   const [pin, pout] = (paid && PRICE[mc.model]) || [0, 0]
   const cost = (inTok * pin + outTok * pout) / 1e6
   usage.calls++; usage.inTok += inTok; usage.outTok += outTok; usage.costUSD += cost
   const b = (usage.byModel[mc.id] || (usage.byModel[mc.id] = { calls: 0, inTok: 0, outTok: 0, costUSD: 0, provider: mc.provider }))
   b.calls++; b.inTok += inTok; b.outTok += outTok; b.costUSD += cost
+  // Feed the token bank: Claude Max is $0-metered but still burns its usage
+  // window, so count TOKENS for it too (usd just tracks paid spend).
+  if (tokenBank.has(mc.provider)) { tokenBank.consume(mc.provider, { tokens: inTok + outTok, usd: cost }); persistTokenBank() }
   return { cost, overBudget: budgetUSD > 0 && usage.costUSD >= budgetUSD }
 }
 const overBudget = () => budgetUSD > 0 && usage.costUSD >= budgetUSD
+
+// Async CLI runner for the subscription lanes. These calls previously used
+// execFileSync, which BLOCKS the whole event loop for the CLI's lifetime —
+// under concurrent sandbox load every other request starves ("fetch failed"
+// bursts), health checks time out, and a CLI child that never exits (e.g.
+// suspended across a Mac sleep) wedges the server permanently. Same contract
+// as execFileSync: resolves stdout, rejects with { status, stdout, stderr }.
+const CLI_TIMEOUT_MS = Number(process.env.NEXUS_CLI_TIMEOUT_MS) || 180000
+function execFileAsync(cmd, args, { timeout = CLI_TIMEOUT_MS, maxBuffer = 20 * 1024 * 1024, ...opts } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { ...opts, stdio: ['ignore', 'pipe', 'pipe'] })
+    let stdout = '', stderr = '', done = false
+    const finish = (fn, val) => { if (!done) { done = true; clearTimeout(timer); fn(val) } }
+    const fail = (msg, status) => {
+      const e = new Error(msg); e.status = status; e.stdout = stdout; e.stderr = stderr
+      finish(reject, e)
+    }
+    const timer = setTimeout(() => { child.kill('SIGKILL'); fail(`timed out after ${timeout}ms`, null) }, timeout)
+    child.stdout.on('data', d => { stdout += d; if (stdout.length > maxBuffer) { child.kill('SIGKILL'); fail('maxBuffer exceeded', null) } })
+    child.stderr.on('data', d => { stderr += d; if (stderr.length > maxBuffer) stderr = stderr.slice(-maxBuffer) })
+    child.on('error', e => fail(e.message, null))
+    child.on('close', code => code === 0 ? finish(resolve, stdout) : fail(`exit ${code}`, code))
+  })
+}
 
 async function callModel(modelConfig, systemContent, messages) {
   const provider = modelConfig.provider
@@ -1747,7 +2109,7 @@ async function callModel(modelConfig, systemContent, messages) {
   if (persona) systemContent = [persona, systemContent].filter(Boolean).join('\n\n')
   if (provider === 'anthropic') {
     if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not set')
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
+    const r = await providerFetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
@@ -1768,12 +2130,17 @@ async function callModel(modelConfig, systemContent, messages) {
     const msgs = []
     if (systemContent) msgs.push({ role: 'system', content: systemContent })
     msgs.push(...messages.map(m => ({ role: m.role, content: m.content })))
-    const r = await fetch(`${compat.base}/chat/completions`, {
+    const r = await providerFetch(`${compat.base}/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${compat.key}` },
       body: JSON.stringify({ model: modelConfig.model, messages: msgs }),
     })
-    if (!r.ok) throw new Error(`${compat.label} ${r.status}: ${(await r.text()).slice(0, 200)}`)
+    if (modelConfig.provider === 'openai') captureOpenAIHeadroom(r)
+    if (!r.ok) {
+      // 429 / usage-limit → mark the provider tapped out so routing fails over.
+      if (r.status === 429 && tokenBank.has(modelConfig.provider)) { tokenBank.markExhausted(modelConfig.provider, retryAfterMs(r)); persistTokenBank() }
+      throw new Error(`${compat.label} ${r.status}: ${apiErrMessage(await r.text()).slice(0, 200)}`)
+    }
     const data = await r.json()
     recordUsage(modelConfig, data.usage?.prompt_tokens, data.usage?.completion_tokens)
     return (data.choices?.[0]?.message?.content || '').trim()
@@ -1783,7 +2150,7 @@ async function callModel(modelConfig, systemContent, messages) {
     const msgs = []
     if (systemContent) msgs.push({ role: 'system', content: systemContent })
     msgs.push(...messages.map(m => ({ role: m.role, content: m.content })))
-    const r = await fetch(`${base}/api/chat`, {
+    const r = await providerFetch(`${base}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       // keep_alive: 0 unloads the model from RAM immediately after responding.
@@ -1803,13 +2170,13 @@ async function callModel(modelConfig, systemContent, messages) {
     // is piped on stdin. Metered as $0 by recordUsage (provider !== paid).
     const model = modelConfig.model || 'sonnet'
     const prompt = [systemContent, ...messages.map(m => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))].filter(Boolean).join('\n\n')
-    // Prompt is passed as an ARGUMENT (execFileSync — no shell, no escaping issues).
-    // No --bare: bare mode skips the OAuth/keychain read, i.e. it would NOT use the
-    // Max subscription. cwd=home for a stable, low-context run.
+    // Prompt is passed as an ARGUMENT (no shell, no escaping issues). No --bare:
+    // bare mode skips the OAuth/keychain read, i.e. it would NOT use the Max
+    // subscription. cwd=home for a stable, low-context run. Async — a sync call
+    // here blocks the whole server (see execFileAsync).
     let out
     try {
-      out = execFileSync('claude', ['-p', prompt, '--output-format', 'json', '--model', model], {
-        encoding: 'utf8', timeout: 180000, maxBuffer: 20 * 1024 * 1024,
+      out = await execFileAsync('claude', ['-p', prompt, '--output-format', 'json', '--model', model], {
         cwd: os.homedir(), env: cliEnv(),
       })
     } catch (e) {
@@ -1820,6 +2187,41 @@ async function callModel(modelConfig, systemContent, messages) {
     recordUsage(modelConfig, parsed?.usage?.input_tokens, parsed?.usage?.output_tokens)
     return String(parsed?.result ?? out).trim()
   }
+  if (provider === 'codex') {
+    // GPT via the OpenAI Codex CLI — billed to the ChatGPT SUBSCRIPTION (Plus/Pro),
+    // NOT API credits. `codex exec` runs non-interactively: progress → stderr, the
+    // final message → stdout. codexEnv() strips OPENAI_API_KEY/CODEX_API_KEY so it
+    // uses the ChatGPT login. $0-metered (provider not "paid"). NOTE: this exec path
+    // is the one link not live-tested here (codex not yet installed); flags are the
+    // documented minimal form and may be tuned after `codex login`.
+    const prompt = [systemContent, ...messages.map(m => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))].filter(Boolean).join('\n\n')
+    // --skip-git-repo-check: run outside a trusted git dir. --sandbox read-only:
+    // the brain routes only REASONING here (tool/file work goes to the Claude
+    // Director), so Codex must never touch the filesystem. Verified 2026-07-14
+    // against codex-cli 0.144.4: final message → stdout, exit 0.
+    const args = ['exec', '--skip-git-repo-check', '--sandbox', 'read-only']
+    if (modelConfig.model && modelConfig.model !== 'default') args.push('--model', modelConfig.model)
+    args.push(prompt)
+    let out
+    try {
+      out = await execFileAsync('codex', args, { cwd: os.homedir(), env: codexEnv() })
+    } catch (e) {
+      const raw = String(e.stderr || e.stdout || e.message || '')
+      // codex dumps its whole transcript on stderr; surface the actual ERROR
+      // line (e.g. "Your workspace is out of credits") instead of banner noise.
+      const m = raw.match(/ERROR:\s*(.+)/)
+      const detail = (m ? m[1] : raw.replace(/\s+/g, ' ')).slice(0, 300)
+      // Out of credits / usage window drained → the subscription pool is dry.
+      // Mark it exhausted (1h) so bank-aware routing stops preferring the codex
+      // lane and falls back to the API variants until it refills.
+      if (/out of credits|rate.?limit|usage limit|quota/i.test(raw) && tokenBank.has('codex')) {
+        tokenBank.markExhausted('codex', 3600_000); persistTokenBank()
+      }
+      throw new Error(`ChatGPT subscription (Codex): ${detail}`)
+    }
+    recordUsage(modelConfig, 0, 0)   // subscription-metered; codex exec stdout carries no token counts
+    return String(out || '').trim()
+  }
   throw new Error(`Unknown provider: ${provider}`)
 }
 
@@ -1827,21 +2229,65 @@ async function callModel(modelConfig, systemContent, messages) {
 // Modes: 'roundtable' (Mixture-of-Agents), 'debate', 'orchestrator'.
 // Local (Ollama) models are RAM-bound, so every call runs sequentially.
 app.post('/api/sandbox', async (req, res) => {
-  const {
+  let {
     task, participantIds = [], mode = 'roundtable',
     aggregatorId, rounds = 2, sourceDocs = [], roleAssignments = {},
+    aggregation = 'synthesize',                // roundtable: synthesize | vote | verify
+
     backendId, championFile, challengerFile,   // A/B (champion vs challenger) mode
     directorId, tools = true,                  // Umbruh-Director mode
+    // Phase B (2026-07-14 general-use sync):
+    routingPolicy = null, customSelection = null, skillId = null,
+    saveAsArtifact = null, projectId = null,
   } = req.body
   if (!task) return res.status(400).json({ error: 'task required' })
+
+  // Phase B: a routing policy (fast/best/private/low-cost) picks the models from
+  // the available list, overriding participants/director; explained below.
+  let routingChoice = null
+  if (!routingPolicy && projectId) { const pj = generalUseStores.loadProject(projectId); if (pj && pj.routing && pj.routing !== 'auto') routingPolicy = pj.routing }
+  if (routingPolicy) {
+    const avail = (config.models || []).map(m => ({ id: m.id, provider: m.provider, tier: m.tier, pricePerMTokUsd: m.provider === 'ollama' ? 0 : (PRICE[m.model] ? PRICE[m.model][0] : undefined) }))
+    routingChoice = applyRoutingPolicy(String(routingPolicy), avail, { customSelection, task })
+    if (routingChoice.selected.length) {
+      participantIds = routingChoice.selected
+      if (routingChoice.mode !== 'council' && routingChoice.mode !== 'custom') directorId = routingChoice.selected[0]
+    }
+    // Policy-routed roundtables inherit the domain's aggregation style (vote
+    // for math, verify for code) unless the caller set one explicitly.
+    if (routingChoice.aggregation && req.body.aggregation === undefined) aggregation = routingChoice.aggregation
+  }
   if (mode !== 'ab' && !participantIds.length) {
-    return res.status(400).json({ error: 'task and participantIds required' })
+    return res.status(400).json({ error: routingChoice && !routingChoice.selected.length ? `routing policy "${routingPolicy}" selected no model (${routingChoice.reason})` : 'task and participantIds required' })
   }
 
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
-  const emit = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`)
+  // Long-reasoning members can go many minutes between events; undici (Node
+  // fetch) kills a body idle >300s, so heartbeat comments keep clients alive.
+  const heartbeat = setInterval(() => { try { res.write(': ping\n\n') } catch { /* closed */ } }, 25000)
+  res.on('close', () => clearInterval(heartbeat))
+  // Phase B: durable run record + role-tagged trace. Every emitted event is
+  // captured so /api/runs + the Run Inspector populate, and phased events carry
+  // the runtime role (brain/worker/broker) for the trace.
+  const runRecord = {
+    id: `run_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`,
+    startedAt: new Date().toISOString(), mode, task,
+    projectId: projectId || null, participantIds,
+    directorId: directorId || null, aggregatorId: aggregatorId || null,
+    aggregation: mode === 'roundtable' ? aggregation : undefined,
+    routingPolicy: routingChoice ? { policy: routingChoice.policy, selected: routingChoice.selected } : null,
+    events: [],
+  }
+  const emit = (obj) => {
+    if (obj && obj.phase && !obj.role) obj.role = roleForPhase(obj.phase)
+    if (runRecord.events.length < 1000) runRecord.events.push(obj)
+    res.write(`data: ${JSON.stringify(obj)}\n\n`)
+  }
+  if (routingChoice && routingChoice.policy) {
+    emit({ type: 'status', role: 'control-plane', message: `Routing policy "${routingChoice.policy}" — ${routingChoice.reason}`, routing: { policy: routingChoice.policy, selected: routingChoice.selected } })
+  }
 
   const participants = []
   for (const id of participantIds) {
@@ -1855,6 +2301,27 @@ app.post('/api/sandbox', async (req, res) => {
     return ((role ? role.systemPrompt : '') + docContext) || undefined
   }
 
+  // Verifiable tasks lose accuracy to freeform synthesis (bench v0, 2026-07-15:
+  // the aggregator "reconciled" math answers into numbers no member proposed).
+  // vote/verify never let the aggregator author an answer — they only pick one.
+  const answerKeyOf = (text) => {
+    const s = String(text)
+    const m = [...s.matchAll(/ANSWER\s*[:=]\s*(.+)/gi)].pop()      // ANSWER: 42
+      || [...s.matchAll(/<solution>([\s\S]*?)<\/solution>/gi)].pop() // <solution>…</solution>
+      || [...s.matchAll(/\*\*([^*]{1,300}?)\*\*/g)].pop()            // last **bold**
+    return (m ? m[1] : s).trim().toLowerCase()
+      .replace(/[*_`$.()[\]{}]/g, '').replace(/\s+/g, ' ').slice(0, 120)
+  }
+  // Aggregator checks each candidate and picks one verbatim — no blending.
+  async function verifySelect(candidates, phase) {
+    const prompt = `You are the verifier in a model council. The task was:\n\n"""${task}"""\n\nBelow are candidate answers from independent models. For each candidate, check its correctness on the merits (re-derive the key steps; recompute any math). Then select the single most correct candidate. Do NOT write your own answer and do NOT combine candidates.\n\n${candidates.map((a, i) => `### Candidate ${i + 1} — ${a.name}\n${a.text}`).join('\n\n')}\n\nEnd your reply with one line in exactly this format:\nSELECTED: <candidate number>`
+    const out = await callModel(aggregator, docContext || undefined, [{ role: 'user', content: prompt }])
+    const m = [...String(out).matchAll(/SELECTED\s*[:=]\s*(\d+)/gi)].pop()
+    const pick = m ? candidates[Number(m[1]) - 1] : null
+    if (pick) emit({ type: 'turn', model: aggregator.name, modelId: aggregator.id, phase, text: out })
+    return pick
+  }
+
   try {
     if (mode === 'roundtable') {
       emit({ type: 'status', message: 'Roundtable — gathering independent answers' })
@@ -1863,18 +2330,46 @@ app.post('/api/sandbox', async (req, res) => {
         emit({ type: 'turn-start', model: p.name, modelId: p.id, phase: 'propose' })
         try {
           const text = await callModel(p, roleSys(p.id), [{ role: 'user', content: task }])
-          answers.push({ name: p.name, text })
+          answers.push({ id: p.id, name: p.name, text })
           emit({ type: 'turn', model: p.name, modelId: p.id, phase: 'propose', text })
         } catch (e) {
           emit({ type: 'turn-error', model: p.name, modelId: p.id, phase: 'propose', error: e.message })
         }
       }
-      if (aggregator && answers.length) {
+      if (answers.length && aggregation === 'vote') {
+        emit({ type: 'status', message: 'Vote — tallying member answers' })
+        const tally = new Map()
+        for (const a of answers) {
+          const k = answerKeyOf(a.text)
+          tally.set(k, [...(tally.get(k) || []), a])
+        }
+        const groups = [...tally.values()].sort((x, y) => y.length - x.length)
+        const tied = groups.filter(g => g.length === groups[0].length)
+        let winner = tied[0][0]
+        if (tied.length > 1 && aggregator) {
+          emit({ type: 'status', message: `Vote tied ${tied.length}-way — ${aggregator.name} verifying tied candidates` })
+          try { winner = (await verifySelect(tied.map(g => g[0]), 'tiebreak')) || winner }
+          catch (e) { emit({ type: 'turn-error', model: aggregator.name, phase: 'tiebreak', error: e.message }) }
+        }
+        emit({
+          type: 'final', model: winner.name, modelId: winner.id, text: winner.text,
+          aggregation: 'vote', votes: groups[0].length, of: answers.length,
+        })
+      } else if (answers.length && aggregation === 'verify' && aggregator) {
+        emit({ type: 'status', message: `Verify — ${aggregator.name} checking each candidate` })
+        try {
+          const pick = await verifySelect(answers, 'verify')
+          const chosen = pick || answers[0]
+          emit({ type: 'final', model: chosen.name, modelId: chosen.id, text: chosen.text, aggregation: 'verify', fallback: !pick || undefined })
+        } catch (e) {
+          emit({ type: 'turn-error', model: aggregator.name, phase: 'verify', error: e.message })
+        }
+      } else if (aggregator && answers.length) {
         emit({ type: 'status', message: `Synthesizing with ${aggregator.name}` })
         const synth = `You are the aggregator in a Mixture-of-Agents council. The Director posed this task:\n\n"""${task}"""\n\nBelow are the council members' independent answers. Synthesize them into one superior answer: keep the strongest reasoning, reconcile agreements, resolve contradictions, and flag any important unresolved disagreement.\n\n${answers.map((a, i) => `### Member ${i + 1} — ${a.name}\n${a.text}`).join('\n\n')}`
         try {
           const finalText = await callModel(aggregator, docContext || undefined, [{ role: 'user', content: synth }])
-          emit({ type: 'final', model: aggregator.name, modelId: aggregator.id, text: finalText })
+          emit({ type: 'final', model: aggregator.name, modelId: aggregator.id, text: finalText, aggregation: 'synthesize' })
         } catch (e) {
           emit({ type: 'turn-error', model: aggregator.name, phase: 'synthesize', error: e.message })
         }
@@ -2073,7 +2568,13 @@ ${task}`
         const compose = `You are Umbruh, the Director. Compose the ensemble's work below into one coherent, high-quality deliverable for the task. Keep the strongest reasoning, reconcile any conflicts, note anything still unresolved, and speak in your own voice.\n\nTASK:\n"""${task}"""\n\n${done.map(r => `### ${r.subtask}\n(by ${r.worker})\n${r.text}`).join('\n\n')}`
         try {
           const finalText = await callModel(director, docContext || undefined, [{ role: 'user', content: compose }])
-          emit({ type: 'final', model: director.name, modelId: director.id, text: finalText })
+          // Phase B: opt-in artifact minting from the run (Library populates).
+          let artifactId = null
+          if (saveAsArtifact && typeof saveAsArtifact === 'object') {
+            const art = generalUseStores.createArtifact({ id: `art_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`, type: saveAsArtifact.type || 'report', title: saveAsArtifact.title || (task || 'Untitled').slice(0, 120), content: finalText, now: new Date().toISOString(), provenance: { runId: runRecord.id, modelId: director.id, skillId: skillId || undefined } })
+            if (art) { if (projectId) art.projectId = projectId; if (generalUseStores.saveArtifact(art)) { artifactId = art.id; runRecord.artifactId = art.id } }
+          }
+          emit({ type: 'final', model: director.name, modelId: director.id, text: finalText, artifactId })
         } catch (e) {
           emit({ type: 'turn-error', model: director.name, phase: 'compose', error: e.message })
         }
@@ -2086,6 +2587,9 @@ ${task}`
   } catch (e) {
     emit({ type: 'error', error: e.message })
   }
+  // Phase B: persist the run record (feeds /api/runs + the Run Inspector).
+  runRecord.finishedAt = new Date().toISOString()
+  generalUseStores.saveRunRecord(runRecord)
   res.end()
 })
 
@@ -2295,7 +2799,7 @@ Do not include raw conversation — only structured output.`
 
   try {
     const base = process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
-    const response = await fetch(`${base}/api/chat`, {
+    const response = await providerFetch(`${base}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2741,7 +3245,7 @@ app.post('/api/voice-memory', async (req, res) => {
   const convText = conversation.map(m => `${m.role === 'user' ? 'Director' : 'Umbruh'}: ${m.content}`).join('\n')
 
   try {
-    const response = await fetch(`${ollamaUrl}/api/chat`, {
+    const response = await providerFetch(`${ollamaUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2923,7 +3427,7 @@ async function executeTool(name, args) {
         return { success: true, message: `Written: ${p}` }
       }
       case 'fetch_url': {
-        const r = await fetch(args.url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+        const r = await providerFetch(args.url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, { timeoutMs: 30_000 })
         const html = await r.text()
         const text = html
           .replace(/<script[\s\S]*?<\/script>/gi, '')
@@ -2952,7 +3456,7 @@ async function runAgentLoop(messages, ollamaUrl, maxSteps = 8, useTools = true) 
   for (let i = 0; i < maxSteps; i++) {
     const body = { model: UMBRUH_MODEL, messages: msgs, stream: false }
     if (toolsAllowed) body.tools = UMBRUH_TOOLS
-    const response = await fetch(`${ollamaUrl}/api/chat`, {
+    const response = await providerFetch(`${ollamaUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -2996,7 +3500,7 @@ async function callModelAgentic(modelConfig, systemContent, task, onTool = () =>
     if (system) msgs.push({ role: 'system', content: system })
     msgs.push({ role: 'user', content: task })
     for (let i = 0; i < maxSteps; i++) {
-      const r = await fetch(`${base}/api/chat`, {
+      const r = await providerFetch(`${base}/api/chat`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: modelConfig.model, messages: msgs, stream: false, keep_alive: 0, tools: UMBRUH_TOOLS }),
       })
@@ -3018,7 +3522,7 @@ async function callModelAgentic(modelConfig, systemContent, task, onTool = () =>
     if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not set')
     const msgs = [{ role: 'user', content: task }]
     for (let i = 0; i < maxSteps; i++) {
-      const r = await fetch('https://api.anthropic.com/v1/messages', {
+      const r = await providerFetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
         body: JSON.stringify({ model: modelConfig.model, max_tokens: 4096, system, tools: ANTHROPIC_TOOLS, messages: msgs }),
@@ -3050,7 +3554,7 @@ async function callModelAgentic(modelConfig, systemContent, task, onTool = () =>
     if (system) msgs.push({ role: 'system', content: system })
     msgs.push({ role: 'user', content: task })
     for (let i = 0; i < maxSteps; i++) {
-      const r = await fetch(`${agenticCompat.base}/chat/completions`, {
+      const r = await providerFetch(`${agenticCompat.base}/chat/completions`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agenticCompat.key}` },
         body: JSON.stringify({ model: modelConfig.model, messages: msgs, tools: UMBRUH_TOOLS }),
       })
@@ -3198,6 +3702,23 @@ const brain = initBrain({
   runAgentLoop,
   ollamaUrl: (process.env.OLLAMA_BASE_URL || 'http://localhost:11434').replace(/\/$/, ''),
   userDataDir: process.env.NEXUS_USER_DATA || __dirname,
+  // Bank-aware GPT-5.6 escalation: give the brain a cloud caller, a model
+  // lookup, and the token bank. Reasoning-only — the Director still owns tools.
+  callModel,
+  modelById: (id) => (config.models || []).find(m => m.id === id) || null,
+  tokenBank,
+  // Resolve the $0 subscription model for a provider family when its CLI is
+  // available and the user hasn't forced API mode. Cached probe (validateProvider).
+  subscriptionModelFor: async (family) => {
+    if (family !== 'openai') return null
+    if (config.providers?.openai?.prefer === 'api') return null
+    // Subscription pool drained (out of credits / usage window) → route the
+    // API variants instead until the bank's exhaustion window passes.
+    if (tokenBank.has('codex') && tokenBank.isLow('codex', 0)) return null
+    const codex = (config.models || []).find(m => m.provider === 'codex')
+    if (!codex) return null
+    try { const v = await validateProvider('codex'); return v.ok ? codex.id : null } catch { return null }
+  },
 })
 
 // ─── Mini Nexus mobile API (plan 2026-07-11, Phase A) ────────────────────────
@@ -3348,6 +3869,28 @@ app.post('/api/transcribe', express.raw({ type: 'audio/*', limit: '25mb' }), (re
   rm([srcPath, wavPath])
   res.status(503).json({ error: 'no transcriber available — run install-telegram.command to set up whisper' })
 })
+// ─── Automations (scheduled prompts — tool-less, shared core) ────────────────
+try {
+  initAutomations({ app, config, callModel, resolveBrain })
+} catch (e) {
+  console.error('[Automations] init failed:', e.message)
+}
+
+// ─── Meetings (meeting → system-grade report appliance) ─────────────────────
+// Tool-less synthesis only — meeting content has no path into the sandbox.
+try {
+  initMeetings({
+    app, config, callModel, resolveBrain,
+    // C lineage has no LOCAL_MODEL const (Umbruh persona model is separate and
+    // wrong for report synthesis) — fall back to the sandbox's general model.
+    localModel: config.sandbox?.model || 'llama3.1:8b',
+    getPrice: (mc) => (mc.provider === 'ollama' || mc.provider === 'claude-code')
+      ? [0, 0]
+      : (PRICE[mc.model] || PROVIDER_PRICE[mc.provider] || [0, 0]),
+  })
+} catch (e) {
+  console.error('[Meetings] init failed:', e.message)
+}
 
 // ─── Signal fleet delivery (fork watcher + daily brief + Signal Desk API) ────
 // Personal (C lineage). Boots before Telegram so its endpoints exist even when
@@ -3442,12 +3985,57 @@ if (fs.existsSync(distDir)) {
 }
 
 // ─── start ──────────────────────────────────────────────────────────────────
+// Register the general-use engine routes just before listen, so they see the
+// fully-initialized `config`. Read-only/additive; personal routes are untouched.
+registerGeneralUseRoutes(app, {
+  getConfig: () => config,
+  sandboxEnabled,
+  sanitizeCapabilities: (typeof sanitizeCapabilities === 'function' ? sanitizeCapabilities : undefined),
+  priceFor: (modelString) => (PRICE[modelString] ? PRICE[modelString][0] : undefined),
+})
+
 const PORT = Number(process.env.NEXUS_PORT) || 3001
 // Bind loopback-only by default so the API/UI is never exposed to the LAN.
 // Override with NEXUS_HOST only if you deliberately need remote access (+ firewall).
 const HOST = process.env.NEXUS_HOST || '127.0.0.1'
-app.listen(PORT, HOST, () => {
+let httpServer = app.listen(PORT, HOST, () => {
   console.log(`Nexus API on ${HOST}:${PORT}`)
   console.log('Goose Director API running on http://localhost:3001')
   console.log('Repo path:', REPO, fs.existsSync(REPO) ? '✓ found' : '✗ not found — using static data')
 })
+
+// Tear down and recreate the HTTP listener. Called by the Electron wake
+// watchdog when the server stops answering after a sleep/wake cycle — the
+// observed failure mode is the kernel still accepting TCP on 3001 while Node
+// never sees the connections, which only a fresh listen socket fixes.
+// Resolves true once the new listener is accepting, false if re-listen failed.
+export function recoverHttpServer() {
+  return new Promise((resolve) => {
+    const old = httpServer
+    let relistened = false
+    const relisten = () => {
+      if (relistened) return
+      relistened = true
+      try {
+        httpServer = app.listen(PORT, HOST, () => {
+          console.warn(`[watchdog] HTTP listener recreated on ${HOST}:${PORT}`)
+          resolve(true)
+        })
+        httpServer.on('error', (e) => {
+          console.error('[watchdog] re-listen failed:', e.message)
+          resolve(false)
+        })
+      } catch (e) {
+        console.error('[watchdog] re-listen threw:', e.message)
+        resolve(false)
+      }
+    }
+    if (!old) return relisten()
+    try { old.closeAllConnections?.() } catch {}
+    try { old.close(relisten) } catch { relisten() }
+    // close() waits for the 'close' event; a wedged server may never emit it,
+    // so force the re-listen after 3s regardless.
+    const fallback = setTimeout(relisten, 3000)
+    if (typeof fallback.unref === 'function') fallback.unref()
+  })
+}

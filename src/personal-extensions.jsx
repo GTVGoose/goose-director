@@ -9,17 +9,17 @@
 //
 // The product build (B) ships an EMPTY version of this file.
 // ─────────────────────────────────────────────────────────────────────────────
-import Sandbox from './components/Sandbox.jsx'
 import Membrane from './components/Membrane.jsx'
 import Updates from './components/Updates.jsx'
 import SignalDesk from './components/SignalDesk.jsx'
 import Domains from './components/Domains.jsx'
+import Meetings from './components/Meetings.jsx'
 
 // Nav entries appended after the shared "Act" section. `section` starts a new
 // sidebar group when it differs from the running section (which begins at 'Act').
 export const personalNav = [
-  { section: 'Act',      id: 'sandbox',        icon: 'users-group',     label: 'Sandbox',  sub: 'Many models, one council' },
   { section: 'Act',      id: 'signal',         icon: 'antenna',         label: 'Signal Desk', sub: 'Fleet forks + daily brief' },
+  { section: 'Act',      id: 'meetings',       icon: 'microphone',      label: 'Meetings', sub: 'Record → system-grade reports' },
   { section: 'Domains',  id: 'domains',        icon: 'layout-grid',     label: 'Domains',  sub: 'The Goose organism — 8 layers' },
   { section: 'Studio',   id: 'membrane',       icon: 'topology-star-3', label: 'Membrane', sub: 'SFS Vault shared intelligence' },
   { section: 'Studio',   id: 'updates',        icon: 'cloud-download',  label: 'Updates',  sub: 'Pull shared UI from the product' },
@@ -27,8 +27,8 @@ export const personalNav = [
 
 // Command-bar labels for personal views (merged over the shared VIEW_META).
 export const personalViewMeta = {
-  sandbox:          { label: 'Sandbox',  sub: 'Multi-model council' },
   signal:           { label: 'Signal Desk', sub: 'Signal fleet forks + Signal Brief' },
+  meetings:         { label: 'Meetings', sub: 'Record a meeting → system-grade report' },
   domains:          { label: 'Domains', sub: 'The Goose organism — landing page for all 8 layers' },
   membrane:         { label: 'Membrane', sub: 'SFS Vault shared-intelligence layer' },
   updates:          { label: 'Updates',  sub: 'Sync shared UI from the product console' },
@@ -36,8 +36,8 @@ export const personalViewMeta = {
 
 // Render functions for personal views, keyed by view id. Receive shared props.
 export const personalViews = {
-  sandbox:          ({ canonDocs }) => <Sandbox canonDocs={canonDocs} />,
   signal:           () => <SignalDesk />,
+  meetings:         () => <Meetings />,
   domains:          () => <Domains />,
   membrane:         () => <Membrane />,
   updates:          () => <Updates />,

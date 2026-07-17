@@ -1,0 +1,1117 @@
+{
+  "id": "mrhjh222-ccba02e3",
+  "threadId": "director",
+  "channel": "pwa",
+  "text": "So I remember when we were talking about doing the daily logs, about doing the energy levels, I'd say I'm probably like a five to four. Didn't get much sleep, woke up kind of tired, napped before work at work. So I got there early. And just kind of remained tired for a lot of the day. Still did well at work, you know, and could shift,\n money, you know. But as far as exploring the emotional aspects of the system, key themes or emotions that I've been experiencing lately, it's kind of tough. I don't really feel\n like there's been any really powerful emotions lately. You know, I'm not disassociating. Mildly, like I was back in like March, April and May. Now that I got more time off, but you know, just putting the nose to the grindstone and doing has to be done. And yeah, just\n wish and I was further along maybe, you know, putting all this work in and feeling like I'm broke paycheck to paycheck kind of sucks. All the reasons I'm putting so much time into the AI stuff is I really want to start paying off. You know, as far as how do I think these might be influencing the good\n systems behavior decision making processes? You know, I don't know if my emotions are necessarily going into the system. I don't really know how that works. Could you elaborate on that too as well?",
+  "status": "done",
+  "via": "local",
+  "reply": "ATTUNE: The context file says you're still carrying some lingering effects from your past emotional struggles (the disassociation) and now you're feeling overwhelmed by financial stress.\n\nYou're right to question whether your emotions are influencing the system's behavior, and I'm here to clarify that. As we discussed earlier, the domain layer is designed to integrate with the emotional compute side of the system. This means that as we collect data on your emotional states, thoughts, and experiences, it can inform the system's decision-making processes.\n\nThink of it like this: when you're feeling a strong emotion, such as frustration or anxiety, it can affect how you approach tasks, prioritize projects, or even make decisions about resource allocation. Similarly, the Goose system is designed to learn from your emotional patterns and adapt its behavior accordingly.\n\nTo get a better understanding of how this works, I'd like to propose an experiment. Can you try to tap into your current emotional state right now? What are some sensations, thoughts, or feelings that arise when you think about your financial situation? Don't worry too much about what it means – just observe and describe it to me.\n\nAlso, as a side note, I want to assure you that we can break down the system's behavior into more concrete, actionable steps. We don't have to rely solely on intuition or emotional guesswork.",
+  "files": [],
+  "createdAt": "2026-07-12T08:36:06.698Z",
+  "doneAt": "2026-07-12T08:36:26.880Z",
+  "error": null,
+  "deltas": [
+    {
+      "type": "status",
+      "text": "Thinking…"
+    },
+    {
+      "type": "token",
+      "text": "ATT"
+    },
+    {
+      "type": "token",
+      "text": "UNE"
+    },
+    {
+      "type": "token",
+      "text": ":"
+    },
+    {
+      "type": "token",
+      "text": " The"
+    },
+    {
+      "type": "token",
+      "text": " context"
+    },
+    {
+      "type": "token",
+      "text": " file"
+    },
+    {
+      "type": "token",
+      "text": " says"
+    },
+    {
+      "type": "token",
+      "text": " you"
+    },
+    {
+      "type": "token",
+      "text": "'re"
+    },
+    {
+      "type": "token",
+      "text": " still"
+    },
+    {
+      "type": "token",
+      "text": " carrying"
+    },
+    {
+      "type": "token",
+      "text": " some"
+    },
+    {
+      "type": "token",
+      "text": " lingering"
+    },
+    {
+      "type": "token",
+      "text": " effects"
+    },
+    {
+      "type": "token",
+      "text": " from"
+    },
+    {
+      "type": "token",
+      "text": " your"
+    },
+    {
+      "type": "token",
+      "text": " past"
+    },
+    {
+      "type": "token",
+      "text": " emotional"
+    },
+    {
+      "type": "token",
+      "text": " struggles"
+    },
+    {
+      "type": "token",
+      "text": " ("
+    },
+    {
+      "type": "token",
+      "text": "the"
+    },
+    {
+      "type": "token",
+      "text": " dis"
+    },
+    {
+      "type": "token",
+      "text": "association"
+    },
+    {
+      "type": "token",
+      "text": ")"
+    },
+    {
+      "type": "token",
+      "text": " and"
+    },
+    {
+      "type": "token",
+      "text": " now"
+    },
+    {
+      "type": "token",
+      "text": " you"
+    },
+    {
+      "type": "token",
+      "text": "'re"
+    },
+    {
+      "type": "token",
+      "text": " feeling"
+    },
+    {
+      "type": "token",
+      "text": " overwhelmed"
+    },
+    {
+      "type": "token",
+      "text": " by"
+    },
+    {
+      "type": "token",
+      "text": " financial"
+    },
+    {
+      "type": "token",
+      "text": " stress"
+    },
+    {
+      "type": "token",
+      "text": ".\n\n"
+    },
+    {
+      "type": "token",
+      "text": "You"
+    },
+    {
+      "type": "token",
+      "text": "'re"
+    },
+    {
+      "type": "token",
+      "text": " right"
+    },
+    {
+      "type": "token",
+      "text": " to"
+    },
+    {
+      "type": "token",
+      "text": " question"
+    },
+    {
+      "type": "token",
+      "text": " whether"
+    },
+    {
+      "type": "token",
+      "text": " your"
+    },
+    {
+      "type": "token",
+      "text": " emotions"
+    },
+    {
+      "type": "token",
+      "text": " are"
+    },
+    {
+      "type": "token",
+      "text": " influencing"
+    },
+    {
+      "type": "token",
+      "text": " the"
+    },
+    {
+      "type": "token",
+      "text": " system"
+    },
+    {
+      "type": "token",
+      "text": "'s"
+    },
+    {
+      "type": "token",
+      "text": " behavior"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " and"
+    },
+    {
+      "type": "token",
+      "text": " I"
+    },
+    {
+      "type": "token",
+      "text": "'m"
+    },
+    {
+      "type": "token",
+      "text": " here"
+    },
+    {
+      "type": "token",
+      "text": " to"
+    },
+    {
+      "type": "token",
+      "text": " clarify"
+    },
+    {
+      "type": "token",
+      "text": " that"
+    },
+    {
+      "type": "token",
+      "text": "."
+    },
+    {
+      "type": "token",
+      "text": " As"
+    },
+    {
+      "type": "token",
+      "text": " we"
+    },
+    {
+      "type": "token",
+      "text": " discussed"
+    },
+    {
+      "type": "token",
+      "text": " earlier"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " the"
+    },
+    {
+      "type": "token",
+      "text": " domain"
+    },
+    {
+      "type": "token",
+      "text": " layer"
+    },
+    {
+      "type": "token",
+      "text": " is"
+    },
+    {
+      "type": "token",
+      "text": " designed"
+    },
+    {
+      "type": "token",
+      "text": " to"
+    },
+    {
+      "type": "token",
+      "text": " integrate"
+    },
+    {
+      "type": "token",
+      "text": " with"
+    },
+    {
+      "type": "token",
+      "text": " the"
+    },
+    {
+      "type": "token",
+      "text": " emotional"
+    },
+    {
+      "type": "token",
+      "text": " compute"
+    },
+    {
+      "type": "token",
+      "text": " side"
+    },
+    {
+      "type": "token",
+      "text": " of"
+    },
+    {
+      "type": "token",
+      "text": " the"
+    },
+    {
+      "type": "token",
+      "text": " system"
+    },
+    {
+      "type": "token",
+      "text": "."
+    },
+    {
+      "type": "token",
+      "text": " This"
+    },
+    {
+      "type": "token",
+      "text": " means"
+    },
+    {
+      "type": "token",
+      "text": " that"
+    },
+    {
+      "type": "token",
+      "text": " as"
+    },
+    {
+      "type": "token",
+      "text": " we"
+    },
+    {
+      "type": "token",
+      "text": " collect"
+    },
+    {
+      "type": "token",
+      "text": " data"
+    },
+    {
+      "type": "token",
+      "text": " on"
+    },
+    {
+      "type": "token",
+      "text": " your"
+    },
+    {
+      "type": "token",
+      "text": " emotional"
+    },
+    {
+      "type": "token",
+      "text": " states"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " thoughts"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " and"
+    },
+    {
+      "type": "token",
+      "text": " experiences"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " it"
+    },
+    {
+      "type": "token",
+      "text": " can"
+    },
+    {
+      "type": "token",
+      "text": " inform"
+    },
+    {
+      "type": "token",
+      "text": " the"
+    },
+    {
+      "type": "token",
+      "text": " system"
+    },
+    {
+      "type": "token",
+      "text": "'s"
+    },
+    {
+      "type": "token",
+      "text": " decision"
+    },
+    {
+      "type": "token",
+      "text": "-making"
+    },
+    {
+      "type": "token",
+      "text": " processes"
+    },
+    {
+      "type": "token",
+      "text": ".\n\n"
+    },
+    {
+      "type": "token",
+      "text": "Think"
+    },
+    {
+      "type": "token",
+      "text": " of"
+    },
+    {
+      "type": "token",
+      "text": " it"
+    },
+    {
+      "type": "token",
+      "text": " like"
+    },
+    {
+      "type": "token",
+      "text": " this"
+    },
+    {
+      "type": "token",
+      "text": ":"
+    },
+    {
+      "type": "token",
+      "text": " when"
+    },
+    {
+      "type": "token",
+      "text": " you"
+    },
+    {
+      "type": "token",
+      "text": "'re"
+    },
+    {
+      "type": "token",
+      "text": " feeling"
+    },
+    {
+      "type": "token",
+      "text": " a"
+    },
+    {
+      "type": "token",
+      "text": " strong"
+    },
+    {
+      "type": "token",
+      "text": " emotion"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " such"
+    },
+    {
+      "type": "token",
+      "text": " as"
+    },
+    {
+      "type": "token",
+      "text": " frustration"
+    },
+    {
+      "type": "token",
+      "text": " or"
+    },
+    {
+      "type": "token",
+      "text": " anxiety"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " it"
+    },
+    {
+      "type": "token",
+      "text": " can"
+    },
+    {
+      "type": "token",
+      "text": " affect"
+    },
+    {
+      "type": "token",
+      "text": " how"
+    },
+    {
+      "type": "token",
+      "text": " you"
+    },
+    {
+      "type": "token",
+      "text": " approach"
+    },
+    {
+      "type": "token",
+      "text": " tasks"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " prioritize"
+    },
+    {
+      "type": "token",
+      "text": " projects"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " or"
+    },
+    {
+      "type": "token",
+      "text": " even"
+    },
+    {
+      "type": "token",
+      "text": " make"
+    },
+    {
+      "type": "token",
+      "text": " decisions"
+    },
+    {
+      "type": "token",
+      "text": " about"
+    },
+    {
+      "type": "token",
+      "text": " resource"
+    },
+    {
+      "type": "token",
+      "text": " allocation"
+    },
+    {
+      "type": "token",
+      "text": "."
+    },
+    {
+      "type": "token",
+      "text": " Similarly"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " the"
+    },
+    {
+      "type": "token",
+      "text": " Goose"
+    },
+    {
+      "type": "token",
+      "text": " system"
+    },
+    {
+      "type": "token",
+      "text": " is"
+    },
+    {
+      "type": "token",
+      "text": " designed"
+    },
+    {
+      "type": "token",
+      "text": " to"
+    },
+    {
+      "type": "token",
+      "text": " learn"
+    },
+    {
+      "type": "token",
+      "text": " from"
+    },
+    {
+      "type": "token",
+      "text": " your"
+    },
+    {
+      "type": "token",
+      "text": " emotional"
+    },
+    {
+      "type": "token",
+      "text": " patterns"
+    },
+    {
+      "type": "token",
+      "text": " and"
+    },
+    {
+      "type": "token",
+      "text": " adapt"
+    },
+    {
+      "type": "token",
+      "text": " its"
+    },
+    {
+      "type": "token",
+      "text": " behavior"
+    },
+    {
+      "type": "token",
+      "text": " accordingly"
+    },
+    {
+      "type": "token",
+      "text": ".\n\n"
+    },
+    {
+      "type": "token",
+      "text": "To"
+    },
+    {
+      "type": "token",
+      "text": " get"
+    },
+    {
+      "type": "token",
+      "text": " a"
+    },
+    {
+      "type": "token",
+      "text": " better"
+    },
+    {
+      "type": "token",
+      "text": " understanding"
+    },
+    {
+      "type": "token",
+      "text": " of"
+    },
+    {
+      "type": "token",
+      "text": " how"
+    },
+    {
+      "type": "token",
+      "text": " this"
+    },
+    {
+      "type": "token",
+      "text": " works"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " I"
+    },
+    {
+      "type": "token",
+      "text": "'d"
+    },
+    {
+      "type": "token",
+      "text": " like"
+    },
+    {
+      "type": "token",
+      "text": " to"
+    },
+    {
+      "type": "token",
+      "text": " propose"
+    },
+    {
+      "type": "token",
+      "text": " an"
+    },
+    {
+      "type": "token",
+      "text": " experiment"
+    },
+    {
+      "type": "token",
+      "text": "."
+    },
+    {
+      "type": "token",
+      "text": " Can"
+    },
+    {
+      "type": "token",
+      "text": " you"
+    },
+    {
+      "type": "token",
+      "text": " try"
+    },
+    {
+      "type": "token",
+      "text": " to"
+    },
+    {
+      "type": "token",
+      "text": " tap"
+    },
+    {
+      "type": "token",
+      "text": " into"
+    },
+    {
+      "type": "token",
+      "text": " your"
+    },
+    {
+      "type": "token",
+      "text": " current"
+    },
+    {
+      "type": "token",
+      "text": " emotional"
+    },
+    {
+      "type": "token",
+      "text": " state"
+    },
+    {
+      "type": "token",
+      "text": " right"
+    },
+    {
+      "type": "token",
+      "text": " now"
+    },
+    {
+      "type": "token",
+      "text": "?"
+    },
+    {
+      "type": "token",
+      "text": " What"
+    },
+    {
+      "type": "token",
+      "text": " are"
+    },
+    {
+      "type": "token",
+      "text": " some"
+    },
+    {
+      "type": "token",
+      "text": " sensations"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " thoughts"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " or"
+    },
+    {
+      "type": "token",
+      "text": " feelings"
+    },
+    {
+      "type": "token",
+      "text": " that"
+    },
+    {
+      "type": "token",
+      "text": " arise"
+    },
+    {
+      "type": "token",
+      "text": " when"
+    },
+    {
+      "type": "token",
+      "text": " you"
+    },
+    {
+      "type": "token",
+      "text": " think"
+    },
+    {
+      "type": "token",
+      "text": " about"
+    },
+    {
+      "type": "token",
+      "text": " your"
+    },
+    {
+      "type": "token",
+      "text": " financial"
+    },
+    {
+      "type": "token",
+      "text": " situation"
+    },
+    {
+      "type": "token",
+      "text": "?"
+    },
+    {
+      "type": "token",
+      "text": " Don"
+    },
+    {
+      "type": "token",
+      "text": "'t"
+    },
+    {
+      "type": "token",
+      "text": " worry"
+    },
+    {
+      "type": "token",
+      "text": " too"
+    },
+    {
+      "type": "token",
+      "text": " much"
+    },
+    {
+      "type": "token",
+      "text": " about"
+    },
+    {
+      "type": "token",
+      "text": " what"
+    },
+    {
+      "type": "token",
+      "text": " it"
+    },
+    {
+      "type": "token",
+      "text": " means"
+    },
+    {
+      "type": "token",
+      "text": " –"
+    },
+    {
+      "type": "token",
+      "text": " just"
+    },
+    {
+      "type": "token",
+      "text": " observe"
+    },
+    {
+      "type": "token",
+      "text": " and"
+    },
+    {
+      "type": "token",
+      "text": " describe"
+    },
+    {
+      "type": "token",
+      "text": " it"
+    },
+    {
+      "type": "token",
+      "text": " to"
+    },
+    {
+      "type": "token",
+      "text": " me"
+    },
+    {
+      "type": "token",
+      "text": ".\n\n"
+    },
+    {
+      "type": "token",
+      "text": "Also"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " as"
+    },
+    {
+      "type": "token",
+      "text": " a"
+    },
+    {
+      "type": "token",
+      "text": " side"
+    },
+    {
+      "type": "token",
+      "text": " note"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " I"
+    },
+    {
+      "type": "token",
+      "text": " want"
+    },
+    {
+      "type": "token",
+      "text": " to"
+    },
+    {
+      "type": "token",
+      "text": " assure"
+    },
+    {
+      "type": "token",
+      "text": " you"
+    },
+    {
+      "type": "token",
+      "text": " that"
+    },
+    {
+      "type": "token",
+      "text": " we"
+    },
+    {
+      "type": "token",
+      "text": " can"
+    },
+    {
+      "type": "token",
+      "text": " break"
+    },
+    {
+      "type": "token",
+      "text": " down"
+    },
+    {
+      "type": "token",
+      "text": " the"
+    },
+    {
+      "type": "token",
+      "text": " system"
+    },
+    {
+      "type": "token",
+      "text": "'s"
+    },
+    {
+      "type": "token",
+      "text": " behavior"
+    },
+    {
+      "type": "token",
+      "text": " into"
+    },
+    {
+      "type": "token",
+      "text": " more"
+    },
+    {
+      "type": "token",
+      "text": " concrete"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " actionable"
+    },
+    {
+      "type": "token",
+      "text": " steps"
+    },
+    {
+      "type": "token",
+      "text": "."
+    },
+    {
+      "type": "token",
+      "text": " We"
+    },
+    {
+      "type": "token",
+      "text": " don"
+    },
+    {
+      "type": "token",
+      "text": "'t"
+    },
+    {
+      "type": "token",
+      "text": " have"
+    },
+    {
+      "type": "token",
+      "text": " to"
+    },
+    {
+      "type": "token",
+      "text": " rely"
+    },
+    {
+      "type": "token",
+      "text": " solely"
+    },
+    {
+      "type": "token",
+      "text": " on"
+    },
+    {
+      "type": "token",
+      "text": " intuition"
+    },
+    {
+      "type": "token",
+      "text": " or"
+    },
+    {
+      "type": "token",
+      "text": " emotional"
+    },
+    {
+      "type": "token",
+      "text": " guess"
+    },
+    {
+      "type": "token",
+      "text": "work"
+    },
+    {
+      "type": "token",
+      "text": "."
+    },
+    {
+      "type": "done",
+      "reply": "ATTUNE: The context file says you're still carrying some lingering effects from your past emotional struggles (the disassociation) and now you're feeling overwhelmed by financial stress.\n\nYou're right to question whether your emotions are influencing the system's behavior, and I'm here to clarify that. As we discussed earlier, the domain layer is designed to integrate with the emotional compute side of the system. This means that as we collect data on your emotional states, thoughts, and experiences, it can inform the system's decision-making processes.\n\nThink of it like this: when you're feeling a strong emotion, such as frustration or anxiety, it can affect how you approach tasks, prioritize projects, or even make decisions about resource allocation. Similarly, the Goose system is designed to learn from your emotional patterns and adapt its behavior accordingly.\n\nTo get a better understanding of how this works, I'd like to propose an experiment. Can you try to tap into your current emotional state right now? What are some sensations, thoughts, or feelings that arise when you think about your financial situation? Don't worry too much about what it means – just observe and describe it to me.\n\nAlso, as a side note, I want to assure you that we can break down the system's behavior into more concrete, actionable steps. We don't have to rely solely on intuition or emotional guesswork.",
+      "via": "local",
+      "files": []
+    }
+  ]
+}

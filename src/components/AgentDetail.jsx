@@ -109,7 +109,7 @@ export default function AgentDetail({ agent, onClose, onInvoke }) {
       <div
         onClick={onClose}
         style={{
-          position: 'fixed', inset: 0, background: 'rgba(9,8,6,0.55)',
+          position: 'fixed', inset: 0, background: 'var(--color-scrim)',
           backdropFilter: 'blur(6px)',
           WebkitBackdropFilter: 'blur(6px)',
           zIndex: 40, animation: 'fade-in var(--dur-base) var(--ease-out)',

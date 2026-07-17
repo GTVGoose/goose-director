@@ -20,7 +20,7 @@
      text-3 must stay readable (≥4:1 on bg) — #4a4640 is disabled-only. */
   --color-text:          #f2ede2;
   --color-text-2:        #9a9384;
-  --color-text-3:        #7c7668;
+  --color-text-3:        #8a8478;   /* T22e — modest lift from #7c7668 (~3.5:1 on surface-2/-3 at 9-11px was under AA); ~4.4:1 → warmer-neutral, still recedes. Visual-pass at G7. */
   --color-text-disabled: #4a4640;
 
   /* ── Active: amber / firelight / presence ── */
@@ -69,11 +69,45 @@
   /* ── Availability indicators ── */
   --color-available:     #489860;
   --color-unavailable:   #d85050;
+  /* Status-pill fills/borders (T22e) — value-identical to the Settings literals. */
+  --color-available-bg:       rgba(72,152,96,0.15);
+  --color-available-border:   rgba(72,152,96,0.30);
+  --color-unavailable-bg:     rgba(216,80,80,0.12);
+  --color-unavailable-border: rgba(216,80,80,0.25);
+  --color-neutral-bg:         rgba(138,132,120,0.12);   /* off/disabled pill wash */
+
+  /* ── Surface effects — shadows, glow, scrim (themeable; T22) ── */
+  --shadow-popover:  0 8px 24px rgba(0,0,0,0.45);
+  --shadow-popover-2: 0 8px 24px rgba(0,0,0,0.45), 0 1px 2px rgba(0,0,0,0.4);  /* T22e — two-layer popover form (Invoke/ThreadTOC) preserving the faint contact layer */
+  --shadow-inset-hi: inset 0 1px 0 rgba(255,248,230,0.04);
+  --color-glow-rgb:        160,140,255;             /* T22e — neuron/pulse glow rgb, composed via rgba() so a theme repoints one value */
+  --color-glow:            rgb(var(--color-glow-rgb)); /* solid form (was #6a54b8; unused — repointed to the actual glow colour) */
+  --color-scrim:           rgba(9,8,6,0.55);        /* modal backdrop */
+  --color-selection:       rgba(106,84,184,0.35);   /* ::selection tint */
+  --color-row-hover:       rgba(255,248,230,0.035);  /* .clickable-row hover wash */
+  --color-scrollbar-hover: rgba(255,248,230,0.30);
 
   /* ── Layout ── */
   --sidebar-width: 200px;
   --radius:    4px;
   --radius-lg: 6px;
+  /* Radius scale (T22) — --radius/--radius-lg kept for back-compat. */
+  --radius-sm:   3px;
+  --radius-md:   6px;
+  --radius-pill: 999px;
+  /* T22d — value-named rungs for the remaining component literals so the
+     migration is exact/zero-shift AND themeable. Semantic consolidation of
+     these value rungs (e.g. folding 5/7 into the sm/md scale) is a taste call
+     deferred to G7. A theme need only override the rungs it cares about. */
+  --radius-2:  2px;   /* hairline — thin bars / connector paths */
+  --radius-5:  5px;   /* small controls — chips, selects, mini-buttons */
+  --radius-7:  7px;   /* inspector cards */
+  --radius-8:  8px;   /* cards, buttons, panels, composer (workhorse) */
+  --radius-10: 10px;  /* floating popovers */
+  --radius-13: 13px;  /* local-model node */
+  --radius-20: 20px;  /* large pill button */
+  --border-width:        0.5px;   /* the fine-etching default; a chunky theme flips this */
+  --border-width-strong: 2px;
 
   /* ── Motion — one easing vocabulary, nothing interactive over 300ms ── */
   --ease-out:  cubic-bezier(0.32, 0.72, 0, 1);
@@ -85,7 +119,9 @@
   accent-color: var(--color-accent);
 
   /* ── Typography ── slightly heavy, deliberate */
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  --font-mono: 'SF Mono', 'Fira Mono', 'Menlo', monospace;  /* T22: was referenced 7× but never defined → var(--font-mono) rendered sans */
+  --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;  /* T23: lifted so a theme can re-font the whole UI */
+  font-family: var(--font-ui);
   font-size: 14px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
@@ -107,15 +143,15 @@ button {
 /* ── Scrollbar ── thin, visible on hover-scroll surfaces */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,248,230,0.30); }
+::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: var(--radius-sm); }
+::-webkit-scrollbar-thumb:hover { background: var(--color-scrollbar-hover); }
 
 /* Scroll areas never chain-scroll their parent */
 main, .scroll-y { overscroll-behavior: contain; }
 .scroll-y { overflow-y: auto; min-height: 0; }
 
 /* ── Selection ── violet tint */
-::selection { background: rgba(106,84,184,0.35); color: var(--color-text); }
+::selection { background: var(--color-selection); color: var(--color-text); }
 
 /* ── Inputs ── dark ground, etched border */
 input, select, textarea {
@@ -147,7 +183,7 @@ select option { background: var(--color-surface-2); color: var(--color-text); }
 
 /* ── Monospace values ── */
 .mono {
-  font-family: 'SF Mono', 'Fira Mono', 'Menlo', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.02em;
 }
@@ -158,7 +194,7 @@ select option { background: var(--color-surface-2); color: var(--color-text); }
   transition: background 0.12s, box-shadow 0.12s;
 }
 .clickable-row:hover {
-  box-shadow: inset 0 0 0 100vmax rgba(255,248,230,0.035);
+  box-shadow: inset 0 0 0 100vmax var(--color-row-hover);
 }
 
 /* ── Ghost buttons ── */

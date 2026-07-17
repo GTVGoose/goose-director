@@ -1,6 +1,6 @@
 import { personalNav } from '../personal-extensions.jsx'
 
-export default function Sidebar({ view, onNav, escalations, reviews, vaultName }) {
+export default function Sidebar({ view, onNav, escalations, reviews, vaultName, chatHome, councilLabel, membrane, library, runInspector, projects, visibility, builder }) {
 
   const nav = (id, icon, label, sub, badge) => (
     <button
@@ -46,7 +46,7 @@ export default function Sidebar({ view, onNav, escalations, reviews, vaultName }
               fontSize: 10,
               fontWeight: 600,
               padding: '1px 5px',
-              borderRadius: 999,
+              borderRadius: 'var(--radius-pill)',
               minWidth: 18,
               textAlign: 'center',
             }}>{badge.count}</span>
@@ -80,9 +80,15 @@ export default function Sidebar({ view, onNav, escalations, reviews, vaultName }
   const renderPersonalNav = () => {
     const out = []
     let cur = 'Act'
-    for (const item of personalNav) {
+    // Membrane (T14) is hidden in the shipped product unless ui.membrane is set. Filter
+    // it out BEFORE the section walk so its 'Shared' header isn't emitted empty.
+    const items = personalNav.filter(it => it.id !== 'membrane' || membrane)
+    for (const item of items) {
       if (item.section !== cur) { out.push(section(item.section)); cur = item.section }
-      out.push(nav(item.id, item.icon, item.label, item.sub))
+      // Flag-gated "Sandbox" → "Council" rename (label-only; view id stays `sandbox`).
+      const label = (councilLabel && item.id === 'sandbox') ? 'Council' : item.label
+      const sub = (councilLabel && item.id === 'sandbox') ? 'Many models, one council' : item.sub
+      out.push(nav(item.id, item.icon, label, sub))
     }
     return out
   }
@@ -131,21 +137,47 @@ export default function Sidebar({ view, onNav, escalations, reviews, vaultName }
         flexDirection: 'column',
         paddingTop: 6,
       }}>
-        {section('Observe')}
-        {nav('dashboard', 'layout-dashboard', 'Overview', 'System state at a glance')}
-        {nav('agents', 'users', 'Agents', 'Who runs, how, and where')}
-        {nav('knowledge', 'books', 'Knowledge', 'Search all canon and docs')}
+        {/* Chat-first landing (T10) — flag-gated (G7). Default off → not rendered,
+            so the nav is byte-identical to today until David flips ui.chatHome. */}
+        {chatHome && section('Do')}
+        {chatHome && nav('chat', 'messages', 'Chat', 'Talk to the Brain')}
 
-        {section('Monitor')}
-        {nav('status', 'bell', 'Status Layer', 'Background agent activity', statusBadge)}
-        {nav('canon', 'git-branch', 'Canon State', 'What\'s inside and outside')}
+        {/* Full Visibility consolidation (owner directive 2026-07-17): with
+            ui.visibility on, EVERY information surface — Overview, Agents,
+            Knowledge, Status, Canon, Library, Runs, Projects — lives as a tab
+            inside the single Visibility entry, and the Observe/Monitor sidebar
+            sections fold away entirely. The status badge (escalations/reviews)
+            moves onto the Visibility entry so the signal survives the fold.
+            With the flag off, the classic expanded nav renders unchanged. */}
+        {!visibility && section('Observe')}
+        {!visibility && nav('dashboard', 'layout-dashboard', 'Overview', 'System state at a glance')}
+        {!visibility && nav('agents', 'users', 'Agents', 'Who runs, how, and where')}
+        {!visibility && nav('knowledge', 'books', 'Knowledge', 'Search all canon and docs')}
+        {/* GU8.1/8.3: standalone Library/Projects entries — only meaningful in
+            the expanded (non-consolidated) IA. */}
+        {!visibility && library && nav('library', 'files', 'Library', 'Durable artifacts and outputs')}
+        {!visibility && projects && nav('projects', 'folders', 'Projects', 'Durable context boundaries')}
+
+        {visibility && section('System')}
+        {visibility && nav('visibility', 'eye', 'Visibility', 'Explore the system — overview to records', statusBadge)}
+
+        {!visibility && section('Monitor')}
+        {!visibility && runInspector && nav('runs', 'list-details', 'Runs', 'Council run traces')}
+        {!visibility && nav('status', 'bell', 'Status Layer', 'Background agent activity', statusBadge)}
+        {!visibility && nav('canon', 'git-branch', 'Canon State', 'What\'s inside and outside')}
 
         {section('Act')}
-        {nav('invoke', 'terminal-2', 'Invoke', 'Send work to any agent or model')}
+        {/* GU10.2: Agentic System Builder — flag-gated (ui.builder, default off; flip is G7). */}
+        {builder && nav('builder', 'wand', 'Builder', 'Build your first agentic system')}
+        {/* Invoke + Council folded into Chat (owner directive 2026-07-17): the
+            chat landing conducts one-off work and convenes the council rail.
+            Recurring work gets its own surface: */}
+        {nav('automations', 'repeat', 'Automations', 'Scheduled prompts that run themselves')}
         {renderPersonalNav()}
 
         <div style={{ flex: 1 }} />
 
+        {nav('help', 'help', 'Help', 'Guides and glossary')}
         {nav('settings', 'settings', 'Settings', 'API keys and configuration')}
       </div>
 

@@ -72,7 +72,7 @@ export default function ThreadTOC({ conversation, visible, onToggle, onScrollTo 
           background: visible ? 'var(--color-text)' : 'var(--color-surface)',
           color: visible ? 'var(--color-surface)' : 'var(--color-text-2)',
           border: '0.5px solid var(--color-border-strong)',
-          borderRadius: 6,
+          borderRadius: 'var(--radius-md)',
           padding: '5px 10px',
           fontSize: 12,
           cursor: 'pointer',
@@ -88,7 +88,7 @@ export default function ThreadTOC({ conversation, visible, onToggle, onScrollTo 
           <span style={{
             fontSize: 10, fontWeight: 600,
             background: visible ? 'var(--color-border-strong)' : 'var(--color-border)',
-            padding: '1px 5px', borderRadius: 999,
+            padding: '1px 5px', borderRadius: 'var(--radius-pill)',
           }}>{entries.length}</span>
         )}
       </button>
@@ -103,13 +103,13 @@ export default function ThreadTOC({ conversation, visible, onToggle, onScrollTo 
           maxHeight: '62vh',
           background: 'var(--color-surface-2)',
           border: '0.5px solid var(--color-border-mid)',
-          borderRadius: 10,
+          borderRadius: 'var(--radius-10)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
           flexShrink: 0,
           zIndex: 30,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.5), 0 1px 2px rgba(0,0,0,0.4)',
+          boxShadow: 'var(--shadow-popover-2)',
           animation: 'fade-in var(--dur-fast) var(--ease-out)',
         }}>
           {/* Header */}
@@ -138,7 +138,7 @@ export default function ThreadTOC({ conversation, visible, onToggle, onScrollTo 
                   onClick={() => onScrollTo(entry.index)}
                   style={{
                     padding: '7px 8px',
-                    borderRadius: 6,
+                    borderRadius: 'var(--radius-md)',
                     cursor: 'pointer',
                     marginBottom: 2,
                   }}
@@ -172,7 +172,7 @@ export default function ThreadTOC({ conversation, visible, onToggle, onScrollTo 
                             return (
                               <span key={tag.type} style={{
                                 fontSize: 10, fontWeight: 500,
-                                padding: '1px 5px', borderRadius: 3,
+                                padding: '1px 5px', borderRadius: 'var(--radius-sm)',
                                 background: s.bg, color: s.text,
                               }}>{tag.label}</span>
                             )
@@ -203,7 +203,7 @@ export default function ThreadTOC({ conversation, visible, onToggle, onScrollTo 
                 width: '100%',
                 background: 'none',
                 border: '0.5px solid var(--color-border-strong)',
-                borderRadius: 6,
+                borderRadius: 'var(--radius-md)',
                 padding: '6px 8px',
                 fontSize: 11,
                 color: 'var(--color-text-2)',

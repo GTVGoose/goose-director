@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { StatusBadge } from './Dashboard.jsx'
+import { clickable } from '../lib/a11y.js'
 
 const DOC_TYPE_ICONS = {
   'Agent Charter': 'ti-user',
@@ -78,7 +79,7 @@ export default function Knowledge() {
               placeholder="Search docs…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              style={{ fontSize: 13, padding: '6px 10px', borderRadius: 6, border: '0.5px solid var(--color-border-strong)', background: 'var(--color-surface)', color: 'var(--color-text)', width: 200 }}
+              style={{ fontSize: 13, padding: '6px 10px', borderRadius: 'var(--radius-md)', border: '0.5px solid var(--color-border-strong)', background: 'var(--color-surface)', color: 'var(--color-text)', width: 200 }}
             />
           )}
         </div>
@@ -176,7 +177,7 @@ export default function Knowledge() {
                 <span style={{ fontSize: 11, color: 'var(--color-text-3)', display: 'block', marginBottom: 4 }}>Tags</span>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                   {selected.tags.map(t => (
-                    <span key={t} style={{ fontSize: 11, padding: '2px 7px', background: 'var(--color-border)', borderRadius: 4, color: 'var(--color-text-2)' }}>{t}</span>
+                    <span key={t} style={{ fontSize: 11, padding: '2px 7px', background: 'var(--color-border)', borderRadius: 'var(--radius)', color: 'var(--color-text-2)' }}>{t}</span>
                   ))}
                 </div>
               </div>
@@ -208,10 +209,10 @@ function DocRow({ doc, selected, onClick, showRepo }) {
   const icon = DOC_TYPE_ICONS[doc.docType] || 'ti-file-text'
   return (
     <div
-      onClick={onClick}
+      {...clickable(onClick)}
       style={{
         display: 'flex', alignItems: 'flex-start', gap: 10,
-        padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+        padding: '8px 10px', borderRadius: 'var(--radius-8)', cursor: 'pointer',
         background: selected ? 'var(--color-border)' : 'var(--color-surface)',
         border: `0.5px solid ${selected ? 'var(--color-border-strong)' : 'var(--color-border)'}`,
       }}
@@ -230,7 +231,7 @@ function DocRow({ doc, selected, onClick, showRepo }) {
             </>
           )}
           {showRepo && doc.repoName && (
-            <span style={{ fontSize: 10, padding: '0px 5px', borderRadius: 4, background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border)', color: 'var(--color-text-3)', marginLeft: 'auto' }}>{doc.repoName}</span>
+            <span style={{ fontSize: 10, padding: '0px 5px', borderRadius: 'var(--radius)', background: 'var(--color-surface-2)', border: '0.5px solid var(--color-border)', color: 'var(--color-text-3)', marginLeft: 'auto' }}>{doc.repoName}</span>
           )}
           <span style={{ fontSize: 11, color: 'var(--color-text-3)', marginLeft: showRepo && doc.repoName ? 6 : 'auto' }}>{doc.lastMod}</span>
         </div>
@@ -247,10 +248,10 @@ function DocRow({ doc, selected, onClick, showRepo }) {
 function ThreadRow({ thread, selected, onClick, onDelete }) {
   return (
     <div
-      onClick={onClick}
+      {...clickable(onClick)}
       style={{
         display: 'flex', alignItems: 'center', gap: 10,
-        padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+        padding: '8px 10px', borderRadius: 'var(--radius-8)', cursor: 'pointer',
         background: selected ? 'var(--color-border)' : 'var(--color-surface)',
         border: `0.5px solid ${selected ? 'var(--color-border-strong)' : 'var(--color-border)'}`,
       }}
@@ -286,7 +287,7 @@ function TabBtn({ active, onClick, children }) {
       style={{
         background: active ? 'var(--color-surface)' : 'none',
         border: active ? '0.5px solid var(--color-border-strong)' : '0.5px solid transparent',
-        borderRadius: 6, padding: '5px 10px',
+        borderRadius: 'var(--radius-md)', padding: '5px 10px',
         fontSize: 12, color: active ? 'var(--color-text)' : 'var(--color-text-3)',
         fontWeight: active ? 500 : 400,
         cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
@@ -300,7 +301,7 @@ function FilterSelect({ label, value, onChange, options }) {
     <select
       value={value}
       onChange={e => onChange(e.target.value)}
-      style={{ fontSize: 12, padding: '4px 8px', borderRadius: 5, border: '0.5px solid var(--color-border-strong)', background: 'var(--color-surface)', color: 'var(--color-text)' }}
+      style={{ fontSize: 12, padding: '4px 8px', borderRadius: 'var(--radius-5)', border: '0.5px solid var(--color-border-strong)', background: 'var(--color-surface)', color: 'var(--color-text)' }}
     >
       {options.map(o => (
         <option key={o} value={o}>{o === 'all' ? `All ${label.toLowerCase()}s` : o}</option>

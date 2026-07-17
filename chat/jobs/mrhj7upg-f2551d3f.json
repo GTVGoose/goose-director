@@ -1,0 +1,693 @@
+{
+  "id": "mrhj7upg-f2551d3f",
+  "threadId": "director",
+  "channel": "pwa",
+  "text": "I mean, not high load. It's just late and it's been a long day. You know, got a few different projects, cooking and clod right now, trying to finish up the Nexus and all that. But, you know, I think here we could probably just interface with the domain layer. So, you know, I know we're supposed to do our daily log. So what exactly is that? What do you want for that?\n [BLANK_AUDIO]",
+  "status": "done",
+  "via": "local",
+  "reply": "ATTUNE: The context file says you're a bit exhausted from a long day of work on multiple projects. Your tone suggests you're open to getting through the task efficiently, but also don't mind if it's brief.\n\nFor the daily log, I'd like to know about any changes or updates in your domain layer that we can discuss and address together. This might include anything from notes on new ideas to observations about how different projects are intersecting.\n\nTo make it easier, let me ask: What specific topics would you like to cover during our daily log? Would you like to focus on Nexus development, or any of the other projects you mentioned (clod, cooking)? Or perhaps there's something else on your mind that we should discuss?\n\nI'll keep my responses concise and focused on helping us get through the task efficiently.",
+  "files": [],
+  "createdAt": "2026-07-12T08:28:57.268Z",
+  "doneAt": "2026-07-12T08:29:05.189Z",
+  "error": null,
+  "deltas": [
+    {
+      "type": "status",
+      "text": "Thinking…"
+    },
+    {
+      "type": "token",
+      "text": "ATT"
+    },
+    {
+      "type": "token",
+      "text": "UNE"
+    },
+    {
+      "type": "token",
+      "text": ":"
+    },
+    {
+      "type": "token",
+      "text": " The"
+    },
+    {
+      "type": "token",
+      "text": " context"
+    },
+    {
+      "type": "token",
+      "text": " file"
+    },
+    {
+      "type": "token",
+      "text": " says"
+    },
+    {
+      "type": "token",
+      "text": " you"
+    },
+    {
+      "type": "token",
+      "text": "'re"
+    },
+    {
+      "type": "token",
+      "text": " a"
+    },
+    {
+      "type": "token",
+      "text": " bit"
+    },
+    {
+      "type": "token",
+      "text": " exhausted"
+    },
+    {
+      "type": "token",
+      "text": " from"
+    },
+    {
+      "type": "token",
+      "text": " a"
+    },
+    {
+      "type": "token",
+      "text": " long"
+    },
+    {
+      "type": "token",
+      "text": " day"
+    },
+    {
+      "type": "token",
+      "text": " of"
+    },
+    {
+      "type": "token",
+      "text": " work"
+    },
+    {
+      "type": "token",
+      "text": " on"
+    },
+    {
+      "type": "token",
+      "text": " multiple"
+    },
+    {
+      "type": "token",
+      "text": " projects"
+    },
+    {
+      "type": "token",
+      "text": "."
+    },
+    {
+      "type": "token",
+      "text": " Your"
+    },
+    {
+      "type": "token",
+      "text": " tone"
+    },
+    {
+      "type": "token",
+      "text": " suggests"
+    },
+    {
+      "type": "token",
+      "text": " you"
+    },
+    {
+      "type": "token",
+      "text": "'re"
+    },
+    {
+      "type": "token",
+      "text": " open"
+    },
+    {
+      "type": "token",
+      "text": " to"
+    },
+    {
+      "type": "token",
+      "text": " getting"
+    },
+    {
+      "type": "token",
+      "text": " through"
+    },
+    {
+      "type": "token",
+      "text": " the"
+    },
+    {
+      "type": "token",
+      "text": " task"
+    },
+    {
+      "type": "token",
+      "text": " efficiently"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " but"
+    },
+    {
+      "type": "token",
+      "text": " also"
+    },
+    {
+      "type": "token",
+      "text": " don"
+    },
+    {
+      "type": "token",
+      "text": "'t"
+    },
+    {
+      "type": "token",
+      "text": " mind"
+    },
+    {
+      "type": "token",
+      "text": " if"
+    },
+    {
+      "type": "token",
+      "text": " it"
+    },
+    {
+      "type": "token",
+      "text": "'s"
+    },
+    {
+      "type": "token",
+      "text": " brief"
+    },
+    {
+      "type": "token",
+      "text": ".\n\n"
+    },
+    {
+      "type": "token",
+      "text": "For"
+    },
+    {
+      "type": "token",
+      "text": " the"
+    },
+    {
+      "type": "token",
+      "text": " daily"
+    },
+    {
+      "type": "token",
+      "text": " log"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " I"
+    },
+    {
+      "type": "token",
+      "text": "'d"
+    },
+    {
+      "type": "token",
+      "text": " like"
+    },
+    {
+      "type": "token",
+      "text": " to"
+    },
+    {
+      "type": "token",
+      "text": " know"
+    },
+    {
+      "type": "token",
+      "text": " about"
+    },
+    {
+      "type": "token",
+      "text": " any"
+    },
+    {
+      "type": "token",
+      "text": " changes"
+    },
+    {
+      "type": "token",
+      "text": " or"
+    },
+    {
+      "type": "token",
+      "text": " updates"
+    },
+    {
+      "type": "token",
+      "text": " in"
+    },
+    {
+      "type": "token",
+      "text": " your"
+    },
+    {
+      "type": "token",
+      "text": " domain"
+    },
+    {
+      "type": "token",
+      "text": " layer"
+    },
+    {
+      "type": "token",
+      "text": " that"
+    },
+    {
+      "type": "token",
+      "text": " we"
+    },
+    {
+      "type": "token",
+      "text": " can"
+    },
+    {
+      "type": "token",
+      "text": " discuss"
+    },
+    {
+      "type": "token",
+      "text": " and"
+    },
+    {
+      "type": "token",
+      "text": " address"
+    },
+    {
+      "type": "token",
+      "text": " together"
+    },
+    {
+      "type": "token",
+      "text": "."
+    },
+    {
+      "type": "token",
+      "text": " This"
+    },
+    {
+      "type": "token",
+      "text": " might"
+    },
+    {
+      "type": "token",
+      "text": " include"
+    },
+    {
+      "type": "token",
+      "text": " anything"
+    },
+    {
+      "type": "token",
+      "text": " from"
+    },
+    {
+      "type": "token",
+      "text": " notes"
+    },
+    {
+      "type": "token",
+      "text": " on"
+    },
+    {
+      "type": "token",
+      "text": " new"
+    },
+    {
+      "type": "token",
+      "text": " ideas"
+    },
+    {
+      "type": "token",
+      "text": " to"
+    },
+    {
+      "type": "token",
+      "text": " observations"
+    },
+    {
+      "type": "token",
+      "text": " about"
+    },
+    {
+      "type": "token",
+      "text": " how"
+    },
+    {
+      "type": "token",
+      "text": " different"
+    },
+    {
+      "type": "token",
+      "text": " projects"
+    },
+    {
+      "type": "token",
+      "text": " are"
+    },
+    {
+      "type": "token",
+      "text": " intersect"
+    },
+    {
+      "type": "token",
+      "text": "ing"
+    },
+    {
+      "type": "token",
+      "text": ".\n\n"
+    },
+    {
+      "type": "token",
+      "text": "To"
+    },
+    {
+      "type": "token",
+      "text": " make"
+    },
+    {
+      "type": "token",
+      "text": " it"
+    },
+    {
+      "type": "token",
+      "text": " easier"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " let"
+    },
+    {
+      "type": "token",
+      "text": " me"
+    },
+    {
+      "type": "token",
+      "text": " ask"
+    },
+    {
+      "type": "token",
+      "text": ":"
+    },
+    {
+      "type": "token",
+      "text": " What"
+    },
+    {
+      "type": "token",
+      "text": " specific"
+    },
+    {
+      "type": "token",
+      "text": " topics"
+    },
+    {
+      "type": "token",
+      "text": " would"
+    },
+    {
+      "type": "token",
+      "text": " you"
+    },
+    {
+      "type": "token",
+      "text": " like"
+    },
+    {
+      "type": "token",
+      "text": " to"
+    },
+    {
+      "type": "token",
+      "text": " cover"
+    },
+    {
+      "type": "token",
+      "text": " during"
+    },
+    {
+      "type": "token",
+      "text": " our"
+    },
+    {
+      "type": "token",
+      "text": " daily"
+    },
+    {
+      "type": "token",
+      "text": " log"
+    },
+    {
+      "type": "token",
+      "text": "?"
+    },
+    {
+      "type": "token",
+      "text": " Would"
+    },
+    {
+      "type": "token",
+      "text": " you"
+    },
+    {
+      "type": "token",
+      "text": " like"
+    },
+    {
+      "type": "token",
+      "text": " to"
+    },
+    {
+      "type": "token",
+      "text": " focus"
+    },
+    {
+      "type": "token",
+      "text": " on"
+    },
+    {
+      "type": "token",
+      "text": " Nexus"
+    },
+    {
+      "type": "token",
+      "text": " development"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " or"
+    },
+    {
+      "type": "token",
+      "text": " any"
+    },
+    {
+      "type": "token",
+      "text": " of"
+    },
+    {
+      "type": "token",
+      "text": " the"
+    },
+    {
+      "type": "token",
+      "text": " other"
+    },
+    {
+      "type": "token",
+      "text": " projects"
+    },
+    {
+      "type": "token",
+      "text": " you"
+    },
+    {
+      "type": "token",
+      "text": " mentioned"
+    },
+    {
+      "type": "token",
+      "text": " ("
+    },
+    {
+      "type": "token",
+      "text": "cl"
+    },
+    {
+      "type": "token",
+      "text": "od"
+    },
+    {
+      "type": "token",
+      "text": ","
+    },
+    {
+      "type": "token",
+      "text": " cooking"
+    },
+    {
+      "type": "token",
+      "text": ")?"
+    },
+    {
+      "type": "token",
+      "text": " Or"
+    },
+    {
+      "type": "token",
+      "text": " perhaps"
+    },
+    {
+      "type": "token",
+      "text": " there"
+    },
+    {
+      "type": "token",
+      "text": "'s"
+    },
+    {
+      "type": "token",
+      "text": " something"
+    },
+    {
+      "type": "token",
+      "text": " else"
+    },
+    {
+      "type": "token",
+      "text": " on"
+    },
+    {
+      "type": "token",
+      "text": " your"
+    },
+    {
+      "type": "token",
+      "text": " mind"
+    },
+    {
+      "type": "token",
+      "text": " that"
+    },
+    {
+      "type": "token",
+      "text": " we"
+    },
+    {
+      "type": "token",
+      "text": " should"
+    },
+    {
+      "type": "token",
+      "text": " discuss"
+    },
+    {
+      "type": "token",
+      "text": "?\n\n"
+    },
+    {
+      "type": "token",
+      "text": "I"
+    },
+    {
+      "type": "token",
+      "text": "'ll"
+    },
+    {
+      "type": "token",
+      "text": " keep"
+    },
+    {
+      "type": "token",
+      "text": " my"
+    },
+    {
+      "type": "token",
+      "text": " responses"
+    },
+    {
+      "type": "token",
+      "text": " concise"
+    },
+    {
+      "type": "token",
+      "text": " and"
+    },
+    {
+      "type": "token",
+      "text": " focused"
+    },
+    {
+      "type": "token",
+      "text": " on"
+    },
+    {
+      "type": "token",
+      "text": " helping"
+    },
+    {
+      "type": "token",
+      "text": " us"
+    },
+    {
+      "type": "token",
+      "text": " get"
+    },
+    {
+      "type": "token",
+      "text": " through"
+    },
+    {
+      "type": "token",
+      "text": " the"
+    },
+    {
+      "type": "token",
+      "text": " task"
+    },
+    {
+      "type": "token",
+      "text": " efficiently"
+    },
+    {
+      "type": "token",
+      "text": "."
+    },
+    {
+      "type": "done",
+      "reply": "ATTUNE: The context file says you're a bit exhausted from a long day of work on multiple projects. Your tone suggests you're open to getting through the task efficiently, but also don't mind if it's brief.\n\nFor the daily log, I'd like to know about any changes or updates in your domain layer that we can discuss and address together. This might include anything from notes on new ideas to observations about how different projects are intersecting.\n\nTo make it easier, let me ask: What specific topics would you like to cover during our daily log? Would you like to focus on Nexus development, or any of the other projects you mentioned (clod, cooking)? Or perhaps there's something else on your mind that we should discuss?\n\nI'll keep my responses concise and focused on helping us get through the task efficiently.",
+      "via": "local",
+      "files": []
+    }
+  ]
+}

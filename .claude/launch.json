@@ -6,6 +6,12 @@
       "runtimeExecutable": "bash",
       "runtimeArgs": ["-lc", "NEXUS_PORT=3210 npm run dev"],
       "port": 5173
+    },
+    {
+      "name": "nexus-bench-dev",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-lc", "NEXUS_PORT=3002 node server.mjs"],
+      "port": 3002
     }
   ]
 }
