@@ -1,3 +1,24 @@
+> **UPDATE 2026-07-21 — blockers 1–3 fixed.** Implemented and verified in
+> `gtvgoose/nexus`, PR #2 (`claude/beta-readiness-fixes`):
+> - **Security chain closed** — Host-header allowlist middleware (kills the
+>   DNS-rebind RCE/file-read class), `/api/config` refuses `/`/home/system vault
+>   paths, voice PIN fails closed on the default + constant-time + rate-limited,
+>   `open_app` now needs approval, `app.listen` handles `EADDRINUSE`. Verified
+>   live (curl): attacker Host → 403, `repoPath:"/"` → 400, default PIN → locked.
+> - **First-run wall removed** — vault-less mode: Setup leads with "Start using
+>   Nexus →", app lands on chat/council, vault-only views hidden, chat-first +
+>   Council label default-on. Verified in Chromium end-to-end.
+> - **Cost meter wired** — persistent top-bar meter polling `/api/usage` on every
+>   view; "restart to apply" copy corrected; `res.ok` checks + Knowledge catch;
+>   stream parsers now packet-boundary-correct so the meter can't under-count.
+>   Verified in Chromium (meter renders on a fresh session).
+> - Also: `threads/**` removed from the DMG bundle; `BETA-TESTING.md` added.
+>
+> **Still open before a wider/anonymous release:** code signing + notarization
+> (needs the Apple Developer cert — collaborators use right-click→Open until
+> then), app icon, in-app update channel, budget persistence + per-call timeouts.
+> The app is now ready for a trusted-collaborator beta (e.g. Alex Happy).
+
 # Nexus PRODUCT (B lineage) beta-readiness audit — 2026-07-21
 
 **Repo audited:** `gtvgoose/nexus` (the product build testers actually get), cloned and audited with
