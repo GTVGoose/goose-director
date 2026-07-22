@@ -174,6 +174,131 @@ export function initTelegram(deps) {
     for (const id of targets) await sendDocument(id, filePath, filename)
   }
 
+  // ── Note taker (verbatim capture from the phone) ─────────────────────────────
+  // A live meeting / call needs CAPTURE, not execution. In a note session every
+  // text and voice note is appended VERBATIM to an append-only markdown log and
+  // is NEVER routed through the agent loop — so nothing you dictate gets "run",
+  // and nothing is lost across a server restart (it's on disk the instant it
+  // lands). Start: /note [title]. Capture: just type or send a voice note.
+  // Finish: /endnote (delivers the compiled notes back as a file). Review any
+  // time: /notes. One-off line without a session: /n <text>.
+  function resolveNotesFile() {
+    if (process.env.NEXUS_NOTES_FILE) return process.env.NEXUS_NOTES_FILE
+    try {
+      if (REPO && fs.existsSync(REPO) && fs.statSync(REPO).isDirectory()) {
+        return path.join(REPO, 'DIRECTOR_NOTES.md')
+      }
+    } catch {}
+    const appSupport = path.join(os.homedir(), 'Library', 'Application Support', 'Nexus')
+    try { if (fs.existsSync(appSupport)) return path.join(appSupport, 'DIRECTOR_NOTES.md') } catch {}
+    return path.join(os.tmpdir(), 'DIRECTOR_NOTES.md')
+  }
+  const NOTES_FILE = resolveNotesFile()
+
+  function ensureNotesFile() {
+    try {
+      fs.mkdirSync(path.dirname(NOTES_FILE), { recursive: true })
+      if (!fs.existsSync(NOTES_FILE)) {
+        fs.writeFileSync(NOTES_FILE, `# Director Notes\n\nAppend-only capture from the phone (Telegram note taker). Newest at the bottom.\n`)
+      }
+      return true
+    } catch (e) {
+      console.error('[Telegram] notes file init failed:', e.message)
+      return false
+    }
+  }
+
+  function appendNote(line) {
+    if (!ensureNotesFile()) return false
+    try {
+      fs.appendFileSync(NOTES_FILE, line.endsWith('\n') ? line : line + '\n')
+      return true
+    } catch (e) {
+      console.error('[Telegram] appendNote failed:', e.message)
+      return false
+    }
+  }
+
+  const pad2 = (n) => String(n).padStart(2, '0')
+  function clockStamp() { const d = new Date(); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}` }
+  function dayStamp() { return new Date().toISOString().slice(0, 10) }
+
+  // Per-chat active note session: { title, startedAt, count, lines: [] }
+  const noteSessions = new Map()
+  const activeSession = (chatId) => noteSessions.get(String(chatId))
+
+  function startNoteSession(chatId, title) {
+    const finalTitle = (title || '').trim() || `Session ${dayStamp()} ${clockStamp()}`
+    const session = { title: finalTitle, startedAt: new Date(), count: 0, lines: [] }
+    noteSessions.set(String(chatId), session)
+    appendNote(`\n---\n\n## 📝 ${finalTitle}\n_Started ${dayStamp()} ${clockStamp()} — via phone_\n`)
+    return session
+  }
+
+  // Capture one note. Returns { session, count } — session is null for an
+  // ad-hoc /n line filed outside any active session.
+  function captureNote(chatId, text, { voice = false } = {}) {
+    const body = (text || '').trim()
+    if (!body) return null
+    const marker = voice ? '🎙' : '•'
+    const session = activeSession(chatId)
+    if (session) {
+      session.count += 1
+      session.lines.push(`\`${clockStamp()}\` ${marker} ${body}`)
+      appendNote(`- \`${clockStamp()}\` ${marker} ${body}`)
+      return { session, count: session.count }
+    }
+    appendNote(`- \`${dayStamp()} ${clockStamp()}\` ${marker} ${body}   _(quick note)_`)
+    return { session: null, count: 0 }
+  }
+
+  function endNoteSession(chatId) {
+    const session = activeSession(chatId)
+    if (!session) return null
+    noteSessions.delete(String(chatId))
+    appendNote(`\n_Ended ${dayStamp()} ${clockStamp()} — ${session.count} note${session.count === 1 ? '' : 's'} captured._\n`)
+    return session
+  }
+
+  // Render a finished session to a temp .md file for delivery to the phone.
+  function writeSessionFile(session) {
+    try {
+      const safe = session.title.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'notes'
+      const out = path.join(os.tmpdir(), `notes-${safe}-${Date.now()}.md`)
+      const body =
+        `# ${session.title}\n\n` +
+        `_${session.count} note${session.count === 1 ? '' : 's'} · started ${session.startedAt.toISOString().slice(0, 16).replace('T', ' ')}_\n\n` +
+        (session.lines.length ? session.lines.map(l => `- ${l}`).join('\n') : '_(no notes captured)_') +
+        `\n`
+      fs.writeFileSync(out, body)
+      return out
+    } catch (e) {
+      console.error('[Telegram] writeSessionFile failed:', e.message)
+      return null
+    }
+  }
+
+  // End the active session and deliver the compiled notes to the phone: the
+  // full log as a .md file (openable/forwardable) plus a plain-text recap.
+  async function finishNotes(chatId) {
+    const session = endNoteSession(chatId)
+    if (!session) {
+      await sendText(chatId, `No active note session. Start one with /note [title].`)
+      return
+    }
+    const recap =
+      `✅ "${session.title}" — ${session.count} note${session.count === 1 ? '' : 's'} saved.\n\n` +
+      (session.lines.length ? session.lines.map(l => `• ${l}`).join('\n') : '(no notes captured)') +
+      `\n\nOn disk: ${NOTES_FILE}`
+    const file = writeSessionFile(session)
+    if (file) {
+      const sent = await sendDocument(chatId, file, path.basename(file))
+      cleanup([file])
+      if (sent) { await sendText(chatId, `✅ "${session.title}" — ${session.count} note${session.count === 1 ? '' : 's'}. File above; full log kept at ${NOTES_FILE}.`); return }
+    }
+    await sendText(chatId, recap)
+  }
+
   // ── Voice transcription (whisper.cpp preferred, then openai-whisper) ─────────
   async function transcribe(srcPath) {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -402,11 +527,56 @@ export function initTelegram(deps) {
     if (text === '/help') {
       await sendText(chatId,
         `Send a message or a voice note to give Umbruh a task on the Mac.\n\n` +
+        `📝 Note taker (verbatim capture — nothing gets "run"):\n` +
+        `/note [title] — start a note session (e.g. /note Tony Knight deal)\n` +
+        `   …then just type or send voice notes; each is saved verbatim.\n` +
+        `/notes — review the current session\n` +
+        `/endnote — finish and get the notes back as a file\n` +
+        `/n <text> — capture a single quick note (no session needed)\n\n` +
         `/status — latest loop / Director status\n` +
         `/forks — open Signal fleet forks awaiting the Director\n` +
         `/brief — build today's Signal Brief on demand\n` +
         `/whoami — show your chat ID\n` +
         `/reset — clear this chat's short-term memory`)
+      return
+    }
+
+    // ── Note taker commands (checked before agent routing so notes are never
+    //    executed). /note [title] · /endnote · /notes · /n <text>. ────────────
+    const noteCmd = /^\/note(?:@\w+)?(?:\s+([\s\S]*))?$/i.exec(text)
+    if (noteCmd) {
+      const arg = (noteCmd[1] || '').trim()
+      if (/^(end|stop|done|finish)$/i.test(arg)) { await finishNotes(chatId); return }
+      if (activeSession(chatId)) {
+        const s = activeSession(chatId)
+        await sendText(chatId, `📝 Already capturing "${s.title}" — ${s.count} note${s.count === 1 ? '' : 's'} so far. Keep talking; /notes to review, /endnote to finish.`)
+        return
+      }
+      const s = startNoteSession(chatId, arg)
+      await sendText(chatId, `📝 Note session started: "${s.title}".\nEverything you type or say now is saved verbatim — nothing is run. /notes to review, /endnote to finish.`)
+      return
+    }
+
+    if (text === '/endnote' || text === '/done') { await finishNotes(chatId); return }
+
+    if (text === '/notes') {
+      const s = activeSession(chatId)
+      if (s) {
+        const tail = s.lines.slice(-15)
+        await sendText(chatId,
+          `📝 "${s.title}" — ${s.count} note${s.count === 1 ? '' : 's'}${s.lines.length > tail.length ? ` (last ${tail.length})` : ''}:\n\n` +
+          (tail.length ? tail.map(l => `• ${l}`).join('\n') : '(nothing captured yet)') +
+          `\n\n/endnote to finish.`)
+      } else {
+        await sendText(chatId, `No active note session. Start one with /note [title].\nSaved notes live at: ${NOTES_FILE}`)
+      }
+      return
+    }
+
+    const quickNote = /^\/n(?:@\w+)?\s+([\s\S]+)$/i.exec(text)
+    if (quickNote) {
+      const r = captureNote(chatId, quickNote[1], { voice: false })
+      await sendText(chatId, r?.session ? `📝 #${r.count}` : `📝 Quick note saved.`)
       return
     }
 
@@ -443,6 +613,13 @@ export function initTelegram(deps) {
         await sendText(chatId, `Couldn't transcribe that. Make sure whisper + ffmpeg are installed (run install-telegram.command). You can also just type the task.`)
         return
       }
+      // In a note session, capture the transcript verbatim — never execute it.
+      // Echo it back so the Director can verify the transcription on the spot.
+      if (activeSession(chatId)) {
+        const r = captureNote(chatId, transcript, { voice: true })
+        await sendText(chatId, `📝 #${r?.count ?? '?'}  🎙 "${transcript}"`)
+        return
+      }
       await sendText(chatId, `🎙 "${transcript}"`)
       await sendChatAction(chatId, 'typing')
       const reply = await runTask(chatId, transcript)
@@ -451,8 +628,13 @@ export function initTelegram(deps) {
       return
     }
 
-    // Plain text → task
+    // Plain text → note capture (if in a session) or task.
     if (text) {
+      if (activeSession(chatId)) {
+        const r = captureNote(chatId, text, { voice: false })
+        await sendText(chatId, `📝 #${r?.count ?? '?'}`)
+        return
+      }
       await sendChatAction(chatId, 'typing')
       const reply = await runTask(chatId, text)
       await sendText(chatId, reply)
