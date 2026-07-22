@@ -60,6 +60,30 @@ Run `deploy-voice.command` to copy config + restart Nexus. On boot the log shows
 
 Commands: `/status` (latest loop status), `/whoami`, `/reset`, `/help`.
 
+### Note taker — verbatim capture from your phone
+
+For a live meeting or call you want **capture, not execution**. A note session
+saves everything you type or say **verbatim** to an append-only log and never
+runs it through the agent — so nothing gets "executed", and nothing is lost if
+Nexus restarts (each note is on disk the moment it lands).
+
+- `/note [title]` — start a session, e.g. `/note Tony Knight deal`. After this,
+  every text and every voice note is captured verbatim. Voice notes are echoed
+  back with their transcript (`📝 #3  🎙 "…"`) so you can verify accuracy on the
+  spot; texts get a running count (`📝 #4`).
+- `/notes` — review the current session (last ~15 lines + total count).
+- `/endnote` (or `/done`, or `/note end`) — finish the session and get the
+  compiled notes back as a Markdown **file** you can forward, plus a recap.
+- `/n <text>` — capture a single quick note with no session (works any time).
+
+While a session is active, normal commands (`/status`, `/reset`, `/endnote`,
+etc.) still work — only free text and voice are captured. End the session to go
+back to giving Umbruh tasks.
+
+The full running log lives at `DIRECTOR_NOTES.md` in your `repoPath` (override
+with the `NEXUS_NOTES_FILE` env var). Sessions are appended under dated `##`
+headings, newest at the bottom.
+
 ### From a loop / cascade → your phone
 
 Any running process posts a status line by calling the helper:
