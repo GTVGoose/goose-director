@@ -47,6 +47,14 @@ def main():
     if not sd.sample_rate == 16000:
         raise SystemExit('unexpected model sample rate')
     result = sd.process(samples).sort_by_start_time()
+    # Crosstalk safety cap: overlapped speech yields mixed embeddings that match
+    # nobody, so unconstrained clustering can spray dozens of phantom speakers
+    # (real 5-person meeting produced 20+, 2026-07-21). If auto mode explodes,
+    # re-run constrained to a sane meeting-sized cap.
+    if num_speakers == -1 and len({seg.speaker for seg in result}) > 8:
+        config.clustering.num_clusters = 8
+        sd = sherpa_onnx.OfflineSpeakerDiarization(config)
+        result = sd.process(samples).sort_by_start_time()
     print(json.dumps([
         {'start': round(seg.start, 3), 'end': round(seg.end, 3), 'speaker': seg.speaker}
         for seg in result
