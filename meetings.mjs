@@ -165,11 +165,17 @@ export function initMeetings({ app, config, callModel, resolveBrain, localModel,
   function resolveAsr() {
     const bin = config.meetings?.asrBinaryPath
       || ['/opt/homebrew/bin/whisper-cli', '/usr/local/bin/whisper-cli'].find(p => fs.existsSync(p))
+    const modelDirs = [
+      process.env.NEXUS_USER_DATA && path.join(process.env.NEXUS_USER_DATA, 'models'),
+      path.join(os.homedir(), 'Library', 'Application Support', 'Nexus', 'models'),
+    ].filter(Boolean)
+    // small.en preferred over base.en: materially fewer hallucinations on
+    // far-field/overlapped meeting audio (2026-07-23 upgrade).
     const model = config.meetings?.asrModelPath
-      || [
-        process.env.NEXUS_USER_DATA && path.join(process.env.NEXUS_USER_DATA, 'models', 'ggml-base.en.bin'),
-        path.join(os.homedir(), 'Library', 'Application Support', 'Nexus', 'models', 'ggml-base.en.bin'),
-      ].filter(Boolean).find(p => fs.existsSync(p))
+      || modelDirs.flatMap(d => [path.join(d, 'ggml-small.en.bin'), path.join(d, 'ggml-base.en.bin')]).find(p => fs.existsSync(p))
+    // Silero VAD gate: whisper only decodes detected speech — silence/noise gaps
+    // are where whisper invents text ("acid trip" transcripts, 2026-07-21).
+    const vadModel = modelDirs.map(d => path.join(d, 'ggml-silero-v5.1.2.bin')).find(p => fs.existsSync(p)) || null
     if (!bin || !fs.existsSync(bin)) throw new Error('No transcription engine — install whisper-cpp (brew install whisper-cpp) or set the binary path in Settings → Meetings.')
     if (!model) throw new Error('No transcription model — put ggml-base.en.bin under <app data>/models/ or set the model path in Settings → Meetings.')
     // Optional tinydiarize model: enables speaker-turn detection on mixed
@@ -179,14 +185,18 @@ export function initMeetings({ app, config, callModel, resolveBrain, localModel,
         process.env.NEXUS_USER_DATA && path.join(process.env.NEXUS_USER_DATA, 'models', 'ggml-small.en-tdrz.bin'),
         path.join(os.homedir(), 'Library', 'Application Support', 'Nexus', 'models', 'ggml-small.en-tdrz.bin'),
       ].filter(Boolean).find(p => fs.existsSync(p)) || null
-    return { bin, model, tdrzModel }
+    return { bin, model, tdrzModel, vadModel }
   }
 
   function transcribeWav(wavPath, outBase, { diarize = false, tokenLevel = false } = {}) {
     const opts2 = { tokenLevel }
-    const { bin, model, tdrzModel } = resolveAsr()
+    const { bin, model, tdrzModel, vadModel } = resolveAsr()
     const useTdrz = diarize && tdrzModel
-    const args = ['-m', useTdrz ? tdrzModel : model, '-f', wavPath, '-oj', '-of', outBase, '-np', ...(useTdrz ? ['-tdrz'] : []), ...(opts2.tokenLevel ? ['-ml', '1'] : [])]
+    const args = ['-m', useTdrz ? tdrzModel : model, '-f', wavPath, '-oj', '-of', outBase, '-np',
+      // anti-hallucination: no temperature fallback + VAD-gated decoding
+      '--no-fallback',
+      ...(vadModel ? ['--vad', '--vad-model', vadModel] : []),
+      ...(useTdrz ? ['-tdrz'] : []), ...(opts2.tokenLevel ? ['-ml', '1'] : [])]
     return new Promise((resolve, reject) => {
       const p = spawn(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] })
       let err = ''
@@ -515,6 +525,9 @@ ${events.map((e, i) => `${i}| ${e.speaker || '?'}: ${e.text}`).join('\n')}`,
     const { mode, title, attested, expectedSpeakers } = req.body || {}
     if (!['in-person', 'call'].includes(mode)) return res.status(400).json({ error: 'mode must be in-person or call' })
     if (attested !== true) return res.status(400).json({ error: 'Recording requires the participant-announcement attestation' })
+    if (mode === 'in-person' && !(Number.isInteger(expectedSpeakers) && expectedSpeakers >= 1 && expectedSpeakers <= 12)) {
+      return res.status(400).json({ error: 'In-person recording needs the number of people (1–12) — it hard-limits speaker detection.' })
+    }
     const id = `mtg_${Date.now()}`
     fs.mkdirSync(path.join(mdir(id), 'audio'), { recursive: true })
     writeMeta(id, {
@@ -563,7 +576,7 @@ ${events.map((e, i) => `${i}| ${e.speaker || '?'}: ${e.text}`).join('\n')}`,
 
   // GET /api/meetings/asr-status — engine probe for Settings/record card
   app.get('/api/meetings/asr-status', (req, res) => {
-    try { const a = resolveAsr(); res.json({ ok: true, bin: a.bin, model: path.basename(a.model), diarize: !!a.tdrzModel, diarizeModel: a.tdrzModel ? path.basename(a.tdrzModel) : null }) }
+    try { const a = resolveAsr(); res.json({ ok: true, bin: a.bin, model: path.basename(a.model), vad: !!a.vadModel, diarize: !!a.tdrzModel, diarizeModel: a.tdrzModel ? path.basename(a.tdrzModel) : null }) }
     catch (e) { res.json({ ok: false, error: e.message }) }
   })
 

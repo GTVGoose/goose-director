@@ -249,14 +249,17 @@ function RecordCard({ onRecordingDone }) {
       </div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
         <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Meeting title (optional)" style={{ flex: 1 }} />
-        <input value={speakers} onChange={e => setSpeakers(e.target.value.replace(/[^0-9]/g, ''))} placeholder="How many people? (optional — sharpens speaker ID)" style={{ width: 300 }} />
+        <select value={speakers} onChange={e => setSpeakers(e.target.value)} style={{ width: 300, fontSize: 12 }}>
+          <option value="">How many people? (required for in-person)</option>
+          {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n} {n === 1 ? 'person' : 'people'}</option>)}
+        </select>
       </div>
       <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text-2)', marginBottom: 14, cursor: 'pointer' }}>
         <input type="checkbox" checked={attested} onChange={e => setAttested(e.target.checked)} style={{ width: 'auto' }} />
         I've told everyone in this conversation that it's being recorded
       </label>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <button style={{ ...btn, opacity: attested && asr?.ok ? 1 : 0.45 }} disabled={!attested || !asr?.ok} onClick={() => begin('in-person')}>
+        <button style={{ ...btn, opacity: attested && asr?.ok && speakers ? 1 : 0.45 }} disabled={!attested || !asr?.ok || !speakers} onClick={() => begin('in-person')}>
           <i className="ti ti-microphone" /> Record in-person
         </button>
         <button style={{ ...btn, opacity: attested && asr?.ok ? 1 : 0.45 }} disabled={!attested || !asr?.ok} onClick={() => begin('call')}>
