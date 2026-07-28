@@ -9,6 +9,7 @@ Exit 0 with [] when nothing is detected; nonzero on setup errors so the caller
 can fall back to unlabeled transcription.
 """
 import json
+import os
 import sys
 import wave
 
@@ -31,7 +32,11 @@ def main():
             ),
         ),
         embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(
-            model=f'{models_dir}/embedding.onnx'
+            # titanet-large preferred (more discriminating voiceprints → fewer
+            # phantom-speaker splits); falls back to titanet-small (2026-07-28).
+            model=(f'{models_dir}/embedding-large.onnx'
+                   if os.path.exists(f'{models_dir}/embedding-large.onnx')
+                   else f'{models_dir}/embedding.onnx')
         ),
         # Known speaker count (the record UI asks) beats auto-clustering by a
         # wide margin; when auto, a high threshold biases toward FEWER clusters —

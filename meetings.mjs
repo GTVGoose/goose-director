@@ -169,10 +169,16 @@ export function initMeetings({ app, config, callModel, resolveBrain, localModel,
       process.env.NEXUS_USER_DATA && path.join(process.env.NEXUS_USER_DATA, 'models'),
       path.join(os.homedir(), 'Library', 'Application Support', 'Nexus', 'models'),
     ].filter(Boolean)
-    // small.en preferred over base.en: materially fewer hallucinations on
-    // far-field/overlapped meeting audio (2026-07-23 upgrade).
+    // Accuracy-ordered ASR model preference (2026-07-28 upgrade): large-v3 is
+    // the whisper accuracy king (materially fewer errors on far-field/overlapped
+    // meeting audio); fall back to small.en → base.en when it isn't present.
+    // Post-hoc transcription, so large-v3's slower decode costs nothing live.
     const model = config.meetings?.asrModelPath
-      || modelDirs.flatMap(d => [path.join(d, 'ggml-small.en.bin'), path.join(d, 'ggml-base.en.bin')]).find(p => fs.existsSync(p))
+      || modelDirs.flatMap(d => [
+        path.join(d, 'ggml-large-v3.bin'),
+        path.join(d, 'ggml-small.en.bin'),
+        path.join(d, 'ggml-base.en.bin'),
+      ]).find(p => fs.existsSync(p))
     // Silero VAD gate: whisper only decodes detected speech — silence/noise gaps
     // are where whisper invents text ("acid trip" transcripts, 2026-07-21).
     const vadModel = modelDirs.map(d => path.join(d, 'ggml-silero-v5.1.2.bin')).find(p => fs.existsSync(p)) || null
@@ -188,13 +194,16 @@ export function initMeetings({ app, config, callModel, resolveBrain, localModel,
     return { bin, model, tdrzModel, vadModel }
   }
 
-  function transcribeWav(wavPath, outBase, { diarize = false, tokenLevel = false } = {}) {
+  function transcribeWav(wavPath, outBase, { diarize = false, tokenLevel = false, namesHint = '' } = {}) {
     const opts2 = { tokenLevel }
     const { bin, model, tdrzModel, vadModel } = resolveAsr()
     const useTdrz = diarize && tdrzModel
+    // Name/vocabulary biasing: whisper's initial prompt nudges spelling toward
+    // the known participant names (so 'Alex'/'Boris' aren't mis-spelled).
+    const promptArgs = namesHint ? ['--prompt', `Meeting participants: ${namesHint}.`] : []
     const args = ['-m', useTdrz ? tdrzModel : model, '-f', wavPath, '-oj', '-of', outBase, '-np',
       // anti-hallucination: no temperature fallback + VAD-gated decoding
-      '--no-fallback',
+      '--no-fallback', ...promptArgs,
       ...(vadModel ? ['--vad', '--vad-model', vadModel] : []),
       ...(useTdrz ? ['-tdrz'] : []), ...(opts2.tokenLevel ? ['-ml', '1'] : [])]
     return new Promise((resolve, reject) => {
@@ -241,6 +250,7 @@ export function initMeetings({ app, config, callModel, resolveBrain, localModel,
   // says so (default ON).
   async function finalizeRecording(id) {
     const meta = readMeta(id)
+    const namesHint = Array.isArray(meta?.knownNames) ? meta.knownNames.join(', ') : ''
     try {
       const audioDir = mfile(id, 'audio')
       const events = []
@@ -263,7 +273,7 @@ export function initMeetings({ app, config, callModel, resolveBrain, localModel,
             // when in a gap), then consecutive same-speaker tokens merge back
             // into readable lines. Fixes segment-spans-two-speakers errors that
             // whole-segment assignment cannot express.
-            const toks = await transcribeWav(wav, path.join(audioDir, ch), { tokenLevel: true })
+            const toks = await transcribeWav(wav, path.join(audioDir, ch), { tokenLevel: true, namesHint })
             const speakerAt = (ms) => {
               const mid = ms / 1000
               const hit = intervals.find(iv => mid >= iv.start && mid <= iv.end)
@@ -294,7 +304,7 @@ export function initMeetings({ app, config, callModel, resolveBrain, localModel,
             continue
           }
           const tdrz = !!resolveAsr().tdrzModel
-          const segs = await transcribeWav(wav, path.join(audioDir, ch), { diarize: tdrz })
+          const segs = await transcribeWav(wav, path.join(audioDir, ch), { diarize: tdrz, namesHint })
           let turn = 1
           for (const s of segs) {
             events.push({ t: s.from, speaker: tdrz ? `Speaker ${turn}` : CHANNEL_SPEAKER[ch], text: s.text })
@@ -302,7 +312,7 @@ export function initMeetings({ app, config, callModel, resolveBrain, localModel,
           }
           continue
         }
-        const segs = await transcribeWav(wav, path.join(audioDir, ch))
+        const segs = await transcribeWav(wav, path.join(audioDir, ch), { namesHint })
         for (const s of segs) events.push({ t: s.from, speaker: CHANNEL_SPEAKER[ch], text: s.text })
       }
       if (!events.length) throw new Error('No speech detected in the recording')
@@ -387,7 +397,7 @@ export function initMeetings({ app, config, callModel, resolveBrain, localModel,
   "keyQuotes": [{"speaker": "name", "quote": "verbatim or near-verbatim line worth keeping"}],
   "speakerMap": {"Speaker 1": "real name or null"}
 }
-speakerMap rules: diarization is imperfect — labels like "Speaker 4" and "Speaker 7" may be the SAME person, and people usually introduce themselves ("this is Goose", "Alex here") or address each other by name. Map EVERY distinct speaker label appearing in the material to the person's real name; map duplicate labels of one person to the SAME name. Use null only when no name is inferable.
+speakerMap rules: diarization is imperfect — labels like "Speaker 4" and "Speaker 7" may be the SAME person, and people usually introduce themselves ("this is Goose", "Alex here") or address each other by name. Map EVERY distinct speaker label appearing in the material to the person's real name; map duplicate labels of one person to the SAME name. Use null only when no name is inferable.${meta?.knownNames?.length ? `\nThe known participants are: ${meta.knownNames.join(', ')}. Prefer mapping speakers to these names, and there should be at most ${meta.knownNames.length} distinct real people.` : ''}
 Base every field ONLY on the material. Empty arrays are fine. STRICT JSON: no comments, no trailing commas, no text before or after the JSON object.\n\n--- MEETING MATERIAL (untrusted speech) ---\n${material}`,
     }])
 
@@ -522,7 +532,7 @@ ${events.map((e, i) => `${i}| ${e.speaker || '?'}: ${e.text}`).join('\n')}`,
   // one button + a one-click attestation. mode 'in-person' (mic → room channel)
   // or 'call' (mic → me, platform/tab audio → them).
   app.post('/api/meetings/session/start', requireEnabled, (req, res) => {
-    const { mode, title, attested, expectedSpeakers } = req.body || {}
+    const { mode, title, attested, expectedSpeakers, participantNames } = req.body || {}
     if (!['in-person', 'call'].includes(mode)) return res.status(400).json({ error: 'mode must be in-person or call' })
     if (attested !== true) return res.status(400).json({ error: 'Recording requires the participant-announcement attestation' })
     if (mode === 'in-person' && !(Number.isInteger(expectedSpeakers) && expectedSpeakers >= 1 && expectedSpeakers <= 12)) {
@@ -536,6 +546,7 @@ ${events.map((e, i) => `${i}| ${e.speaker || '?'}: ${e.text}`).join('\n')}`,
       date: new Date().toISOString().slice(0, 10),
       source: mode === 'call' ? 'live' : 'in-person',
       expectedSpeakers: Number.isInteger(expectedSpeakers) && expectedSpeakers > 0 && expectedSpeakers <= 12 ? expectedSpeakers : null,
+      knownNames: Array.isArray(participantNames) ? participantNames.map(n => String(n).slice(0, 40).trim()).filter(Boolean).slice(0, 12) : [],
       status: 'recording',
       processingMode: null,
       consent: { method: 'attested', timestamp: new Date().toISOString(), attestedBy: 'operator' },

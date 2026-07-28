@@ -191,6 +191,7 @@ function RecordCard({ onRecordingDone }) {
   const rec = useRecorder()
   const [title, setTitle] = useState('')
   const [speakers, setSpeakers] = useState('')
+  const [names, setNames] = useState('')
   const [attested, setAttested] = useState(false)
   const [meetingId, setMeetingId] = useState(null)
   const [mode, setMode] = useState(null)
@@ -204,7 +205,7 @@ function RecordCard({ onRecordingDone }) {
     try {
       const r = await fetch('/api/meetings/session/start', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: m, title, attested, expectedSpeakers: Number(speakers) || undefined }),
+        body: JSON.stringify({ mode: m, title, attested, expectedSpeakers: Number(speakers) || undefined, participantNames: names.split(',').map(x => x.trim()).filter(Boolean) }),
       })
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || 'Could not start')
@@ -254,6 +255,7 @@ function RecordCard({ onRecordingDone }) {
           {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n} {n === 1 ? 'person' : 'people'}</option>)}
         </select>
       </div>
+      <input value={names} onChange={e => setNames(e.target.value)} placeholder="Participant names, comma-separated (optional — improves spelling + attribution)" style={{ width: '100%', marginBottom: 12 }} />
       <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text-2)', marginBottom: 14, cursor: 'pointer' }}>
         <input type="checkbox" checked={attested} onChange={e => setAttested(e.target.checked)} style={{ width: 'auto' }} />
         I've told everyone in this conversation that it's being recorded
