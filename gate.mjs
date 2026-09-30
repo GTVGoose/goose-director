@@ -25,7 +25,12 @@
 //      The model may answer `DROP: <reason>` for pure noise; dropped
 //      originals are archived, never deleted.
 //   3. DELIVER — through telegram.mjs's notify() (audience: director), the
-//      same connection that owns the bot's long-poll. Receipts append to the
+//      same connection that owns the bot's long-poll. `attachments` (vault-
+//      relative or absolute paths, e.g. the morning-brief PDFs) are sent after
+//      the text via notifyDocument(); progress is checkpointed into the queue
+//      file so a retry never re-sends a part that already landed.
+//      Outside Nexus, run-gate.mjs hosts this same gate as a standalone
+//      launchd service with its own send-only Telegram client. Receipts append to the
 //      vault's delivery-log.jsonl (channel "umbruh-gate") so the vault
 //      heartbeat's delivery sensing keeps working unchanged.
 //
@@ -54,14 +59,19 @@ export function initGate({ config, ollamaUrl }) {
   const registryPath = path.join(bridgeDir, 'member-registry.json')
   const deliveryLogPath = path.join(bridgeDir, 'delivery-log.jsonl')
 
-  let notify = null // injected by server.mjs after initTelegram
+  let notify = null // injected by server.mjs (or run-gate.mjs) after initTelegram
+  let notifyDocument = null
   const setNotify = (fn) => { notify = fn }
+  const setNotifyDocument = (fn) => { notifyDocument = fn }
+  // Attachment paths in vault handoffs are vault-relative (_system/briefs/...).
+  const vaultRoot = cfg.vaultRoot || path.resolve(bridgeDir, '..', '..')
+  const resolveAttachment = (a) => (path.isAbsolute(a) ? a : path.join(vaultRoot, a))
 
   const log = (msg) => console.log(`[gate] ${msg}`)
 
   if (!cfg.enabled || !bridgeDir || !fs.existsSync(bridgeDir)) {
     log(`disabled (enabled=${!!cfg.enabled}, bridgeDir=${bridgeDir || 'unset'})`)
-    return { setNotify, enabled: false }
+    return { setNotify, setNotifyDocument, enabled: false }
   }
 
   const readJson = (p, fallback = null) => {
@@ -155,12 +165,45 @@ export function initGate({ config, ollamaUrl }) {
     }
   }
 
+  // ── Single-consumer lease ──────────────────────────────────────────────────
+  // Nexus.app and the standalone run-gate.mjs service can both host this gate.
+  // Neither claims queue files before sending, so two live consumers would
+  // double-deliver. A lease file in gate-inbox/ lets exactly one of them drain:
+  // a lease held by another live pid and refreshed within LEASE_MS wins.
+  const LEASE_MS = Math.max(5 * 60 * 1000, intervalSec * 3000)
+  const leasePath = path.join(inboxDir, '.consumer.lease')
+  const leaseHolder = cfg.hostLabel || 'nexus'
+  let yieldedTo = ''
+  const pidAlive = (pid) => { try { process.kill(pid, 0); return true } catch (e) { return e.code === 'EPERM' } }
+  const takeLease = () => {
+    const cur = readJson(leasePath)
+    if (cur && cur.pid !== process.pid && cur.host === os.hostname() && pidAlive(cur.pid)
+        && Date.now() - Date.parse(cur.at) < LEASE_MS) {
+      const who = `${cur.holder}:${cur.pid}`
+      if (yieldedTo !== who) log(`lease held by ${who} — this host stands by`)
+      yieldedTo = who
+      return false
+    }
+    if (yieldedTo) log(`lease acquired (was ${yieldedTo})`)
+    yieldedTo = ''
+    try {
+      fs.mkdirSync(inboxDir, { recursive: true })
+      fs.writeFileSync(leasePath, JSON.stringify({ holder: leaseHolder, pid: process.pid, host: os.hostname(), at: new Date().toISOString() }))
+    } catch (e) { log(`lease write failed: ${e.message}`); return false }
+    return true
+  }
+  const releaseLease = () => {
+    try { if (readJson(leasePath)?.pid === process.pid) fs.unlinkSync(leasePath) } catch {}
+  }
+  process.once('exit', releaseLease)
+
   // ── Queue processor ────────────────────────────────────────────────────────
   let running = false
   const processQueue = async () => {
     if (running) return
     running = true
     try {
+      if (!takeLease()) return
       claimLegacyOutbox()
       if (!fs.existsSync(inboxDir)) return
       const files = fs.readdirSync(inboxDir).filter((f) => f.endsWith('.json')).sort()
@@ -195,9 +238,30 @@ export function initGate({ config, ollamaUrl }) {
           }
         }
 
+        const attachments = Array.isArray(data.attachments) ? data.attachments.map(String) : []
+        if (attachments.length && !notifyDocument) { log('notifyDocument not injected — holding queue'); return }
+
         const text = alreadyUmbruh ? raw : voicedOk ? voiced : `⚑ vault (unvoiced):\n${raw}`
+        // Checkpoint each landed part into the queue file: a failure mid-way
+        // retries only what has not been sent yet.
+        const progress = data._gate_progress || (data._gate_progress = { text_sent: false, docs_sent: [] })
+        const checkpoint = () => { try { fs.writeFileSync(p, JSON.stringify(data, null, 2)) } catch {} }
+        const docResults = []
         try {
-          await notify(text) // audience: director (default) — this channel only
+          if (!progress.text_sent) {
+            await notify(text) // audience: director (default) — this channel only
+            progress.text_sent = true
+            checkpoint()
+          }
+          for (const a of attachments) {
+            if (progress.docs_sent.includes(a)) continue
+            const abs = resolveAttachment(a)
+            if (!fs.existsSync(abs)) { docResults.push({ path: a, status: 'missing' }); continue }
+            await notifyDocument(abs)
+            progress.docs_sent.push(a)
+            docResults.push({ path: a, status: 'delivered' })
+            checkpoint()
+          }
         } catch (e) {
           markFailed(p, data, e.message)
           continue
@@ -207,8 +271,9 @@ export function initGate({ config, ollamaUrl }) {
           voiced: alreadyUmbruh ? 'source' : voicedOk,
           gate_model: model,
           voiced_preview: text.slice(0, 160),
+          ...(attachments.length ? { attachments: docResults } : {}),
         })
-        log(`delivered ${name} (voiced=${alreadyUmbruh ? 'source' : voicedOk})`)
+        log(`delivered ${name} (voiced=${alreadyUmbruh ? 'source' : voicedOk}${attachments.length ? `, docs=${docResults.filter((d) => d.status === 'delivered').length}/${attachments.length}` : ''})`)
       }
     } catch (e) {
       log(`queue pass error: ${e.message}`)
@@ -260,5 +325,5 @@ export function initGate({ config, ollamaUrl }) {
   processQueue()
   log(`watching ${inboxDir} + legacy outbox (bound member: ${boundMember || 'unset'}, model: ${model})`)
 
-  return { setNotify, enabled: true, processQueue }
+  return { setNotify, setNotifyDocument, enabled: true, processQueue, releaseLease }
 }

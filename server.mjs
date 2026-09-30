@@ -3241,6 +3241,7 @@ try {
   // deliver, so a disabled/dev run must not claim vault messages it can't send.
   const gateApi = initGate({ config, ollamaUrl: tgOllamaUrl })
   if (gateApi && tgApi?.notify) gateApi.setNotify(tgApi.notify)
+  if (gateApi && tgApi?.notifyDocument) gateApi.setNotifyDocument(tgApi.notifyDocument)
 } catch (e) {
   console.error('[Telegram] init failed:', e.message)
 }
